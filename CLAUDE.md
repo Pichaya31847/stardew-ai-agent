@@ -115,6 +115,7 @@ stardew-mcp/
 
 ## References
 
+- [SMAPI Modder Guide APIs](https://stardewvalleywiki.com/Modding:Modder_Guide/APIs) - **Primary API reference** - consult this when implementing new game interactions, input handling, events, or accessing game data
 - [SMAPI Documentation](https://stardewvalleywiki.com/Modding:Index)
 - [MCP Specification](https://modelcontextprotocol.io)
 - [Creating SMAPI Mods](https://stardewvalleywiki.com/Modding:Modder_Guide/Get_Started)
