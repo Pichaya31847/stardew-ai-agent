@@ -27,6 +27,8 @@ public class ToolDef
     public ToolRunner Run = null!;
     /// <summary>Instant tools (observations, thinking) do not unfreeze game time.</summary>
     public bool Instant;
+    /// <summary>Instant for these arguments only, e.g. menu() reads while menu(action) acts.</summary>
+    public Func<JsonElement, bool>? InstantFor;
     public bool NeedsWorld = true;
     public bool AppendStatus = true;
     /// <summary>Chat and whispers waiting for the player are appended to this tool's result (false for debug ops).</summary>
@@ -34,7 +36,7 @@ public class ToolDef
 }
 
 /// <summary>The actions the AI can take. Mechanics (walking, aiming, button presses) are automated; decisions are the AI's.</summary>
-public static class AgentTools
+public static partial class AgentTools
 {
     /// <summary>Runtime of the seat whose screen is updating (tools run on that screen's tick).</summary>
     public static AgentRuntime Rt => Players.Current.Runtime;
@@ -193,8 +195,16 @@ public static class AgentTools
             new()
             {
                 Name = "interact",
-                Description = "Walk next to a tile and press the action button on it: open doors, shop counters (A tiles), chests, machines, mailbox, read signs, check objects.",
-                Schema = Obj(new { x = Int("Tile x"), y = Int("Tile y"), reason = Str(ReasonDesc) }, "x", "y", "reason"),
+                Description = "Walk next to a tile and press the action button on it: open doors, shop counters (A tiles), chests, machines, mailbox, read signs, check objects. " +
+                              "With holding, hold that item while pressing: load a machine with it (e.g. Copper Ore into a Furnace), give it to the villager on that tile. " +
+                              "With holding and no tile, use the item where you stand (totems, books). Without holding you hold a tool, so nothing is loaded or gifted by accident.",
+                Schema = Obj(new
+                {
+                    x = Int("Tile x"),
+                    y = Int("Tile y"),
+                    holding = Str("Optional item from your inventory to hold while pressing"),
+                    reason = Str(ReasonDesc)
+                }, "reason"),
                 Run = Interact
             },
             new()
@@ -218,6 +228,7 @@ public static class AgentTools
                 Schema = Obj(new { }),
                 Run = CloseMenu
             },
+            MenuTool(),
             new()
             {
                 Name = "travel_to",
@@ -431,13 +442,16 @@ public static class AgentTools
 
     // ------------------------------------------------------------------ items
 
-    internal static int FindItem(string name, Func<Item, bool>? filter = null)
+    internal static int FindItem(string name, Func<Item, bool>? filter = null) => FindIn(P.Items, name, filter);
+
+    /// <summary>Index of the item called <paramref name="name"/> (exact name first, else the first partial match), or -1.</summary>
+    private static int FindIn(IList<Item> items, string name, Func<Item, bool>? filter = null)
     {
         name = name.Trim().ToLowerInvariant();
         int partial = -1;
-        for (int i = 0; i < P.Items.Count; i++)
+        for (int i = 0; i < items.Count; i++)
         {
-            var it = P.Items[i];
+            var it = items[i];
             if (it == null || (filter != null && !filter(it))) continue;
             var dn = it.DisplayName.ToLowerInvariant();
             var n = it.Name.ToLowerInvariant();
@@ -632,19 +646,53 @@ public static class AgentTools
         c.Result = string.Join("\n", lines) + "\n" + (diff.Length > 0 ? diff : "Nothing was collected.");
     }
 
+    /// <summary>The action button, as in Game1.pressActionButton: check the tile with the held item, or use the held item in place.</summary>
     private static IEnumerator Interact(JsonElement a, CallContext c)
     {
-        var t = new Point(I(a, "x", -1), I(a, "y", -1));
+        var holding = S(a, "holding").Trim();
+        int slot = holding.Length > 0 ? FindItem(holding) : -1;
+        if (holding.Length > 0 && slot < 0) { c.Fail($"No \"{holding}\" in inventory."); yield break; }
+        bool atTile = Has(a, "x") && Has(a, "y");
+        if (!atTile && slot < 0) { c.Fail("Give the tile (x, y), or holding to use an item where you stand."); yield break; }
+
         var before = Snapshot();
         var startLoc = Loc;
-        yield return WalkAdjacent(t, c);
-        if (!c.Ok) yield break;
-        Game1.tryToCheckAt(t.ToVector2(), P);
+        var t = new Point(I(a, "x", -1), I(a, "y", -1));
+        if (atTile)
+        {
+            yield return WalkAdjacent(t, c);
+            if (!c.Ok) yield break;
+        }
+        else
+            yield return WaitIdle();
+
+        // Without holding, put away a held object so nothing gets loaded or gifted by accident.
+        if (slot >= 0) P.CurrentToolIndex = slot;
+        else if (P.ActiveObject != null) P.CurrentToolIndex = FirstToolSlot();
+        var held = P.CurrentItem?.DisplayName;
+        var was = atTile ? WorldText.Describe(Loc, t.X, t.Y).label : null;
+
+        string what;
+        if (atTile)
+            what = Game1.tryToCheckAt(t.ToVector2(), P) ? $"Interacted with ({t.X},{t.Y})" : $"Nothing happened at ({t.X},{t.Y})";
+        else if (P.ActiveObject is { } obj and not StardewValley.Objects.Furniture && obj.performUseAction(Loc))
+        {
+            P.reduceActiveItemByOne();
+            what = $"Used {held}";
+        }
+        else
+        {
+            c.Fail($"{held} can't be used where you stand.");
+            yield break;
+        }
         yield return Ticks(30);
-        yield return WaitIdle(180);
-        var diff = Diff(before);
-        var moved = Loc != startLoc ? $"You are now in {Loc.Name}. " : "";
-        c.Result = $"Interacted with ({t.X},{t.Y}). {moved}{diff}".Trim();
+        yield return WaitIdle(atTile ? 180 : 600); // totems play a two-second animation before warping
+
+        if (slot >= 0 && atTile) what += $" holding {held}";
+        var now = atTile && Loc == startLoc ? WorldText.Describe(Loc, t.X, t.Y).label : was;
+        var changed = now != was ? $" Now: {now ?? "empty"}." : "";
+        var moved = Loc != startLoc ? $" You are now in {Loc.Name}." : "";
+        c.Result = $"{what}.{changed}{moved} {Diff(before)}".Trim();
     }
 
     private static IEnumerator TalkTo(JsonElement a, CallContext c)

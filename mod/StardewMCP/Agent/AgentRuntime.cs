@@ -28,6 +28,8 @@ public class PendingCall
 {
     public ToolDef Tool = null!;
     public JsonElement Args;
+    /// <summary>Observes only: keeps the world frozen and may answer during the seat's own action.</summary>
+    public bool Instant;
     public TaskCompletionSource<(bool ok, string text)> Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
@@ -55,7 +57,7 @@ public class AgentRuntime
     public IModHelper Helper { get; }
 
     /// <summary>True while an action that lets game time pass is running.</summary>
-    public bool ActionRunning => _actionLane.Current is { Tool.Instant: false };
+    public bool ActionRunning => _actionLane.Current is { Instant: false };
     public string? CurrentTool => _actionLane.Current?.Tool.Name;
 
     public AgentRuntime(IModHelper helper, IMonitor monitor, ModConfig config, PlayerLog log)
@@ -74,8 +76,8 @@ public class AgentRuntime
     /// </summary>
     public Task<(bool ok, string text)> Enqueue(ToolDef tool, JsonElement args, bool observation = false)
     {
-        var call = new PendingCall { Tool = tool, Args = args };
-        (observation && tool.Instant ? _observations : _actions).Enqueue(call);
+        var call = new PendingCall { Tool = tool, Args = args, Instant = tool.Instant || tool.InstantFor?.Invoke(args) == true };
+        (observation && call.Instant ? _observations : _actions).Enqueue(call);
         return call.Done.Task;
     }
 
@@ -173,7 +175,7 @@ public class AgentRuntime
             _watch = Stopwatch.StartNew();
             _stack.Clear();
 
-            if (!call.Tool.Instant)
+            if (!call.Instant)
                 _rt.Log.Add("action", call.Tool.Name, AgentTools.Reason(call.Args), AgentTools.ArgsForLog(call.Args));
 
             try
@@ -197,7 +199,7 @@ public class AgentRuntime
         {
             // While the world is frozen (an AI is thinking) a running action holds still, so its
             // stuck/re-plan counters and timeouts don't advance either.
-            if (_pausable && !Current!.Tool.Instant && WorldClock.WorldPaused)
+            if (_pausable && !Current!.Instant && WorldClock.WorldPaused)
                 return;
 
             _ticksInCall++;
@@ -258,7 +260,7 @@ public class AgentRuntime
             if (call.Tool.AppendStatus && Context.IsWorldReady)
                 text = text.TrimEnd() + "\n" + AgentTools.Footer();
 
-            if (!call.Tool.Instant || !ctx.Ok)
+            if (!call.Instant || !ctx.Ok)
                 _rt.Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds);
 
             call.Done.TrySetResult((ctx.Ok, text));
