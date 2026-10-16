@@ -76,8 +76,30 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `AutoLoadSave` | `""` | Save folder to load automatically from the title screen |
 | `EnableDebugApi` | `false` | Serve `/api/debug/*` test hooks for `runner/smoke.py`; leave off for normal play |
 | `ThoughtLanguage` | `"Thai"` | Language the AI is asked to use for on-screen text (`think`, action reasons, diary), e.g. `"English"` |
+| `SplitScreen` | `false` | Three AIs + a camera screen in split-screen co-op (see below) |
+| `FarmhandNames` | `["Gemini","GPT","Camera"]` | Farmhand names for P2, P3, P4; an existing farmhand with that name is reused |
+| `ThinkTimeoutSeconds` | `300` | Split-screen: an AI silent for longer stops holding the world frozen (0 = never) |
+| `LockHostInput` | `true` | Split-screen: ignore the real keyboard/mouse on P1 once a save is loaded |
+| `CleanFrames` | `true` | Split-screen: frozen frames look live (no Paused banner, HUD kept), no cursors, gamepad hint or join messages |
+| `AutoZoom` | `true` | Split-screen: zoom each screen to about 20 tiles across |
 
 The SMAPI console command `mcp_freeze [on|off]` toggles time freezing at runtime.
+
+### Split-screen (three AIs)
+
+With `SplitScreen: true`, load a farm that has **3 free cabins** (a co-op farm with starting cabins).
+The mod joins P2–P4 itself, no gamepads needed, in the game's 2×2 grid:
+
+| Seat | Endpoint | Role |
+|---|---|---|
+| P1 (host) | `/mcp/p1` (or `/mcp`) | AI |
+| P2 | `/mcp/p2` | AI |
+| P3 | `/mcp/p3` | AI |
+| P4 | none | camera / summary screen for the video |
+
+The whole world (clock, farmers, NPCs) is frozen while any connected AI is thinking, so a slow model
+never loses game time. `/api/state` lists every seat with its current action and thinking time.
+The first time the game starts its local co-op server, Windows Firewall may ask once; allow it.
 
 `ThoughtLanguage` only changes what the MCP tools ask the AI to write. The overlay's own labels and
 `runner/system_prompt.md` are still written for Thai viewers, so edit those too if you switch language.

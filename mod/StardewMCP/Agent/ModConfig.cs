@@ -20,4 +20,25 @@ public class ModConfig
 
     /// <summary>Language the AI is told to use for on-screen text: thoughts, action reasons and the diary (e.g. "English").</summary>
     public string ThoughtLanguage { get; set; } = "Thai";
+
+    /// <summary>
+    /// Three-AI split-screen: after the save loads, join P2–P4 as local farmhands (needs 3 free
+    /// cabins). P1–P3 are AIs on /mcp/p1../mcp/p3, P4 is the video's camera screen.
+    /// </summary>
+    public bool SplitScreen { get; set; } = false;
+
+    /// <summary>Farmhand names for P2, P3 and P4. An existing farmhand with the same name is reused.</summary>
+    public string[] FarmhandNames { get; set; } = { "Gemini", "GPT", "Camera" };
+
+    /// <summary>Split-screen: an AI that thinks longer than this (seconds) stops holding the world frozen. 0 = never.</summary>
+    public int ThinkTimeoutSeconds { get; set; } = 300;
+
+    /// <summary>Split-screen: ignore the real keyboard, mouse and pad on P1 so nobody at the PC moves it or unpauses.</summary>
+    public bool LockHostInput { get; set; } = true;
+
+    /// <summary>Split-screen: frozen frames look like live ones (no Paused banner, HUD kept) and hide cursors, the gamepad hint and join messages.</summary>
+    public bool CleanFrames { get; set; } = true;
+
+    /// <summary>Split-screen: set each screen's zoom to keep about 20 tiles in view (1.5 × screen width / 960).</summary>
+    public bool AutoZoom { get; set; } = true;
 }

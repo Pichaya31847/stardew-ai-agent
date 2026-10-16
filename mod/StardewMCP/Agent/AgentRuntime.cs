@@ -32,62 +32,56 @@ public class PendingCall
 }
 
 /// <summary>
-/// Runs agent tool calls on the game thread as coroutines (one at a time) and freezes the
-/// in-game clock whenever no action is running, so the AI's thinking time costs no game time.
+/// Runs one seat's tool calls on the game thread as coroutines. Actions run one at a time in
+/// order; instant observations (look, status, think...) run in their own lane so they answer
+/// even while that seat's own action is running. Freezing the world is <see cref="WorldClock"/>'s job.
 /// </summary>
 public class AgentRuntime
 {
     private readonly IMonitor _monitor;
-    private readonly ConcurrentQueue<PendingCall> _queue = new();
-    private readonly Stack<IEnumerator> _stack = new();
-    private PendingCall? _current;
-    private CallContext? _ctx;
-    private Stopwatch _watch = new();
-    private int _ticksInCall;
-    private int _callStartDay;
+    private readonly ConcurrentQueue<PendingCall> _actions = new();
+    private readonly ConcurrentQueue<PendingCall> _observations = new();
+    private readonly Lane _actionLane;
+    private readonly Lane _observeLane;
     private int _globalTicks;
     private int _eventTicks;
 
-    private bool _frozen;
-    private int _frozenInterval;
-
-    public AgentLog Log { get; }
+    public PlayerLog Log { get; }
     public ModConfig Config { get; }
     public IModHelper Helper { get; }
 
     /// <summary>True while an action that lets game time pass is running.</summary>
-    public bool ActionRunning => _current != null && !_current.Tool.Instant;
-    public bool Frozen => _frozen;
-    public string? CurrentTool => _current?.Tool.Name;
+    public bool ActionRunning => _actionLane.Current is { Tool.Instant: false };
+    public string? CurrentTool => _actionLane.Current?.Tool.Name;
 
-    public AgentRuntime(IModHelper helper, IMonitor monitor, ModConfig config, AgentLog log)
+    public AgentRuntime(IModHelper helper, IMonitor monitor, ModConfig config, PlayerLog log)
     {
         Helper = helper;
         _monitor = monitor;
         Config = config;
         Log = log;
+        _actionLane = new Lane(this, pausable: true);
+        _observeLane = new Lane(this, pausable: false);
     }
 
-    public Task<(bool ok, string text)> Enqueue(ToolDef tool, JsonElement args)
+    /// <summary>
+    /// Queue a call. With <paramref name="observation"/>, tools marked <see cref="ToolDef.Instant"/>
+    /// go to the observation lane; everything else, including debug ops, waits its turn in the action lane.
+    /// </summary>
+    public Task<(bool ok, string text)> Enqueue(ToolDef tool, JsonElement args, bool observation = false)
     {
         var call = new PendingCall { Tool = tool, Args = args };
-        _queue.Enqueue(call);
+        (observation && tool.Instant ? _observations : _actions).Enqueue(call);
         return call.Done.Task;
     }
 
-    /// <summary>Called every game tick (UpdateTicked).</summary>
+    /// <summary>Called every tick of this seat's screen (UpdateTicked).</summary>
     public void Tick()
     {
         _globalTicks++;
         AutoHandleOverlays();
-
-        if (_current == null && _queue.TryDequeue(out var next))
-            Start(next);
-
-        if (_current != null)
-            Step();
-
-        UpdateFreeze();
+        _actionLane.Tick(_actions);
+        _observeLane.Tick(_observations);
     }
 
     private void AutoHandleOverlays()
@@ -141,114 +135,130 @@ public class AgentRuntime
         }
     }
 
-    private void Start(PendingCall call)
+    /// <summary>Runs queued calls one at a time, stepping the current coroutine once per tick.</summary>
+    private class Lane
     {
-        _current = call;
-        _ctx = new CallContext();
-        _ticksInCall = 0;
-        _callStartDay = Context.IsWorldReady ? Game1.Date.TotalDays : 0;
-        _watch = Stopwatch.StartNew();
-        _stack.Clear();
+        private readonly AgentRuntime _rt;
+        private readonly bool _pausable;
+        private readonly Stack<IEnumerator> _stack = new();
+        private CallContext? _ctx;
+        private Stopwatch _watch = new();
+        private int _ticksInCall;
+        private int _callStartDay;
 
-        if (!call.Tool.Instant)
-            Log.Add("action", call.Tool.Name, AgentTools.Reason(call.Args), AgentTools.ArgsForLog(call.Args));
+        public PendingCall? Current { get; private set; }
 
-        try
+        /// <param name="pausable">Action lane: non-instant coroutines hold still while the world is frozen.</param>
+        public Lane(AgentRuntime rt, bool pausable)
         {
-            if (call.Tool.NeedsWorld && !Context.IsWorldReady)
+            _rt = rt;
+            _pausable = pausable;
+        }
+
+        public void Tick(ConcurrentQueue<PendingCall> queue)
+        {
+            if (Current == null && queue.TryDequeue(out var next))
+                Start(next);
+            if (Current != null)
+                Step();
+        }
+
+        private void Start(PendingCall call)
+        {
+            Current = call;
+            _ctx = new CallContext();
+            _ticksInCall = 0;
+            _callStartDay = Context.IsWorldReady ? Game1.Date.TotalDays : 0;
+            _watch = Stopwatch.StartNew();
+            _stack.Clear();
+
+            if (!call.Tool.Instant)
+                _rt.Log.Add("action", call.Tool.Name, AgentTools.Reason(call.Args), AgentTools.ArgsForLog(call.Args));
+
+            try
             {
-                _ctx.Fail("The game world is not loaded (title screen or loading). Wait and try again.");
+                if (call.Tool.NeedsWorld && !Context.IsWorldReady)
+                {
+                    _ctx.Fail("The game world is not loaded (title screen or loading). Wait and try again.");
+                    Finish();
+                    return;
+                }
+                _stack.Push(call.Tool.Run(call.Args, _ctx));
+            }
+            catch (Exception ex)
+            {
+                _ctx.Fail($"Error: {ex.Message}");
+                Finish();
+            }
+        }
+
+        private void Step()
+        {
+            // While the world is frozen (an AI is thinking) a running action holds still, so its
+            // stuck/re-plan counters and timeouts don't advance either.
+            if (_pausable && !Current!.Tool.Instant && WorldClock.WorldPaused)
+                return;
+
+            _ticksInCall++;
+            if (_ticksInCall > 60 * 60 * 6)
+            {
+                _ctx!.Fail("Action timed out after 6 minutes of real time.");
                 Finish();
                 return;
             }
-            _stack.Push(call.Tool.Run(call.Args, _ctx));
-        }
-        catch (Exception ex)
-        {
-            _ctx.Fail($"Error: {ex.Message}");
-            Finish();
-        }
-    }
 
-    private void Step()
-    {
-        _ticksInCall++;
-        if (_ticksInCall > 60 * 60 * 6)
-        {
-            _ctx!.Fail("Action timed out after 6 minutes of real time.");
-            Finish();
-            return;
-        }
-
-        if (_current!.Tool.Name != "go_to_bed" && _callStartDay > 0 && Context.IsWorldReady &&
-            Game1.Date.TotalDays > _callStartDay && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay)
-        {
-            Log.Add("system", text: $"Passed out / new day: farm day {AgentLog.FarmDay}");
-            _ctx!.Result = $"You passed out (2:00 AM or exhausted)! It is now farm day {AgentLog.FarmDay}. Stop here.";
-            Finish();
-            return;
-        }
-
-        try
-        {
-            // Run until the coroutine yields a "wait one tick" (null) or finishes.
-            while (_stack.Count > 0)
+            if (Current!.Tool.Name != "go_to_bed" && _callStartDay > 0 && Context.IsWorldReady &&
+                Game1.Date.TotalDays > _callStartDay && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay)
             {
-                var top = _stack.Peek();
-                if (!top.MoveNext())
-                {
-                    _stack.Pop();
-                    continue;
-                }
-                if (top.Current is IEnumerator nested)
-                {
-                    _stack.Push(nested);
-                    continue;
-                }
-                return; // yielded null: wait for next tick
+                _rt.Log.Add("system", text: $"Passed out / new day: farm day {AgentLog.FarmDay}");
+                _ctx!.Result = $"You passed out (2:00 AM or exhausted)! It is now farm day {AgentLog.FarmDay}. Stop here.";
+                Finish();
+                return;
             }
+
+            try
+            {
+                // Run until the coroutine yields a "wait one tick" (null) or finishes.
+                while (_stack.Count > 0)
+                {
+                    var top = _stack.Peek();
+                    if (!top.MoveNext())
+                    {
+                        _stack.Pop();
+                        continue;
+                    }
+                    if (top.Current is IEnumerator nested)
+                    {
+                        _stack.Push(nested);
+                        continue;
+                    }
+                    return; // yielded null: wait for next tick
+                }
+            }
+            catch (Exception ex)
+            {
+                _rt._monitor.Log($"Tool {Current?.Tool.Name} crashed: {ex}", LogLevel.Error);
+                _ctx!.Fail($"Error: {ex.Message}");
+            }
+            Finish();
         }
-        catch (Exception ex)
+
+        private void Finish()
         {
-            _monitor.Log($"Tool {_current?.Tool.Name} crashed: {ex}", LogLevel.Error);
-            _ctx!.Fail($"Error: {ex.Message}");
+            var call = Current!;
+            var ctx = _ctx!;
+            _stack.Clear();
+            Current = null;
+            _ctx = null;
+
+            var text = ctx.Result;
+            if (call.Tool.AppendStatus && Context.IsWorldReady)
+                text = text.TrimEnd() + "\n" + AgentTools.Footer();
+
+            if (!call.Tool.Instant || !ctx.Ok)
+                _rt.Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds);
+
+            call.Done.TrySetResult((ctx.Ok, text));
         }
-        Finish();
-    }
-
-    private void Finish()
-    {
-        var call = _current!;
-        var ctx = _ctx!;
-        _stack.Clear();
-        _current = null;
-        _ctx = null;
-
-        var text = ctx.Result;
-        if (call.Tool.AppendStatus && Context.IsWorldReady)
-            text = text.TrimEnd() + "\n" + AgentTools.Footer();
-
-        if (!call.Tool.Instant || !ctx.Ok)
-            Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds);
-
-        call.Done.TrySetResult((ctx.Ok, text));
-    }
-
-    private void UpdateFreeze()
-    {
-        bool shouldFreeze = Config.FreezeTimeWhileThinking && Context.IsWorldReady && !ActionRunning && !Game1.newDay &&
-                            Game1.activeClickableMenu is not StardewValley.Menus.ShippingMenu &&
-                            Game1.activeClickableMenu is not StardewValley.Menus.LevelUpMenu;
-        if (!shouldFreeze)
-        {
-            _frozen = false;
-            return;
-        }
-        if (!_frozen)
-        {
-            _frozen = true;
-            _frozenInterval = Math.Min(Game1.gameTimeInterval, Game1.realMilliSecondsPerGameTenMinutes - 200);
-        }
-        Game1.gameTimeInterval = _frozenInterval;
     }
 }

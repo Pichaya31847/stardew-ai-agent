@@ -45,6 +45,8 @@ public static class DebugApi
             Op("set_health", SetHealth),
             Op("set_stamina", SetStamina),
             Op("load_save", LoadSave, needsWorld: false),
+            Op("build_cabins", BuildCabins),
+            Op("capture", Capture, needsWorld: false),
         }.ToDictionary(t => t.Name);
     }
 
@@ -148,6 +150,66 @@ public static class DebugApi
         _titleTicks = 0;
         c.Result = $"Loading {name}; poll /api/state until saveFolder matches and ready is true";
         yield break;
+    }
+
+    /// <summary>Smoke saves only: add free cabins (with farmhand slots) so split-screen can join P2-P4.</summary>
+    private static IEnumerator BuildCabins(JsonElement a, CallContext c)
+    {
+        if (!Context.IsMainPlayer) { c.Fail("Run build_cabins on p1 (the host)"); yield break; }
+        if (SaveFolder.Name?.StartsWith("smoke_", StringComparison.OrdinalIgnoreCase) != true)
+        { c.Fail("build_cabins only runs on smoke_* save copies"); yield break; }
+
+        int want = Math.Clamp(I(a, "n", 3), 1, 7);
+        var farm = Game1.getFarm();
+        var built = new List<string>();
+        int w = farm.Map.Layers[0].LayerWidth, h = farm.Map.Layers[0].LayerHeight;
+        for (int y = 8; y < h - 6 && built.Count < want; y++)
+        {
+            for (int x = 8; x < w - 8 && built.Count < want; x++)
+            {
+                // A cabin is 5x3 plus a front row; only use plain buildable ground.
+                bool ok = true;
+                for (int dy = 0; dy < 4 && ok; dy++)
+                    for (int dx = 0; dx < 5 && ok; dx++)
+                    {
+                        int tx = x + dx, ty = y + dy;
+                        if (farm.doesTileHaveProperty(tx, ty, "Buildable", "Back") == null && farm.doesTileHaveProperty(tx, ty, "Diggable", "Back") == null)
+                            ok = false;
+                        else if (farm.getBuildingAt(new Microsoft.Xna.Framework.Vector2(tx, ty)) != null || farm.resourceClumps.Any(r => r.occupiesTile(tx, ty)))
+                            ok = false;
+                    }
+                if (!ok) continue;
+                for (int dy = 0; dy < 4; dy++)
+                    for (int dx = 0; dx < 5; dx++)
+                    {
+                        var t = new Microsoft.Xna.Framework.Vector2(x + dx, y + dy);
+                        farm.objects.Remove(t);
+                        farm.terrainFeatures.Remove(t);
+                    }
+                if (!farm.buildStructure("Cabin", new Microsoft.Xna.Framework.Vector2(x, y), Game1.player, out var b, magicalConstruction: true, skipSafetyChecks: true))
+                    continue;
+                if (b.GetIndoors() is StardewValley.Locations.Cabin cabin && !cabin.HasOwner)
+                    cabin.CreateFarmhand();
+                built.Add($"({x},{y})");
+                x += 6;
+            }
+        }
+        if (built.Count < want) { c.Fail($"Built {built.Count} of {want} cabins: {string.Join(" ", built)}"); yield break; }
+        c.Result = $"Built {built.Count} cabins at {string.Join(" ", built)}";
+    }
+
+    /// <summary>Save the next composed game frame (every screen, never the desktop) as PNG.</summary>
+    private static IEnumerator Capture(JsonElement a, CallContext c)
+    {
+        var path = S(a, "path");
+        if (path.Length == 0) path = Path.Combine(Path.GetTempPath(), "stardew-capture.png");
+        SplitScreenPatches.LastCapture = null;
+        SplitScreenPatches.PendingCapture = path;
+        for (int i = 0; i < 120 && SplitScreenPatches.LastCapture == null; i++)
+            yield return null;
+        var last = SplitScreenPatches.LastCapture;
+        if (last == null || last.StartsWith("error")) { c.Fail(last ?? "No frame was drawn"); yield break; }
+        c.Result = last;
     }
 
     // ------------------------------------------------------------------ save switching

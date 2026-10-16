@@ -82,7 +82,7 @@ get caught and betray each other. The story must emerge from the game, not from 
 4. Runner for claude / agy / opencode with personas and day phases (#41).
 5. Studio (#42): `/api/events`, overlay and replay moved out, OBS director and scenes, recorder.
 
-## Layout (current, single player)
+## Layout
 
 ```
 mod/StardewMCP/
@@ -95,7 +95,11 @@ mod/StardewMCP/
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries
     ModConfig.cs       config.json settings
-    DebugApi.cs        /api/debug/* test hooks (warp, set_time, add_item, load_save...), off by default
+    DebugApi.cs        /api/debug/* and /api/debug/p{N}/* test hooks (warp, build_cabins, capture...), off by default
+    Players.cs         The 4 split-screen seats (P1-P3 AI, P4 camera) and their per-screen state
+    WorldClock.cs      Freezes the world while any connected AI thinks (host pause); thinking timeout
+    SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
+    SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
   assets/              overlay.html (OBS source), replay.html
 runner/
   smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
@@ -106,11 +110,15 @@ runner/
 
 ## How it works
 
-- MCP requests arrive on the HTTP thread; `AgentRuntime` queues them and runs one at a time on
-  the game thread from `UpdateTicked`.
+- SMAPI raises `UpdateTicked` once per split-screen screen (`Context.ScreenId`); `Game1.player`,
+  `currentLocation` and menus are per screen. Each seat has its own `AgentRuntime`, ticked on its
+  screen; `AgentTools.Rt` is the seat of the screen being updated.
+- MCP requests arrive on the HTTP thread; the seat's `AgentRuntime` runs actions one at a time and
+  instant observations in a second lane, so `look`/`status` answer during the seat's own action.
 - Tools are `IEnumerator` coroutines: `yield return null` waits a tick, `yield return <IEnumerator>`
   runs a nested step. Report results through `CallContext` (`Result`, `Fail`).
-- `Instant` tools only observe and keep game time frozen; other tools unfreeze it while they run.
+- `Instant` tools only observe and keep the world frozen. `WorldClock` freezes the world while any
+  connected AI has no action running; running actions hold still meanwhile.
 - The model makes decisions; mechanics (pathing, aiming, button presses) are automated in the mod.
 
 ## Build
