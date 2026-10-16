@@ -476,6 +476,17 @@ def question_options() -> dict[str, int]:
     return {m.group(2).strip(): int(m.group(1)) for m in re.finditer(r"option (\d+): (.+)", ok("status"))}
 
 
+@case("totem")
+def totem():
+    """interact(holding) with no tile uses the item where you stand (performUseAction): a Warp Totem: Farm."""
+    reset("Farm")
+    ok("travel_to", location="FarmHouse", reason="smoke test")
+    debug("add_item", id="(O)688", qty=1)  # Warp Totem: Farm
+    text = ok("interact", holding="Warp Totem: Farm", reason="smoke test")
+    if "You are now in Farm" not in text or inventory_count("Warp Totem: Farm") != 0:
+        raise Smoke(f"the totem did not warp home and get used up: {text.splitlines()[0]}")
+
+
 @case("furnace")
 def furnace():
     """interact(holding) loads a machine through checkAction; interact without holding collects the output."""

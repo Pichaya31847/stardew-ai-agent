@@ -710,7 +710,13 @@ public static partial class AgentTools
             yield break;
         }
         yield return Ticks(30);
-        yield return WaitIdle(atTile ? 180 : 600); // totems play a two-second animation before warping
+        yield return WaitIdle(atTile ? 180 : 600);
+        if (!atTile)
+        {
+            // After its animation a totem hides the farmer and warps after a delayed fade.
+            for (int i = 0; i < 600 && (!Game1.displayFarmer || Game1.globalFade || P.freezePause > 0); i++) yield return null;
+            yield return WaitIdle();
+        }
 
         if (slot >= 0 && atTile) what += $" holding {held}";
         var now = atTile && Loc == startLoc ? WorldText.Describe(Loc, t.X, t.Y).label : was;
