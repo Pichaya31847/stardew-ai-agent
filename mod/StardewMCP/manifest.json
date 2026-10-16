@@ -1,9 +1,9 @@
 {
-  "Name": "Stardew MCP Bridge",
-  "Author": "Your Name",
-  "Version": "1.0.0",
-  "Description": "Allows AI to control Stardew Valley via MCP protocol",
-  "UniqueID": "YourName.StardewMCP",
+  "Name": "Stardew MCP",
+  "Author": "Duckxy",
+  "Version": "0.1.0",
+  "Description": "Lets an AI agent (Claude or any MCP client) play Stardew Valley through an in-game MCP server.",
+  "UniqueID": "Duckxy.StardewMCP",
   "EntryDll": "StardewMCP.dll",
   "MinimumApiVersion": "4.0.0",
   "UpdateKeys": []

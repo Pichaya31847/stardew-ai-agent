@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haiku Replay</title>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #f7f1e3; --card: #fffaf0; --ink: #2b2118; --muted: #7a6a55; --edge: #e2d3b4; --accent: #c7782b; --ok: #3f8f2e; --bad: #c0392b; --think: #8a5a00; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1d1914; --card: #26211a; --ink: #f3ead8; --muted: #b3a58c; --edge: #3d342a; --accent: #e8a24a; --ok: #8fd16a; --bad: #ff7a6b; --think: #ffd27a; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Kanit", "Leelawadee UI", sans-serif; }
+  header { padding: 16px; border-bottom: 1px solid var(--edge); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 22px; }
+  header span { color: var(--muted); font-size: 14px; }
+  main { display: grid; grid-template-columns: 180px 1fr; min-height: calc(100vh - 60px); }
+  nav { border-right: 1px solid var(--edge); padding: 8px; overflow-y: auto; max-height: calc(100vh - 60px); }
+  nav button { display: block; width: 100%; text-align: left; padding: 8px 10px; margin: 2px 0; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--ink); font: inherit; cursor: pointer; }
+  nav button.on { background: var(--card); border-color: var(--edge); color: var(--accent); }
+  section { padding: 16px; overflow-y: auto; max-height: calc(100vh - 60px); }
+  .diary { background: var(--card); border: 1px solid var(--edge); border-radius: 12px; padding: 12px 16px; white-space: pre-wrap; margin-bottom: 14px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 14px; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 70px 90px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--edge); font-size: 15px; }
+  .row .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .row .k { font-size: 13px; color: var(--muted); }
+  .row.think .txt { color: var(--think); font-size: 17px; }
+  .row .res { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  @media (max-width: 700px) { main { grid-template-columns: 1fr; } nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--edge); } nav button { width: auto; white-space: nowrap; } .row { grid-template-columns: 56px 1fr; } .row .k { display: none; } }
+</style>
+</head>
+<body>
+<header><h1>Claude Haiku เล่น Stardew — Replay</h1><span id="sum"></span></header>
+<main>
+  <nav id="days"></nav>
+  <section>
+    <div class="filters">
+      <label><input type="checkbox" id="fThink" checked> ความคิด</label>
+      <label><input type="checkbox" id="fAct" checked> การกระทำ</label>
+      <label><input type="checkbox" id="fRes" checked> ผลลัพธ์</label>
+      <label><input type="checkbox" id="fSys" checked> ระบบ</label>
+    </div>
+    <div id="diary" class="diary">เลือกวันทางซ้าย</div>
+    <div id="rows"></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let current = null, data = null;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function loadDays() {
+  const days = await (await fetch("/api/days")).json();
+  $("days").innerHTML = days.map(d => `<button data-d="${d}">วันที่ ${d}</button>`).join("");
+  $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
+  if (days.length) show(days[days.length - 1]);
+}
+
+async function show(d) {
+  current = d;
+  $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === d));
+  data = await (await fetch(`/api/day?n=${d}`)).json();
+  render();
+}
+
+function render() {
+  if (!data) return;
+  $("diary").textContent = data.diary || "(ยังไม่มีไดอารี่วันนี้)";
+  const show = { think: $("fThink").checked, action: $("fAct").checked, result: $("fRes").checked, system: $("fSys").checked, diary: true };
+  const es = data.entries;
+  const acts = es.filter(e => e.kind === "action").length;
+  const fails = es.filter(e => e.kind === "result" && e.ok === false).length;
+  const t0 = es[0]?.ts, t1 = es[es.length - 1]?.ts;
+  const mins = t0 && t1 ? Math.round((new Date(t1) - new Date(t0)) / 60000) : 0;
+  $("sum").textContent = `วันที่ ${data.day} · ${acts} actions · ล้มเหลว ${fails} · ใช้เวลาจริง ~${mins} นาที`;
+  $("rows").innerHTML = es.filter(e => show[e.kind]).map(e => {
+    if (e.kind === "think") return `<div class="row think"><span class="t">${e.gameTime}</span><span class="k">💭 คิด</span><span class="txt">${esc(e.text)}</span></div>`;
+    if (e.kind === "action") return `<div class="row"><span class="t">${e.gameTime}</span><span class="k">▶ ${esc(e.tool)}</span><span>${esc(e.text)} <span class="res">${esc(e.args ? JSON.stringify(e.args) : "")}</span></span></div>`;
+    if (e.kind === "result") return `<div class="row"><span class="t">${e.gameTime}</span><span class="k ${e.ok ? "ok" : "bad"}">${e.ok ? "✓" : "✗"} ${esc(e.tool)}</span><span class="res">${esc(e.text)} (${e.ms} ms)</span></div>`;
+    return `<div class="row"><span class="t">${e.gameTime}</span><span class="k">${e.kind}</span><span>${esc(e.text)}</span></div>`;
+  }).join("");
+}
+["fThink", "fAct", "fRes", "fSys"].forEach(id => $(id).onchange = render);
+loadDays();
+</script>
+</body>
+</html>
