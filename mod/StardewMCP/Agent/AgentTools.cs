@@ -95,11 +95,19 @@ public static class AgentTools
         return list;
     }
 
+    private static string StatusText()
+    {
+        var prof = Professions.PendingText(Rt, P);
+        return prof.Length > 0 ? WorldText.Status() + "\n" + prof : WorldText.Status();
+    }
+
     public static string Footer()
     {
         var sb = new StringBuilder($"[{WorldText.FormatTime(Game1.timeOfDay)} · {Loc?.Name} ({P.TilePoint.X},{P.TilePoint.Y}) · energy {(int)P.Stamina}/{P.MaxStamina} · {P.Money}g]");
         var menu = WorldText.MenuState().Trim();
         if (menu.Length > 0) sb.Append('\n').Append(menu);
+        var prof = Professions.PendingText(Rt, P);
+        if (prof.Length > 0) sb.Append('\n').Append(prof);
         return sb.ToString();
     }
 
@@ -128,7 +136,7 @@ public static class AgentTools
                 Description = "Current day, time, weather, location, position, energy, money, held item and any open dialogue/menu.",
                 Schema = Obj(new { }),
                 Instant = true, AppendStatus = false,
-                Run = (a, c) => Instant(c, WorldText.Status())
+                Run = (a, c) => Instant(c, StatusText())
             },
             new()
             {
@@ -255,6 +263,13 @@ public static class AgentTools
             },
             new()
             {
+                Name = "choose_profession",
+                Description = "Make a pending profession choice (offered at skill level 5 and 10, shown in status). It is permanent and changes what pays off, so read both options first.",
+                Schema = Obj(new { option = Int("0 or 1, as numbered in status"), skill = Str("Skill name if more than one choice is pending (Farming, Fishing, Foraging, Mining, Combat)"), reason = Str(ReasonDesc) }, "option", "reason"),
+                Run = ChooseProfession
+            },
+            new()
+            {
                 Name = "go_to_bed",
                 Description = $"End the day: walk home to your bed and sleep. Write your diary for today IN {Lang.ToUpperInvariant()} first (what you did, what went well/badly, plan for tomorrow). Crops grow and shipped items are sold overnight.",
                 Schema = Obj(new { diary = Str($"Today's diary in {Lang}, 3-8 sentences, written as yourself (Claude Haiku) farming"), reason = Str(ReasonDesc) }, "diary", "reason"),
@@ -349,6 +364,8 @@ public static class AgentTools
         for (int t = 0; t < limit; t++)
         {
             if (Game1.currentLocation != loc) yield break; // walked through a warp
+            // Stepped onto a warp: stop pushing into it, or the game re-warps (restarting the fade) every tick.
+            if (Game1.isWarping) { P.controller = null; yield break; }
             if (P.controller == null) break;
             if (Vector2.DistanceSquared(P.Position, last) < 0.01f) stuck++; else stuck = 0;
             last = P.Position;
@@ -803,7 +820,7 @@ public static class AgentTools
                 var near = Pathfinder.IsWalkable(loc, exit.Tile.X, exit.Tile.Y) ? exit.Tile : NearestWalkable(loc, exit.Tile, 3);
                 if (near == null) { c.Fail($"Can't find a walkable tile near the exit to {next}."); yield break; }
                 yield return WalkTo(near.Value, sub);
-                if (Loc == loc)
+                if (Loc == loc && !Game1.isWarping)
                 {
                     // The last step onto an edge exit is often blocked by the map edge itself, so being right next to it is enough.
                     var here = P.TilePoint;
@@ -847,39 +864,108 @@ public static class AgentTools
     private static IEnumerator ShopList(JsonElement a, CallContext c)
     {
         if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail("No shop is open. interact with a shop counter (A tile) during opening hours first."); yield break; }
-        var sb = new StringBuilder($"Shop {shop.ShopId} — you have {P.Money}g\n");
+        var cur = CurrencyUnit(shop.currency);
+        var sb = new StringBuilder($"Shop {shop.ShopId} — you have {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}\n");
         foreach (var s in shop.forSale)
         {
             if (!shop.itemPriceAndStock.TryGetValue(s, out var st)) continue;
             var stock = st.Stock == int.MaxValue ? "" : $" (stock {st.Stock})";
-            var trade = st.TradeItem != null ? $" + {st.TradeItemCount}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName}" : "";
-            sb.AppendLine($"  {s.DisplayName}: {st.Price}g{trade}{stock}");
+            var trade = st.TradeItem != null ? $" + {st.TradeItemCount ?? 5}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName}" : "";
+            var recipe = s.IsRecipe ? " [recipe: buying teaches it]" : "";
+            sb.AppendLine($"  {s.DisplayName}: {st.Price}{cur}{trade}{stock}{recipe}");
         }
         c.Result = sb.ToString().TrimEnd();
     }
 
+    private static string CurrencyUnit(int currency) => currency switch
+    {
+        1 => " star tokens",
+        2 => " Qi coins",
+        4 => " Qi gems",
+        _ => "g"
+    };
+
+    /// <summary>Buys through the game's own ShopMenu.tryToPurchaseItem, so recipes are learned, trade items
+    /// are consumed, purchase actions run and limited stock is synced, exactly like a click in the menu.</summary>
     private static IEnumerator Buy(JsonElement a, CallContext c)
     {
         if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail("No shop is open."); yield break; }
+        if (shop.readOnly) { c.Fail("This shop menu is read-only; nothing can be bought here."); yield break; }
         var name = S(a, "item").Trim().ToLowerInvariant();
         int qty = Math.Clamp(I(a, "quantity", 1), 1, 999);
         var sal = shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant() == name)
                   ?? shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant().Contains(name));
         if (sal == null || !shop.itemPriceAndStock.TryGetValue(sal, out var st)) { c.Fail($"\"{name}\" is not sold here. Use shop_list."); yield break; }
-        if (st.TradeItem != null) { c.Fail("Items that need a trade item are not supported."); yield break; }
-        if (sal is not Item proto) { c.Fail($"{sal.DisplayName} can't be bought this way (recipe/building)."); yield break; }
-        qty = Math.Min(qty, st.Stock);
-        int total = st.Price * qty;
-        if (P.Money < total) { c.Fail($"Not enough money: {qty}x {sal.DisplayName} costs {total}g, you have {P.Money}g."); yield break; }
+        if (shop.canPurchaseCheck != null && !shop.canPurchaseCheck(shop.forSale.IndexOf(sal))) { c.Fail($"{sal.DisplayName} can't be bought right now."); yield break; }
 
-        var item = ItemRegistry.Create(proto.QualifiedItemId, qty);
-        if (!P.couldInventoryAcceptThisItem(item)) { c.Fail("Inventory is full."); yield break; }
-        P.Money -= total;
-        P.addItemToInventoryBool(item);
-        if (st.Stock != int.MaxValue) st.Stock -= qty;
-        Game1.playSound("purchaseClick");
+        // Friendly pre-checks; the game's purchase would only play a "cancel" sound.
+        if (sal.IsRecipe) qty = 1;
+        qty = Math.Min(qty, st.Stock);
+        if (qty <= 0) { c.Fail($"{sal.DisplayName} is sold out."); yield break; }
+        var cur = CurrencyUnit(shop.currency);
+        int have = ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
+        if (have < st.Price * qty) { c.Fail($"Not enough money: {qty}x {sal.DisplayName} costs {st.Price * qty}{cur}, you have {have}{cur}."); yield break; }
+        if (st.TradeItem != null)
+        {
+            int need = (st.TradeItemCount ?? 5) * qty;
+            if (!shop.HasTradeItem(st.TradeItem, need)) { c.Fail($"{sal.DisplayName} also needs {need}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName ?? st.TradeItem}."); yield break; }
+        }
+        // Move the shop's held item into the inventory; whatever doesn't fit is dropped at the player's feet.
+        bool dropped = false;
+        void PutAwayHeld()
+        {
+            if (shop.heldItem is not Item held) return;
+            shop.heldItem = null;
+            if (P.addItemToInventory(held) is Item rest)
+            {
+                Game1.createItemDebris(rest, P.getStandingPosition(), P.FacingDirection);
+                dropped = true;
+            }
+        }
+
+        // A leftover held item (e.g. from a manual click) would be stacked onto; put it away before the space check.
+        PutAwayHeld();
+        var probe = sal.GetSalableInstance();
+        probe.Stack = qty * sal.Stack;
+        if (!sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P)) { c.Fail($"Can't buy {sal.DisplayName}: inventory is full or you can't hold it."); yield break; }
+
+        var purchase = Rt.Helper.Reflection.GetMethod(shop, "tryToPurchaseItem");
+        int maxChunk = Math.Max(1, sal.GetSalableInstance().maximumStackSize());
+        int bought = 0, spent = 0;
+        while (bought < qty)
+        {
+            int n = Math.Min(qty - bought, maxChunk);
+            int before = ShopMenu.getPlayerCurrencyAmount(P, shop.currency), stockBefore = st.Stock;
+            bool soldOut = purchase.Invoke<bool>(sal, null, n, 0, 0);
+            int paid = before - ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
+            if (soldOut)
+            {
+                // Same bookkeeping the menu does after a click that empties the stock.
+                shop.itemPriceAndStock.Remove(sal);
+                shop.forSale.Remove(sal);
+            }
+            // Free items charge nothing: count them only if something visibly happened.
+            bool got = paid > 0 || shop.heldItem != null || st.Stock < stockBefore ||
+                       (sal.IsRecipe && sal is Item r && (P.cookingRecipes.ContainsKey(r.BaseName) || P.craftingRecipes.ContainsKey(r.BaseName)));
+            PutAwayHeld();
+            if (!got) break;
+            bought += n;
+            spent += paid;
+            if (soldOut || Game1.activeClickableMenu != shop) break;
+        }
         yield return Ticks(10);
-        c.Result = $"Bought {qty}x {sal.DisplayName} for {total}g. Money left {P.Money}g.";
+
+        if (bought == 0) { c.Fail($"The shop refused to sell {sal.DisplayName}."); yield break; }
+        var left = $"Money left {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}.";
+        if (sal.IsRecipe)
+        {
+            var key = (sal as Item)?.BaseName ?? sal.Name;
+            bool known = P.cookingRecipes.ContainsKey(key) || P.craftingRecipes.ContainsKey(key);
+            c.Result = known ? $"Learned recipe: {key} for {spent}{cur}. {left}" : $"Paid {spent}{cur} for {sal.DisplayName}, but the recipe is not in your recipe list. {left}";
+            yield break;
+        }
+        var note = dropped ? " Inventory was full: the rest was dropped at your feet." : "";
+        c.Result = $"Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note} {left}";
     }
 
     private static IEnumerator Ship(JsonElement a, CallContext c)
@@ -938,6 +1024,26 @@ public static class AgentTools
             Rt.Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
     }
 
+    private static IEnumerator ChooseProfession(JsonElement a, CallContext c)
+    {
+        var pending = Rt.PendingProfessions;
+        if (pending.Count == 0) { c.Fail("No profession choice is pending. They come with skill levels 5 and 10."); yield break; }
+        var skillName = S(a, "skill");
+        Point choice;
+        if (skillName.Length > 0)
+        {
+            int skill = Professions.SkillIndex(skillName);
+            var match = pending.Where(p => p.X == skill).OrderBy(p => p.Y).ToList();
+            if (match.Count == 0) { c.Fail($"No pending choice for \"{skillName}\". Pending: {string.Join(", ", pending.Select(p => $"{Professions.SkillName(p.X)} {p.Y}"))}."); yield break; }
+            choice = match[0];
+        }
+        else choice = pending.OrderBy(p => p.Y).First();
+        var text = Professions.Choose(Rt, P, choice, I(a, "option", -1), out var err);
+        if (text == null) { c.Fail(err); yield break; }
+        Rt.Log.Add("system", text: $"Profession chosen: {text}");
+        c.Result = text;
+    }
+
     private static IEnumerator GoToBed(JsonElement a, CallContext c)
     {
         var diary = S(a, "diary").Trim();
@@ -946,6 +1052,7 @@ public static class AgentTools
         int dayBefore = Game1.Date.TotalDays;
         int moneyBefore = P.Money;
         Rt.Log.WriteDiary(AgentLog.FarmDay, diary);
+        Professions.ResolveDefaults(Rt, P, "not chosen before bed");
 
         if (Loc is not FarmHouse)
         {
@@ -976,11 +1083,7 @@ public static class AgentTools
                     break;
                 case LevelUpMenu lm when t % 60 == 0 && lm.isActive:
                     if (lm.isProfessionChooser)
-                    {
-                        // TODO: let the AI choose; for now pick the first profession and log it.
-                        Rt.Log.Add("system", text: $"Level up: profession choice auto-picked option 1 ({Rt.Helper.Reflection.GetField<List<int>>(lm, "professionsToChoose").GetValue().FirstOrDefault()})");
-                        lm.receiveLeftClick(lm.leftProfession.bounds.Center.X, lm.leftProfession.bounds.Center.Y);
-                    }
+                        Professions.Defer(lm, Rt);
                     else
                         lm.okButtonClicked();
                     break;

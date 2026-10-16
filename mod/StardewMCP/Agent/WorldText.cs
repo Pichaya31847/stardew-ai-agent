@@ -38,6 +38,8 @@ public static class WorldText
         sb.AppendLine($"Location: {loc?.Name}{(loc is StardewValley.Locations.MineShaft ms ? $" (floor {ms.mineLevel})" : "")} at ({p.TilePoint.X},{p.TilePoint.Y}) facing {DirName(p.FacingDirection)}");
         sb.AppendLine($"Energy {(int)p.Stamina}/{p.MaxStamina} · Health {p.health}/{p.maxHealth} · Money {p.Money}g");
         var held = p.CurrentItem;
+        var owned = Professions.Owned(p);
+        if (owned.Length > 0) sb.AppendLine($"Professions: {owned}");
         sb.AppendLine($"Holding: {(held == null ? "nothing" : $"{held.DisplayName} x{held.Stack}")} (slot {p.CurrentToolIndex})");
         if (p.questLog.Count > 0)
         {

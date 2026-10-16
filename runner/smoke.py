@@ -278,6 +278,20 @@ def inventory_count(name: str) -> int:
     return total
 
 
+def open_shop(location: str, hhmm: int) -> str:
+    """Set the time, travel to `location` and interact with its action tiles until a shop opens. Returns shop_list."""
+    debug("set_time", time=hhmm)
+    ok("travel_to", location=location, reason="smoke test")
+    look = ok("look", radius=12)
+    counters = [t for _, tiles in parse_things(look, "A") for t in tiles]
+    for x, y in counters:
+        ok("interact", x=x, y=y, reason="smoke test: find the shop counter")
+        good, text = call("shop_list")
+        if good:
+            return text
+    raise Smoke(f"no action tile in {location} opened a shop (tried {counters[:6]})")
+
+
 def fresh_state() -> dict:
     """/api/state is a snapshot refreshed about 4 times a second; wait for it to catch up after a tool call."""
     time.sleep(0.6)
@@ -328,19 +342,7 @@ def shop_buy():
     if fresh_state().get("dayOfMonth", 0) % 7 == 3:
         raise SkipCase("Pierre's is closed on Wednesdays; run the gate on another day to cover the shop")
     reset("Farm")
-    debug("set_time", time=1000)  # Pierre's is open 9:00-17:00 (closed Wednesdays)
-    ok("travel_to", location="SeedShop", reason="smoke test")
-    look = ok("look", radius=12)
-    counters = [t for _, tiles in parse_things(look, "A") for t in tiles]
-    opened = False
-    for x, y in counters:
-        ok("interact", x=x, y=y, reason="smoke test: find the shop counter")
-        good, _ = call("shop_list")
-        if good:
-            opened = True
-            break
-    if not opened:
-        raise Smoke(f"no action tile opened a shop (tried {counters[:6]})")
+    open_shop("SeedShop", 1000)  # Pierre's is open 9:00-17:00 (closed Wednesdays)
 
     before = inventory_count("Parsnip Seeds")
     money = fresh_state().get("money")
@@ -393,6 +395,68 @@ def ship_and_sleep():
     if fresh_state().get("day") != day + 1:
         raise Smoke("day did not advance")
 
+
+@case("buy_recipe")
+def buy_recipe():
+    """#7: a bought recipe is learned, not handed over as the dish."""
+    reset("Farm")
+    debug("set_time", time=1300)
+    wednesday = fresh_state().get("dayOfMonth", 0) % 7 == 3
+    for shop_id in ("Saloon", "SeedShop"):  # Gus sells cooking recipes, Pierre some crafting ones
+        if shop_id == "SeedShop" and wednesday:
+            continue  # Pierre's door is locked on Wednesdays
+        ok("travel_to", location=shop_id, reason="smoke test")
+        debug("open_shop", id=shop_id)  # set_time doesn't move the owner to the counter
+        listing = ok("shop_list")
+        recipes = [m.group(1) for m in re.finditer(r"^\s+(.+?): (\d+)g.*\[recipe", listing, re.M)]
+        if recipes:
+            break
+        ok("close_menu")
+    else:
+        raise SkipCase("neither the Saloon nor Pierre's sells a recipe today")
+
+    listed = recipes[0]
+    dish = re.sub(r"\s*\(?Recipe\)?$", "", listed)  # shops list "Hashbrowns (Recipe)"
+    before = inventory_count(dish)
+    money = fresh_state().get("money")
+    text = ok("buy", item=listed, quantity=1, reason="smoke test")
+    if not text.startswith("Learned recipe:"):
+        raise Smoke(f"expected 'Learned recipe', got: {text.splitlines()[0]}")
+    if inventory_count(dish) != before:
+        raise Smoke(f"buying {listed} put the dish in the inventory")
+    if fresh_state().get("money", money) >= money:
+        raise Smoke("money did not drop after buying a recipe")
+    ok("close_menu")
+
+
+@case("choose_profession")
+def choose_profession():
+    """#8: level-5 profession choices wait for the AI; an unmade choice gets the default at bedtime."""
+    reset("Farm")
+    if "Professions:" in ok("status"):
+        raise SkipCase("this save already has professions; run the gate on an earlier save")
+    debug("set_skill", skill="farming", level=5)
+    debug("set_skill", skill="fishing", level=5)
+    ok("go_to_bed", diary="Smoke test diary: reached farming and fishing level 5 today.", reason="smoke test")
+
+    status = ok("status")
+    for skill in ("Farming 5", "Fishing 5"):
+        if f"Pending profession choice (permanent): {skill}" not in status:
+            raise Smoke(f"no pending {skill} choice in status:\n{status}")
+    text = ok("choose_profession", option=1, skill="Farming", reason="smoke test")
+    if "Tiller" not in text:
+        raise Smoke(f"expected Tiller for Farming option 1, got: {text.splitlines()[0]}")
+    good, _ = call("choose_profession", option=1, skill="Mining", reason="smoke test")
+    if good:
+        raise Smoke("choose_profession accepted a skill with no pending choice")
+
+    ok("go_to_bed", diary="Smoke test diary: chose Tiller and left the fishing choice to the default.", reason="smoke test")
+    status = ok("status")
+    m = re.search(r"^Professions: (.+)$", status, re.M)
+    if not m or "Tiller" not in m.group(1) or "Fisher" not in m.group(1):
+        raise Smoke(f"expected Tiller (chosen) and Fisher (default) in status, got: {m.group(0) if m else status}")
+    if "Pending profession choice" in status:
+        raise Smoke("a profession choice is still pending after bedtime")
 
 
 # ---------------------------------------------------------------------- multi-seat (social tools)
@@ -602,7 +666,6 @@ def give():
         raise Smoke(f"give to a full pack should fail, got: {text.splitlines()[0]}")
 
 
-CASES.append(Case("buy_recipe", lambda: None, skip="needs the recipe purchase fix (#7)"))
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
 
 

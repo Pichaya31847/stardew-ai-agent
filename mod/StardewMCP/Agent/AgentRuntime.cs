@@ -47,6 +47,10 @@ public class AgentRuntime
     private int _eventTicks;
 
     public PlayerLog Log { get; }
+
+    /// <summary>Profession choices (skill, level) waiting for choose_profession, and the game day they were offered.</summary>
+    public List<Microsoft.Xna.Framework.Point> PendingProfessions { get; } = new();
+    public int PendingProfessionDay { get; set; }
     public ModConfig Config { get; }
     public IModHelper Helper { get; }
 
@@ -99,11 +103,7 @@ public class AgentRuntime
                     break;
                 case StardewValley.Menus.LevelUpMenu lm when lm.isActive:
                     if (lm.isProfessionChooser)
-                    {
-                        var profs = Helper.Reflection.GetField<List<int>>(lm, "professionsToChoose").GetValue();
-                        Log.Add("system", text: $"Level up: profession choice auto-picked option 1 ({(profs.Count > 0 ? profs[0] : 0)})");
-                        lm.receiveLeftClick(lm.leftProfession.bounds.Center.X, lm.leftProfession.bounds.Center.Y);
-                    }
+                        Professions.Defer(lm, this);
                     else
                         lm.okButtonClicked();
                     break;
