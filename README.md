@@ -104,6 +104,13 @@ game folder, copies the mod into `Mods/` and creates a release zip in `bin/`.
 
 Pull requests and issues are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Credits
+
+Originally forked from [Hunter-Thompson/stardew-mcp](https://github.com/Hunter-Thompson/stardew-mcp),
+which first bridged Stardew Valley to MCP through a Go server and a WebSocket mod. This project has
+since been rewritten as a standalone mod with its own in-game MCP server, and the original Go server
+and WebSocket code have been removed.
+
 ## License
 
 [MIT](LICENSE). Stardew Valley is a trademark of ConcernedApe; this project is a fan-made mod and
@@ -126,5 +133,8 @@ Mod สำหรับ Stardew Valley ที่ให้ AI (เช่น Claude
 `claude mcp add --transport http stardew http://localhost:8770/mcp`
 
 **สนับสนุนผู้พัฒนา:** ดูหัวข้อ *Support the project* ด้านบน
+
+**เครดิต:** เริ่มต้นจากการ fork [Hunter-Thompson/stardew-mcp](https://github.com/Hunter-Thompson/stardew-mcp)
+แล้วเขียนใหม่ทั้งหมดเป็น mod ที่มี MCP server ในตัว
 
 **สัญญาอนุญาต:** MIT — ดาวน์โหลด ใช้ แก้ไข และนำไปพัฒนาต่อได้ฟรี แค่คงข้อความ license ไว้
