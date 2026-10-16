@@ -923,6 +923,14 @@ public static class AgentTools
 
     // ------------------------------------------------------------------ sleep
 
+    /// <summary>Press OK on the end-of-day shipping screen once. okClicked restarts the 800 ms outro fade,
+    /// so clicking again during the outro (two clickers a second apart) keeps the menu open forever.</summary>
+    public static void ClickShippingOk(ShippingMenu sm)
+    {
+        if (!Rt.Helper.Reflection.GetField<bool>(sm, "outro").GetValue())
+            Rt.Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
+    }
+
     private static IEnumerator GoToBed(JsonElement a, CallContext c)
     {
         var diary = S(a, "diary").Trim();
@@ -957,7 +965,7 @@ public static class AgentTools
             switch (Game1.activeClickableMenu)
             {
                 case ShippingMenu sm when t % 60 == 0:
-                    Rt.Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
+                    ClickShippingOk(sm);
                     break;
                 case LevelUpMenu lm when t % 60 == 0 && lm.isActive:
                     if (lm.isProfessionChooser)
