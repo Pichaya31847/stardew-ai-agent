@@ -62,7 +62,7 @@ get caught and betray each other. The story must emerge from the game, not from 
   event stream `/api/events` (SSE). It never references OBS or video concerns.
 - `studio/` is the YouTube layer and optional: overlay (per-player think/chat/whisper), replay,
   OBS director, recorder, story log for editing. It only reads the mod's HTTP API.
-  `assets/overlay.html` and `assets/replay.html` move here.
+  `studio/overlay.html` and `studio/replay.html` live here.
 - `runner/` launches and supervises the three AI sessions and the day loop.
 
 **Video**
@@ -110,7 +110,11 @@ mod/StardewMCP/
     WorldClock.cs      Freezes the world while any connected AI thinks (host pause); thinking timeout
     SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
     SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
-  assets/              overlay.html (OBS source), replay.html
+studio/
+  overlay.html         OBS browser-source overlay
+  replay.html          Day-by-day replay of the logs
+  director.py          OBS scene switcher driven by /api/events (SSE)
+  test_director.py     Unit tests for director scene picking
 runner/
   smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
   run_days.py          One `claude -p` session per in-game day

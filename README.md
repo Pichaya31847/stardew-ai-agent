@@ -120,6 +120,8 @@ The first time the game starts its local co-op server, Windows Firewall may ask 
 - `obs_recorder.py` pauses the OBS recording while the game is frozen, so the video only contains
   gameplay. Needs OBS with obs-websocket enabled.
 
+`studio/` contains the YouTube / OBS layer (`overlay.html`, `replay.html`, and `director.py` which switches OBS scenes from `/api/events`).
+
 ## Build from source
 
 ```bash
