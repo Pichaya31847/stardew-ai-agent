@@ -771,6 +771,64 @@ def pay():
         raise Smoke("a rejected pay still moved money")
 
 
+@case("bedtime")
+@social
+def bedtime():
+    """At the configured bedtime an AI that is not in bed is told once that the others wait for it."""
+    reset("Farm")
+    unfreeze()
+    for seat in ("p1", "p2", "p3"):
+        ok_seat(seat, "status")  # connect, so the seat counts as an AI that is up
+    debug("set_time", time=2210)
+    t0 = time.time()
+    heard = ""
+    while "bedtime" not in heard and time.time() - t0 < 6:
+        time.sleep(1)
+        heard = hear("p2")
+    if "go_to_bed" not in heard:
+        raise Smoke(f"p2 got no bedtime warning:\n{heard}")
+    time.sleep(2.5)
+    if "bedtime" in hear("p2"):
+        raise Smoke("the bedtime warning was sent twice in one day")
+
+
+@case("sleep_together")
+@social
+def sleep_together():
+    """All three AIs go to bed at 20:00: the day must end by itself, not wait for the camera farmer's 2:00 AM pass-out."""
+    import threading
+    reset("Farm")
+    unfreeze()
+    debug("set_time", time=2000)
+    day = fresh_state()["day"]
+    results: dict[str, tuple] = {}
+
+    def sleep(seat: str) -> None:
+        try:
+            results[seat] = call_seat(seat, "go_to_bed", {"diary": f"Smoke test diary of {seat}: the whole team went to bed together.", "reason": "smoke test"})
+        except Exception as e:  # reported below
+            results[seat] = (False, f"{type(e).__name__}: {e}")
+
+    threads = [threading.Thread(target=sleep, args=(seat,)) for seat in ("p1", "p2", "p3")]
+    for t in threads:
+        t.start()
+    latest = "00:00"
+    while any(t.is_alive() for t in threads):
+        s = state()
+        if s.get("ready") and s.get("day") == day:
+            latest = max(latest, s.get("time", ""))
+        time.sleep(0.5)
+    for t in threads:
+        t.join()
+    bad = {seat: r for seat, r in results.items() if not r[0]}
+    if bad or len(results) != 3:
+        raise Smoke(f"go_to_bed failed: {bad or results}")
+    if fresh_state().get("day") != day + 1:
+        raise Smoke(f"day did not advance (was {day})")
+    if latest >= "24:00":
+        raise Smoke(f"the day only ended at {latest}: something is still waiting for 2:00 AM")
+
+
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
 
 

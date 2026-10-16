@@ -42,6 +42,9 @@ public class ModConfig
     /// <summary>Split-screen: set each screen's zoom to keep about 20 tiles in view (1.5 × screen width / 960).</summary>
     public bool AutoZoom { get; set; } = true;
 
+    /// <summary>Split-screen: from this time (HHMM, e.g. 2200) an AI that is not in bed gets one warning per day that the others wait for it. 0 = off.</summary>
+    public int BedtimeWarning { get; set; } = 2200;
+
     /// <summary>Profession picked when the AI hasn't used choose_profession by bedtime: 0 = left option, 1 = right.</summary>
     public int DefaultProfession { get; set; } = 0;
 }

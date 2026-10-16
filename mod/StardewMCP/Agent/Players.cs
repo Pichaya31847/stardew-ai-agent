@@ -69,6 +69,7 @@ public class ScreenState
     public int[]? Tile { get; init; }
     public int Money { get; init; }
     public int Energy { get; init; }
+    public bool InBed { get; init; }
     public int MaxEnergy { get; init; }
     public string? Menu { get; init; }
     public string? Dialogue { get; init; }
@@ -88,6 +89,7 @@ public class ScreenState
             Tile = new[] { p.TilePoint.X, p.TilePoint.Y },
             Money = p.Money,
             Energy = (int)p.Stamina,
+            InBed = p.isInBed.Value,
             MaxEnergy = p.MaxStamina,
             Menu = menu?.GetType().Name,
             Dialogue = menu is StardewValley.Menus.DialogueBox box ? box.characterDialogue?.speaker?.displayName ?? "" : null

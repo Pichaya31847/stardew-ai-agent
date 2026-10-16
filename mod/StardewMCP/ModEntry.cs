@@ -84,6 +84,8 @@ public class ModEntry : Mod
         if (seat.Screen == 0)
         {
             WorldClock.Tick();
+            if (e.IsMultipleOf(60))
+                Bedtime.Tick(_config);
             if (e.IsMultipleOf(15))
                 _http.RefreshState();
         }
