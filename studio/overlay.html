@@ -417,8 +417,9 @@ const MOCK_SCRIPT = [
   [{ action: null }, { kind: "system", text: "New day: farm day 2" }],
   [{}, { kind: "result", tool: "go_to_bed", text: "Good morning!", ok: true }],
 ];
+const API = (new URLSearchParams(location.search).get("api") || (location.port === "8770" ? "" : "http://localhost:8770")).replace(/\/$/, "");
 async function fetchFeed(after) {
-  if (!MOCK) { const r = await fetch(`/api/feed?after=${after}`); return r.json(); }
+  if (!MOCK) { const r = await fetch(`${API}/api/feed?after=${after}`); return r.json(); }
   if (!mockT) mockState = { ready: true, day: 1, season: "spring", dayOfMonth: 1, year: 1, location: "FarmHouse", money: 500, frozen: true, action: null, dialogue: null };
   const i = Math.floor(mockT++ / 10); // one scripted step every ~4 s
   if (mockT % 10 === 1 && MOCK_SCRIPT[i]) {
@@ -431,7 +432,7 @@ async function fetchFeed(after) {
 async function fetchDay(n) {
   try {
     if (MOCK) return { day: n, entries: mockLog.filter(e => e.day === n) };
-    const r = await fetch(`/api/day?n=${n}`); return r.json();
+    const r = await fetch(`${API}/api/day?n=${n}`); return r.json();
   } catch (e) { return null; }
 }
 

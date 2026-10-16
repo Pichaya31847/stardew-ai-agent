@@ -48,8 +48,10 @@ const $ = id => document.getElementById(id);
 let current = null, data = null;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+const API = (new URLSearchParams(location.search).get("api") || (location.port === "8770" ? "" : "http://localhost:8770")).replace(/\/$/, "");
+
 async function loadDays() {
-  const days = await (await fetch("/api/days")).json();
+  const days = await (await fetch(`${API}/api/days`)).json();
   $("days").innerHTML = days.map(d => `<button data-d="${d}">วันที่ ${d}</button>`).join("");
   $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
   if (days.length) show(days[days.length - 1]);
@@ -58,7 +60,7 @@ async function loadDays() {
 async function show(d) {
   current = d;
   $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === d));
-  data = await (await fetch(`/api/day?n=${d}`)).json();
+  data = await (await fetch(`${API}/api/day?n=${d}`)).json();
   render();
 }
 
