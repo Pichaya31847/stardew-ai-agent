@@ -22,6 +22,9 @@ get caught and betray each other. The story must emerge from the game, not from 
 - Backends are the CLIs the user already subscribes to: `claude` (Claude), `agy` (Gemini),
   `opencode` (GPT). Each session gets only the stardew MCP tools (no shell, no file edits).
   A direct API backend may be added later per player if a CLI proves unreliable.
+- Filmed models: P1 Claude Haiku 5.5 (`claude-haiku-5-5`), P2 Gemini 3.8 Flash (`agy`, `gemini-3.8-flash-*`),
+  P3 GPT-6 Luna (`opencode`, `gpt-6-luna`; needs an OpenAI-compatible provider in the user's opencode config).
+  The 3-day warm-up uses P1 and P2 only.
 - Characters **emerge from experience** on top of the base model, not from hand-written personas (#48):
   each AI writes its own `self` note (overwritten every evening, about 150 words) and a one-line `people`
   note per other player. Only the owner and the viewers see them (overlay, like `think`); the viewers get
