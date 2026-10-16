@@ -1,14 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <EnableHarmony>true</EnableHarmony>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <BundleExtraAssemblies>ThirdParty</BundleExtraAssemblies>
+    <RootNamespace>StardewMCP</RootNamespace>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.*" />
-    <PackageReference Include="WebSocketSharp-netstandard" Version="1.0.1" />
   </ItemGroup>
+
+  <!-- Overlay and replay pages served by the in-game HTTP server. -->
+  <ItemGroup>
+    <None Include="assets\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
