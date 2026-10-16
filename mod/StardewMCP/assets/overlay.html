@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Haiku Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* dark panels */
+    --panel: rgba(18,18,24,.9); --edge: rgba(255,255,255,.08);
+    --text: #E6E6EA; --text-2: #C9C9D1; --dim: #8A8A96; --tool: #61D6D6;
+    --think: #7FB2FF; --act: #F2A93B; --bad: #FF6B6B; --ok-mark: #16C60C; --bad-mark: #E74856;
+    /* parchment cards (new day, diary) */
+    --parch: #F6E7C1; --parch-2: #E9D29C; --wood: #7A4A22; --wood-dk: #4A2C14;
+    --ink: #2B1A0B; --ink-2: #6B4E2E; --ink-3: #5A4026; --night: #2C3E73;
+    --hud-clear: 340px;  /* bottom-left strip left free for the game's HUD messages */
+  }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { width: 1920px; height: 1080px; position: relative; font-family: "Mitr", "Leelawadee UI", "Tahoma", sans-serif; color: var(--text); }
+  .hide { display: none !important; }
+
+  .panel { box-sizing: border-box; padding: 14px 18px; background: var(--panel); border: 1px solid var(--edge);
+           border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .label { font-size: 14px; letter-spacing: .08em; color: var(--dim); margin-bottom: 6px; }
+
+  /* top-left status: only what the game itself does not show */
+  #status { position: absolute; left: 24px; top: 24px; width: 480px; display: flex; flex-direction: column; gap: 6px; }
+  #status .line1 { display: flex; align-items: baseline; gap: 10px; font-size: 26px; font-weight: 600; line-height: 1.2; }
+  #status .muted { font-weight: 400; color: var(--dim); }
+  #status .place { font-weight: 400; color: var(--text-2); }
+  #status .line2 { display: flex; align-items: center; gap: 10px; font-size: 18px; line-height: 1.4; color: var(--text-2); }
+  #status .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--dim); }
+
+  /* the game stacks HUD messages ("+1 Parsnip", "Inventory full") up from the bottom-left corner: keep that strip clear */
+  #col { position: absolute; left: 24px; top: 134px; bottom: var(--hud-clear); width: 480px; display: flex; flex-direction: column; gap: 16px;
+         font-family: "Cascadia Mono", "Cascadia Code", Consolas, "Mitr", monospace; }
+  #col > .panel { flex-shrink: 0; }
+  body.npc #col { bottom: auto; }
+
+  #logPanel { font-size: 19px; line-height: 1.5; }
+  #logPanel .label { margin-bottom: 8px; }
+  .hist { display: flex; align-items: center; gap: 12px; }
+  .hist .tool { flex: none; width: 7ch; color: var(--tool); }
+  .hist .why { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist .mark { flex: none; }
+  #proof { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--edge); font-size: 14px; line-height: 1.6; color: var(--dim); }
+  #proof .live { color: var(--bad-mark); }
+
+  #actPanel { font-size: 20px; line-height: 1.5; }
+  #actLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* fills whatever height is left above the HUD strip; long thoughts clip at the top so the newest words stay visible */
+  #col > #thinkPanel { margin-top: auto; flex-shrink: 1; min-height: 0; display: flex; flex-direction: column; font-size: 22px; line-height: 1.5; }
+  #replyPanel { font-size: 22px; line-height: 1.5; }
+  .textwrap { overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+  #thinkPanel .textwrap { min-height: 0; }
+  #replyPanel .textwrap { max-height: 230px; } /* column must end above the game's dialogue box (~y 684) */
+  .caret { color: var(--think); }
+
+  body.npc #logPanel, body.npc #thinkPanel { display: none; }
+  body:not(.npc) #replyPanel { display: none; }
+
+  /* full-screen parchment cards */
+  .scrim { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+           opacity: 0; transition: opacity .5s; pointer-events: none; }
+  .scrim.show { opacity: 1; }
+  .parch { box-sizing: border-box; background: var(--parch); color: var(--ink); border: 8px solid var(--wood); border-radius: 12px;
+           box-shadow: inset 0 0 0 4px var(--parch-2), 0 0 0 5px var(--wood-dk), 0 12px 0 5px rgba(0,0,0,.4); }
+
+  #daycard { background: rgba(20,12,4,.55); }
+  #daycard .card { width: 900px; display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 40px 56px 44px; }
+  #daycard .season { font-size: 32px; font-weight: 500; color: var(--ink-2); }
+  #daycard .big { display: flex; align-items: baseline; gap: 22px; line-height: .9; }
+  #daycard .big .w { font-size: 72px; font-weight: 600; }
+  #daycard .big .num { font-size: 190px; font-weight: 600; color: var(--wood-dk); }
+  #daycard .big .of { font-size: 64px; font-weight: 500; color: var(--ink-2); }
+  #cells { display: flex; flex-wrap: wrap; gap: 3px; width: 700px; }
+  #cells i { width: 32px; height: 18px; border-radius: 2px; background: #E2C990; }
+  #cells i.past { background: #2F6B22; } #cells i.now { background: #E8962E; }
+  #daycard .stats { display: flex; gap: 16px; margin-top: 8px; }
+  #daycard .stat { display: flex; flex-direction: column; align-items: center; padding: 10px 22px; background: var(--parch-2); border-radius: 8px; min-width: 170px; }
+  #daycard .stat span:first-child { font-size: 20px; color: var(--ink-3); }
+  #daycard .stat span:last-child { font-weight: 600; font-size: 34px; }
+
+  #diary { background: rgba(12,20,52,.72); }
+  #diary .card { width: 1200px; height: 700px; display: flex; flex-direction: column; gap: 22px; padding: 48px 64px; box-shadow: inset 0 0 0 4px var(--parch-2), 0 0 0 5px var(--wood-dk), 0 12px 0 5px rgba(0,0,0,.45); }
+  #diary .head { display: flex; align-items: center; justify-content: space-between; }
+  #diary .title { display: flex; flex-direction: column; gap: 4px; }
+  #diary .title span:first-child { font-size: 54px; font-weight: 600; color: var(--wood-dk); line-height: 1.1; }
+  #diary .title span:last-child { font-size: 28px; color: var(--ink-2); }
+  #diary .badge { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: var(--night); color: #fff; border-radius: 8px; font-size: 24px; font-weight: 500; }
+  #diary .rule { height: 4px; background: #D9BE85; border-radius: 2px; }
+  #diaryText { flex: 1; min-height: 0; overflow: hidden; font-size: 44px; line-height: 1.5; white-space: pre-line; }
+  #diaryText.long { font-size: 34px; } #diaryText.longer { font-size: 28px; }
+  #diary .foot { display: flex; justify-content: space-between; align-items: center; font-size: 18px; color: var(--ink-3); }
+  #diary .zzz { font-weight: 600; font-size: 40px; color: var(--wood); }
+</style>
+</head>
+<body>
+  <div id="status" class="panel">
+    <div class="line1">
+      <span>วันที่ <span id="day">–</span><span class="muted">/100</span></span>
+      <span class="muted">·</span>
+      <span class="place" id="place">–</span>
+    </div>
+    <div class="line2"><span class="dot" id="modeDot"></span><span id="modeText">รอเกม…</span></div>
+  </div>
+
+  <div id="col">
+    <div id="replyPanel" class="panel">
+      <div class="label" id="replyLabel">REPLY</div>
+      <div class="textwrap"><div id="replyText">…</div></div>
+    </div>
+
+    <div id="logPanel" class="panel">
+      <div class="label">LOG</div>
+      <div id="hist"></div>
+      <div id="proof"></div>
+    </div>
+
+    <div id="actPanel" class="panel">
+      <div class="label">ACTION</div>
+      <div id="actLine">ทำ: ?</div>
+    </div>
+
+    <div id="thinkPanel" class="panel">
+      <div class="label">MODEL THINKING</div>
+      <div class="textwrap"><div id="thinkText">…</div></div>
+    </div>
+  </div>
+
+  <div id="daycard" class="scrim"><div class="card parch">
+    <div class="season" id="dcSeason"></div>
+    <div class="big"><span class="w">วันที่</span><span class="num" id="dcDay"></span><span class="of">/ 100</span></div>
+    <div id="cells"></div>
+    <div class="stats">
+      <div class="stat"><span>เงินเมื่อวาน</span><span id="dcMoney">–</span></div>
+      <div class="stat"><span>ทำสำเร็จ</span><span id="dcOk" style="color:#2F6B22">–</span></div>
+      <div class="stat"><span>พลาด</span><span id="dcBad" style="color:#A82A20">–</span></div>
+    </div>
+  </div></div>
+
+  <div id="diary" class="scrim"><div class="card parch">
+    <div class="head">
+      <div class="title"><span id="dyTitle">บันทึก</span><span id="dySub"></span></div>
+      <div class="badge">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        เข้านอนแล้ว
+      </div>
+    </div>
+    <div class="rule"></div>
+    <div id="diaryText"></div>
+    <div class="foot"><span id="dyFoot"></span><span class="zzz">Zzz</span></div>
+  </div></div>
+
+<script>
+const SEASON = { spring: "ฤดูใบไม้ผลิ", summer: "ฤดูร้อน", fall: "ฤดูใบไม้ร่วง", winter: "ฤดูหนาว" };
+// Thai verb for the ACTION line
+const TOOL = {
+  walk_to: "เดิน", use_tool: "ใช้เครื่องมือ", plant: "ปลูก", harvest: "เก็บเกี่ยว", interact: "กดใช้",
+  talk_to: "คุย", travel_to: "เดินทาง", buy: "ซื้อ", ship: "ส่งขาย", eat: "กิน", wait: "รอเวลา",
+  go_to_bed: "เข้านอน", respond: "ตอบ", close_menu: "ปิดเมนู", shop_list: "ดูของในร้าน"
+};
+// short terminal-style name for the LOG column
+const TOOL_EN = {
+  walk_to: "move", use_tool: "tool", plant: "plant", harvest: "harvest", interact: "use",
+  talk_to: "talk", travel_to: "travel", buy: "buy", ship: "ship", eat: "eat", wait: "wait",
+  go_to_bed: "sleep", respond: "reply", close_menu: "close", shop_list: "shop"
+};
+const PLACE = {
+  FarmHouse: "ในบ้าน", Farm: "ฟาร์ม", BusStop: "ป้ายรถเมล์", Town: "ในเมือง", SeedShop: "ร้าน Pierre",
+  Beach: "ชายหาด", Mountain: "ภูเขา", Forest: "ป่า", Saloon: "ร้าน Saloon", Blacksmith: "ร้านตีเหล็ก",
+  AnimalShop: "ร้าน Marnie", ScienceHouse: "บ้าน Robin", Mine: "เหมือง", Hospital: "คลินิก", JojaMart: "Joja Mart",
+  ArchaeologyHouse: "พิพิธภัณฑ์", Woods: "ป่าลึก", CommunityCenter: "ศูนย์ชุมชน", FishShop: "ร้าน Willy"
+};
+const place = n => PLACE[n] || n || "–";
+const C = { plain: "var(--text)", think: "var(--think)", act: "var(--act)", bad: "var(--bad)", dim: "var(--dim)", ok: "var(--ok-mark)" };
+
+// English mod results -> short Thai for viewers
+const RESULT_TH = [
+  [/^No known route from (\w+) to (\w+)/, (m) => `ไม่รู้ทางจาก${place(m[1])}ไป${place(m[2])}`],
+  [/^Arrived in (\w+)/, (m) => `ถึง${place(m[1])}แล้ว`],
+  [/^Arrived at \((\d+),\s*(\d+)\)/, (m) => `ถึง (${m[1]},${m[2]})`],
+  [/^No walkable path/, () => "เดินไปไม่ได้"],
+  [/^Interacted with/, () => "กดแล้ว"],
+  [/^Menu closed|^No menu open/, () => "ปิดเมนูแล้ว"],
+  [/^Talking to (.+?) \(friendship (\d+)/, (m) => `เริ่มคุยกับ ${m[1]} (หัวใจ ${m[2]})`],
+  [/^Dialogue closed/, () => "คุยจบ"],
+  [/^Dialogue continued/, () => "คุยต่อ"],
+  [/^This is a question/, () => "ต้องเลือกข้อก่อน"],
+  [/^No dialogue is open/, () => "ไม่มีบทสนทนาเปิดอยู่"],
+  [/^Couldn't start a conversation with (\S+)/, (m) => `คุยกับ ${m[1]} ไม่ได้`],
+  [/^(\S+) is not on this map/, (m) => `${m[1]} ไม่อยู่แถวนี้`],
+  [/^Tried to sleep but the day did not change/, () => "นอนแล้วแต่วันไม่เปลี่ยน"],
+  [/^No "(.+?)" in inventory/, (m) => `ไม่มี ${m[1]} ในกระเป๋า`],
+];
+function resultTh(text, ok) {
+  const line = (text || "").split("\n")[0];
+  for (const [re, fn] of RESULT_TH) { const m = line.match(re); if (m) return fn(m); }
+  if (!line) return ok ? "สำเร็จ" : "ไม่สำเร็จ";
+  return line.length > 38 ? line.slice(0, 36) + "…" : line;
+}
+
+// one result line for an action: ok flag + short Thai
+function judge(tool, args, e) {
+  let ok = e.ok !== false, th = resultTh(e.text, ok);
+  // asked for one tile, stopped on another: count it as a miss
+  const m = (e.text || "").match(/^Arrived at \((\d+),\s*(\d+)\)/);
+  if (tool === "walk_to" && m && args && args.x !== undefined && (+m[1] !== +args.x || +m[2] !== +args.y)) { ok = false; th = `ไปไม่ถึง หยุดที่ (${m[1]},${m[2]})`; }
+  return { ok, th };
+}
+
+// ✓/✗ counts and start-of-day money from a whole day's log (survives overlay reloads)
+function tally(entries) {
+  let act = null, ok = 0, bad = 0, money = null;
+  for (const e of entries) {
+    if (money === null && typeof e.money === "number") money = e.money;
+    if (e.kind === "action") act = e;
+    else if (e.kind === "result" && act && act.tool === e.tool) { judge(act.tool, act.args, e).ok ? ok++ : bad++; act = null; }
+  }
+  return { ok, bad, money };
+}
+
+function target(tool, args) {
+  args = args || {};
+  if (tool === "respond") return args.option !== undefined && args.option !== null ? `ข้อ ${Number(args.option) + 1}` : "กดคุยต่อ";
+  if (args.location) return "→ " + place(args.location);
+  if (args.name) return args.name;
+  if (args.item) return args.item;
+  if (args.x !== undefined && args.y !== undefined) return `(${args.x},${args.y})`;
+  return "";
+}
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+let after = 0, typing = null, lastDay = null, booted = false;
+let modelShort = "", meta = {};             // from feed meta, so the overlay follows whichever model is playing
+const who = () => modelShort || "AI";
+let cur = { action: null, result: null };   // current act → result
+let hist = [];                              // finished actions (latest last)
+let talk = null;                            // fallback NPC detection when state.dialogue is absent
+// night sequence: diary entry (held) → "Sleeping..." (show diary) → day ticks over + "New day" → day card
+let pendingDiary = null, diaryAt = 0, diaryTimer = null;
+let newDayFor = null, sleepDone = false;
+const DIARY_MIN_MS = 12000;                 // keep the diary up at least this long before the day card replaces it
+
+function typeText(text) {
+  clearInterval(typing);
+  let i = 0;
+  const draw = () => {
+    const shown = esc(text.slice(0, i)) + (i < text.length ? '<span class="caret"> ▍</span>' : "");
+    $("thinkText").innerHTML = shown; $("replyText").innerHTML = shown;
+  };
+  draw();
+  typing = setInterval(() => { i++; draw(); if (i >= text.length) clearInterval(typing); }, 22);
+}
+
+function finishAction() { if (cur.action) hist.push(cur); if (hist.length > 30) hist = hist.slice(-30); cur = { action: null, result: null }; }
+
+function onEntry(e, state) {
+  after = Math.max(after, e.seq);
+  if (e.kind === "think") {
+    finishAction();
+    typeText(e.text || "");
+  } else if (e.kind === "action") {
+    if (cur.action) finishAction();
+    cur.action = { tool: e.tool, why: e.text || "", args: e.args || {} };
+    if (e.tool !== "talk_to" && e.tool !== "respond" && e.tool !== "close_menu") talk = null;
+  } else if (e.kind === "result") {
+    if (cur.action && cur.action.tool === e.tool && !cur.result) cur.result = judge(e.tool, cur.action.args, e);
+    const t = (e.text || "").match(/^Talking to (.+?) \(/);
+    if (e.tool === "talk_to" && e.ok !== false && t) talk = t[1];
+    if (/^Dialogue closed/.test(e.text || "") || e.tool === "close_menu") talk = null;
+    if (e.tool === "go_to_bed" && e.ok === false) { pendingDiary = null; hideDiary(); }
+  } else if (e.kind === "diary") {
+    // logged mid go_to_bed, so the action stays current; written before the walk home; held until the mod logs that the player is actually in bed
+    pendingDiary = { text: e.text || "", sub: diarySub(state) };
+  } else if (e.kind === "system") {
+    if (/^Sleeping/.test(e.text || "") && pendingDiary) {
+      if (booted) showDiary(pendingDiary);
+      pendingDiary = null;
+    }
+    if (/^New day|^Passed out/.test(e.text || "")) sleepDone = true;
+  }
+}
+
+function renderLog() {
+  $("hist").innerHTML = hist.slice(-4).map(h => {
+    const ok = h.result ? h.result.ok : null;
+    const mark = ok === null ? "…" : ok ? "✓" : "✗";
+    const color = ok === null ? C.dim : ok ? C.ok : "var(--bad-mark)";
+    const tool = TOOL_EN[h.action.tool] || h.action.tool;
+    return `<div class="hist"><span class="tool">${esc(tool)}</span><span class="why">${esc(h.action.why || target(h.action.tool, h.action.args))}</span><span class="mark" style="color:${color}">${mark}</span></div>`;
+  }).join("");
+}
+
+function renderAction(frozen, speaker) {
+  const a = cur.action, r = cur.result;
+  let text, color;
+  if (r) { text = `ผล: ${r.ok ? "✓" : "✗"} ${r.th}`; color = r.ok ? C.ok : C.bad; }
+  else if (a) { text = `ทำ: ${TOOL[a.tool] || a.tool} ${target(a.tool, a.args)}`.trim(); color = C.act; }
+  else if (frozen) { text = "กำลังคิด…"; color = C.think; }
+  else { text = speaker ? "ตอบ: ?" : "ทำ: ?"; color = C.dim; }
+  const el = $("actLine");
+  el.textContent = text; el.style.color = color;
+}
+
+function clock() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  const off = -d.getTimezoneOffset(), sign = off >= 0 ? "+" : "-", oh = Math.floor(Math.abs(off) / 60), om = Math.abs(off) % 60;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${sign}${p(oh)}${om ? p(om) : ""}`;
+}
+
+async function showDayCard(s) {
+  const st = tally(((await fetchDay(s.day - 1)) || {}).entries || []);
+  hideDiary();
+  $("dcSeason").textContent = `${SEASON[s.season] || s.season} วันที่ ${s.dayOfMonth} · ปี ${s.year}`;
+  $("dcDay").textContent = s.day;
+  $("cells").innerHTML = Array.from({ length: 100 }, (_, i) => `<i class="${i + 1 < s.day ? "past" : i + 1 === s.day ? "now" : ""}"></i>`).join("");
+  const dm = st.money !== null && typeof s.money === "number" ? s.money - st.money : null;
+  $("dcMoney").textContent = dm === null ? "–" : `${dm >= 0 ? "+" : "−"}${Math.abs(dm).toLocaleString()}g`;
+  $("dcOk").textContent = st.ok;
+  $("dcBad").textContent = st.bad;
+  $("daycard").classList.add("show");
+  setTimeout(() => $("daycard").classList.remove("show"), 5000);
+}
+
+// day card waits for the agent's sleep to finish (or no agent sleep at all) and for the diary's minimum time
+function maybeDayCard(s) {
+  if (newDayFor === null || !s.ready) return;
+  if (!sleepDone && s.action === "go_to_bed") return;
+  if ($("diary").classList.contains("show") && Date.now() - diaryAt < DIARY_MIN_MS) return;
+  newDayFor = null; sleepDone = false;
+  showDayCard(s);
+}
+
+function diarySub(s) {
+  return s && s.ready ? `คืนวันที่ ${s.day} · ${SEASON[s.season] || s.season} ${s.dayOfMonth} · ปี ${s.year}` : "";
+}
+
+function showDiary(d) {
+  $("dyTitle").textContent = `บันทึกของ ${who()}`;
+  $("dySub").textContent = d.sub;
+  $("dyFoot").textContent = `${meta.modelId || "–"}${meta.session ? " · session " + meta.session.slice(0, 8) : ""}`;
+  const t = $("diaryText");
+  t.textContent = d.text;
+  t.className = d.text.length > 400 ? "longer" : d.text.length > 220 ? "long" : "";
+  $("diary").classList.add("show");
+  diaryAt = Date.now();
+  clearTimeout(diaryTimer);
+  diaryTimer = setTimeout(hideDiary, 180000); // safety net if the night never completes
+}
+function hideDiary() { clearTimeout(diaryTimer); $("diary").classList.remove("show"); }
+
+async function poll() {
+  try {
+    const d = await fetchFeed(after);
+    const s = d.state || {};
+    meta = d.meta || {};
+    if (meta.model) modelShort = meta.model.replace(/^Claude\s+/i, "").trim();
+    for (const e of d.entries || []) onEntry(e, s);
+    booted = true;
+
+    // NPC dialogue: prefer the mod's state.dialogue; older builds fall back to talk_to/respond results.
+    // Boxes with no speaker (sleep prompt, TV, signs) are not conversations.
+    const speaker = "dialogue" in s ? (s.dialogue && s.dialogue.speaker) || null : talk;
+    document.body.classList.toggle("npc", !!speaker);
+    $("replyLabel").textContent = `REPLY TO ${String(speaker || "NPC").toUpperCase()}`;
+
+    if (s.ready) {
+      $("day").textContent = s.day;
+      $("place").textContent = place(s.location);
+      if (lastDay !== null && s.day > lastDay) newDayFor = s.day;
+      lastDay = s.day;
+      maybeDayCard(s);
+    }
+
+    let mode, color;
+    if (!s.ready) { mode = "รอเกม…"; color = C.dim; }
+    else if (s.action) { mode = `เวลาเดิน · กำลัง${TOOL[s.action] || s.action}…`; color = C.act; }
+    else if (s.frozen) { mode = speaker ? `หยุดเวลา · คุยกับ ${speaker}` : `หยุดเวลา · ${who()} กำลังคิด`; color = C.think; }
+    else { mode = "เวลาเดิน"; color = C.act; }
+    $("modeText").textContent = mode;
+    $("modeDot").style.background = color;
+
+    renderLog();
+    renderAction(!!s.frozen && !s.action, speaker);
+    $("proof").innerHTML = `<div><span class="live">●</span> LIVE · ${esc(meta.modelId || "–")}${meta.session ? " · session " + esc(meta.session.slice(0, 8)) : ""}</div>`
+      + `<div>seq ${after} · ${clock()}</div>`;
+  } catch (e) { /* game not running yet */ }
+  setTimeout(poll, 400);
+}
+
+// ?mock=1 replays a short scripted feed so the overlay can be designed without the game
+const MOCK = new URLSearchParams(location.search).has("mock");
+let mockT = 0, mockLog = [], mockState = {};
+const MOCK_SCRIPT = [
+  [{ frozen: true }, { kind: "think", text: "วันที่ 1 ฤดูใบไม้ผลิ มีเงิน 500g และพลังงานเต็ม แผนคือไปดูที่ดิน ถางหญ้า ตอไม้ และก้อนหินให้โล่ง แล้วไถพรวนปลูกพาร์สนิปที่มีอยู่ 15 เมล็ด ก่อนหาทางออกจากบ้านทางประตูล่างที่ (3,11)" }],
+  [{ frozen: true, action: "walk_to" }, { kind: "action", tool: "walk_to", text: "เดินไปทางประตูออกบ้าน", args: { x: 3, y: 10 } }],
+  [{ frozen: true, action: null }, { kind: "result", tool: "walk_to", text: "Arrived at (3,10).", ok: true }],
+  [{}, { kind: "action", tool: "walk_to", text: "เดินออกจากประตูบ้านลงไปข้างล่าง", args: { x: 3, y: 12 } }],
+  [{}, { kind: "result", tool: "walk_to", text: "Arrived at (3,11).", ok: true }],
+  [{}, { kind: "action", tool: "travel_to", text: "ออกไปที่ฟาร์ม", args: { location: "Farm" } }],
+  [{}, { kind: "result", tool: "travel_to", text: "No known route from FarmHouse to Farm.", ok: false }],
+  [{ location: "SeedShop" }, { kind: "action", tool: "talk_to", text: "[ตัวอย่าง] ทักทาย Pierre", args: { name: "Pierre" } }],
+  [{ dialogue: { speaker: "Pierre" } }, { kind: "result", tool: "talk_to", text: "Talking to Pierre (friendship 0 hearts).", ok: true }],
+  [{}, { kind: "think", text: "[ตัวอย่าง] ความคิดของ Haiku ว่าจะตอบ Pierre ยังไง" }],
+  [{}, { kind: "action", tool: "respond", text: "[ตัวอย่าง] เลือกตอบแบบสุภาพ", args: { option: 1 } }],
+  [{ dialogue: null }, { kind: "result", tool: "respond", text: "Dialogue closed.", ok: true }],
+  [{ action: "go_to_bed", money: 480 }, { kind: "action", tool: "go_to_bed", text: "[ตัวอย่าง] กลับบ้านไปนอน", args: {} }],
+  [{}, { kind: "diary", text: "[ตัวอย่าง] ไดอารี่ของคืนนั้น" }],
+  [{ location: "FarmHouse", dialogue: { speaker: null, question: true } }, { kind: "system", text: "Walking home…" }],
+  [{ dialogue: null }, { kind: "system", text: "Sleeping..." }],
+  [{ day: 2, dayOfMonth: 2, money: 620 }, { kind: "system", text: "Shipping…" }],
+  [{ action: null }, { kind: "system", text: "New day: farm day 2" }],
+  [{}, { kind: "result", tool: "go_to_bed", text: "Good morning!", ok: true }],
+];
+async function fetchFeed(after) {
+  if (!MOCK) { const r = await fetch(`/api/feed?after=${after}`); return r.json(); }
+  if (!mockT) mockState = { ready: true, day: 1, season: "spring", dayOfMonth: 1, year: 1, location: "FarmHouse", money: 500, frozen: true, action: null, dialogue: null };
+  const i = Math.floor(mockT++ / 10); // one scripted step every ~4 s
+  if (mockT % 10 === 1 && MOCK_SCRIPT[i]) {
+    const [patch, entry] = MOCK_SCRIPT[i];
+    Object.assign(mockState, patch);
+    mockLog.push({ seq: mockLog.length + 1, day: mockState.day, money: mockState.money, ...entry });
+  }
+  return { state: mockState, meta: { model: "Claude Haiku 5.5", modelId: "claude-haiku-5-5", session: "mock0000", run: "mock" }, entries: mockLog.filter(e => e.seq > after) };
+}
+async function fetchDay(n) {
+  try {
+    if (MOCK) return { day: n, entries: mockLog.filter(e => e.day === n) };
+    const r = await fetch(`/api/day?n=${n}`); return r.json();
+  } catch (e) { return null; }
+}
+
+poll();
+</script>
+</body>
+</html>

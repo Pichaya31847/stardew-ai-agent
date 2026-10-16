@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+*.zip
+
+# IDEs
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Run output, logs and local settings
+runs/
+logs/
+*.log
+mod/StardewMCP/config.json
+.env
+
+# Claude Code local state
+.claude/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
