@@ -121,7 +121,11 @@ public static class DebugApi
         var skill = S(a, "skill").ToLowerInvariant();
         int level = Math.Clamp(I(a, "level", 0), 0, 10);
         var p = Game1.player;
-        int index;
+        int index, old = skill switch
+        {
+            "farming" => p.farmingLevel.Value, "fishing" => p.fishingLevel.Value, "foraging" => p.foragingLevel.Value,
+            "mining" => p.miningLevel.Value, "combat" => p.combatLevel.Value, _ => 0
+        };
         switch (skill)
         {
             case "farming": index = 0; p.farmingLevel.Value = level; break;
@@ -132,6 +136,10 @@ public static class DebugApi
             default: c.Fail("skill must be farming, fishing, foraging, mining or combat"); yield break;
         }
         p.experiencePoints[index] = XpForLevel[level];
+        // Queue tonight's level-up screens (profession choices at 5 and 10) for the levels gained, like real play.
+        for (int l = old + 1; l <= level; l++)
+            if (!p.newLevels.Contains(new Microsoft.Xna.Framework.Point(index, l)))
+                p.newLevels.Add(new Microsoft.Xna.Framework.Point(index, l));
         c.Result = $"{skill} level set to {level}";
         yield break;
     }
