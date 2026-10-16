@@ -117,7 +117,7 @@ Rules:
 | Crab pots | place, then action holding bait | `place`, `interact(holding)` | ❌ | #4 |
 | Mine ladders, shafts | action on a tile | `interact` | ✅ | |
 | Mine elevator | `MineElevator` → `MineElevatorMenu` | `menu choose` | ✅ smoke `mine_elevator` | #2 |
-| Combat | weapon swings, aim | fight driver | ❌ | #5, #6 |
+| Combat | weapon swings, aim | `fight`: best weapon, walk to the nearest monster, swing with `Farmer.BeginUsingTool` | 🟡 untested, no smoke case yet; health rules for the mines (#6) to come | #5, #6 |
 | Festivals | arrive on time → ready check `festivalStart` → actions, shops, games | travel + primitives + game drivers | ❌ | #11 |
 | Night events: fairy, witch, meteorite, Qi plane | automatic | | 🟡 they play by themselves | |
 | Arcade, casino, darts, crane | `IMinigame`, `CalicoJack`, `Slots` | drivers (optional) | ❌ | |
