@@ -354,6 +354,7 @@ public class AgentHttp
                 : null,
             screens = GameRunner.instance.gameInstances.Count,
             plan = PlanBoard.Snapshot(),
+            owned = Ownership.OwnedObjects(),
             players
         }, AgentLog.Json);
     }

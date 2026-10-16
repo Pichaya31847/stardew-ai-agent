@@ -603,7 +603,7 @@ public static class AgentTools
             Utility.tryToPlaceItem(loc, item, t.X * 64 + 32, t.Y * 64 + 32);
             yield return Ticks(8);
             bool ok = (!hadCrop && dirt.crop != null) || dirt.fertilizer.Value != hadFert;
-            if (ok) planted++;
+            if (ok) { planted++; Ownership.ClaimCrop(dirt, Rt.Log.Player); }
             else lines.Add($"({t.X},{t.Y}) could not plant {item.DisplayName} (occupied, wrong season, or not plantable here)");
         }
         c.Result = $"Planted {planted}/{tiles.Count} tiles." + (lines.Count > 0 ? "\n" + string.Join("\n", lines) : "");

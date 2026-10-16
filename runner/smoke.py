@@ -695,6 +695,56 @@ def wallets():
     ok_seat("p2", "close_menu")
 
 
+def theft_entries(thief: str) -> list[dict]:
+    return [e for e in _request("/api/feed")["entries"] if e.get("kind") == "theft" and e.get("player") == thief]
+
+
+@case("ownership")
+@social
+def ownership():
+    """p1 owns a chest and a ripe crop; p2 takes from the chest and harvests the crop: two theft entries, owner shown."""
+    reset("Farm")
+    unfreeze()
+    runs = parse_tillable_runs(ok("look", radius=10), 3)
+    if not runs:
+        raise Smoke("no run of 3 tillable tiles near the farm entrance")
+    chest_tile, crop_tile = runs[0][0], runs[0][1]
+    debug("place_chest", x=chest_tile[0], y=chest_tile[1])
+    debug("add_item", id="(O)472", qty=1)  # Parsnip Seeds
+    ok("use_tool", tool="Hoe", tiles=[crop_tile], reason="smoke test")
+    ok("plant", item="Parsnip Seeds", tiles=[crop_tile], reason="smoke test")
+    debug("grow_crops")
+
+    look = ok("look", radius=10)
+    if "Chest (3 items, owner p1)" not in look or "Parsnip READY (owner p1)" not in look:
+        raise Smoke(f"look lacks the owners:\n{look}")
+    if not any(o["kind"] == "chest" and o["owner"] == "p1" and o["tile"] == chest_tile for o in fresh_state().get("owned", [])):
+        raise Smoke("/api/state does not list p1's chest")
+
+    loc, x, y = p1_tile()
+    unfreeze()
+    debug_seat("p2", "warp", location=loc, x=x, y=y + 1)
+    if theft_entries("p2"):
+        raise Smoke("p2 has theft entries before it took anything")
+    ok_seat("p2", "interact", x=chest_tile[0], y=chest_tile[1], reason="smoke test")
+    debug_seat("p2", "chest_take")
+    ok_seat("p2", "close_menu")
+    ok_seat("p2", "harvest", tiles=[crop_tile], reason="smoke test")
+
+    kinds = {(e["args"]["what"], e["args"]["victim"]) for e in theft_entries("p2")}
+    if kinds != {("chest", "p1"), ("crop", "p1")}:
+        raise Smoke(f"expected p2 to steal from p1's chest and crop, got {kinds}")
+
+    # the owner doing the same is not a theft
+    debug("add_item", id="(O)472", qty=1)
+    ok("use_tool", tool="Hoe", tiles=[crop_tile], reason="smoke test")
+    ok("plant", item="Parsnip Seeds", tiles=[crop_tile], reason="smoke test")
+    debug("grow_crops")
+    ok("harvest", tiles=[crop_tile], reason="smoke test")
+    if theft_entries("p1"):
+        raise Smoke("p1 harvesting its own crop was logged as theft")
+
+
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
 
 

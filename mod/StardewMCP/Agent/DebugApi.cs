@@ -48,6 +48,9 @@ public static class DebugApi
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
             Op("separate_wallets", EconomyTools.DebugSeparateWallets),
+            Op("place_chest", PlaceChest),
+            Op("chest_take", ChestTake),
+            Op("grow_crops", GrowCrops),
             Op("capture", Capture, needsWorld: false),
             Op("chat_log", ChatLog),
             Op("disconnect", Disconnect),
@@ -221,6 +224,39 @@ public static class DebugApi
         }
         if (built.Count < want) { c.Fail($"Built {built.Count} of {want} cabins: {string.Join(" ", built)}"); yield break; }
         c.Result = $"Built {built.Count} cabins at {string.Join(" ", built)}";
+    }
+
+    /// <summary>Place a chest owned by this seat on the tile (x, y) of its current map, holding 3 Parsnips.</summary>
+    private static IEnumerator PlaceChest(JsonElement a, CallContext c)
+    {
+        var tile = new Microsoft.Xna.Framework.Vector2(I(a, "x", 0), I(a, "y", 0));
+        var chest = new StardewValley.Objects.Chest(true, tile);
+        chest.owner.Value = Game1.player.UniqueMultiplayerID;
+        chest.Items.Add(ItemRegistry.Create("(O)24", 3));
+        Game1.currentLocation.objects[tile] = chest;
+        c.Result = $"Chest placed at ({tile.X},{tile.Y}), owner {Players.Current.Id}";
+        yield break;
+    }
+
+    /// <summary>Take the first item out of the open chest through the chest's own grab callback, as a click in the menu does.</summary>
+    private static IEnumerator ChestTake(JsonElement a, CallContext c)
+    {
+        if (Game1.activeClickableMenu is not ItemGrabMenu { context: StardewValley.Objects.Chest chest }) { c.Fail("No chest is open"); yield break; }
+        var item = chest.GetItemsForPlayer().FirstOrDefault(i => i != null);
+        if (item == null) { c.Fail("The chest is empty"); yield break; }
+        chest.grabItemFromChest(item, Game1.player);
+        Game1.player.addItemToInventoryBool(item);
+        c.Result = $"Took {item.Stack} x {item.DisplayName} from the chest";
+    }
+
+    /// <summary>Ripen every crop on the current map.</summary>
+    private static IEnumerator GrowCrops(JsonElement a, CallContext c)
+    {
+        int n = 0;
+        foreach (var tf in Game1.currentLocation.terrainFeatures.Values)
+            if (tf is StardewValley.TerrainFeatures.HoeDirt { crop: not null } dirt) { dirt.crop.growCompletely(); n++; }
+        c.Result = $"{n} crops ripened";
+        yield break;
     }
 
     /// <summary>Forget that an AI is attached to this seat, so an idle seat stops holding the world frozen.</summary>
