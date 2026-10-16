@@ -134,4 +134,6 @@ dotnet build -p:EnableModDeploy=false -p:EnableModZip=false   # compile check on
 - Keep everything original: don't copy code from other mods or repos unless their license
   allows it, and credit them if so.
 - Never commit game files, saves, logs or personal paths.
+- New game features follow `docs/coverage.md`: reuse the game's own entry points, and update the
+  feature's row in the same PR.
 - Reference: https://stardewvalleywiki.com/Modding:Modder_Guide/APIs
