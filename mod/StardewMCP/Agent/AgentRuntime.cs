@@ -95,7 +95,7 @@ public class AgentRuntime
             switch (Game1.activeClickableMenu)
             {
                 case StardewValley.Menus.ShippingMenu sm:
-                    Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
+                    AgentTools.ClickShippingOk(sm);
                     break;
                 case StardewValley.Menus.LevelUpMenu lm when lm.isActive:
                     if (lm.isProfessionChooser)
