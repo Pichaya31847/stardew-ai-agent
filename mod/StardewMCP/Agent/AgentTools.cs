@@ -29,6 +29,8 @@ public class ToolDef
     public bool Instant;
     public bool NeedsWorld = true;
     public bool AppendStatus = true;
+    /// <summary>Chat and whispers waiting for the player are appended to this tool's result (false for debug ops).</summary>
+    public bool Mail = true;
 }
 
 /// <summary>The actions the AI can take. Mechanics (walking, aiming, button presses) are automated; decisions are the AI's.</summary>
@@ -44,15 +46,15 @@ public static class AgentTools
 
     // ------------------------------------------------------------------ schema helpers
 
-    private static object Str(string desc) => new { type = "string", description = desc };
-    private static object Int(string desc) => new { type = "integer", description = desc };
+    internal static object Str(string desc) => new { type = "string", description = desc };
+    internal static object Int(string desc) => new { type = "integer", description = desc };
     private static object Tiles(string desc) => new
     {
         type = "array",
         description = desc,
         items = new { type = "array", items = new { type = "integer" }, minItems = 2, maxItems = 2 }
     };
-    private static object Obj(object props, params string[] required) => new { type = "object", properties = props, required };
+    internal static object Obj(object props, params string[] required) => new { type = "object", properties = props, required };
 
     /// <summary>Language for text shown to viewers (config ThoughtLanguage).</summary>
     private static string Lang =>
@@ -74,10 +76,10 @@ public static class AgentTools
         return d.Count > 0 ? d : null;
     }
 
-    private static string S(JsonElement a, string name, string def = "") =>
+    internal static string S(JsonElement a, string name, string def = "") =>
         a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? def : def;
 
-    private static int I(JsonElement a, string name, int def) =>
+    internal static int I(JsonElement a, string name, int def) =>
         a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : def;
 
     private static bool Has(JsonElement a, string name) =>
@@ -112,6 +114,11 @@ public static class AgentTools
     // ------------------------------------------------------------------ registry
 
     public static List<ToolDef> All()
+    {
+        return new List<ToolDef>(SocialTools.All().Concat(Core()));
+    }
+
+    private static List<ToolDef> Core()
     {
         return new List<ToolDef>
         {
@@ -273,7 +280,7 @@ public static class AgentTools
 
     // ------------------------------------------------------------------ simple tools
 
-    private static IEnumerator Instant(CallContext c, string text)
+    internal static IEnumerator Instant(CallContext c, string text)
     {
         c.Result = text;
         yield break;
@@ -424,7 +431,7 @@ public static class AgentTools
 
     // ------------------------------------------------------------------ items
 
-    private static int FindItem(string name, Func<Item, bool>? filter = null)
+    internal static int FindItem(string name, Func<Item, bool>? filter = null)
     {
         name = name.Trim().ToLowerInvariant();
         int partial = -1;

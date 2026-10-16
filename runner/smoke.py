@@ -84,12 +84,12 @@ def state() -> dict:
 _rpc_id = 0
 
 
-def call(tool: str, /, **args) -> tuple[bool, str]:
-    """Call an MCP tool directly. Returns (ok, text). Also checks the result shape."""
+def call_seat(seat: str, tool: str, args: dict) -> tuple[bool, str]:
+    """Call an MCP tool on one seat's endpoint (p1, p2, p3). Returns (ok, text). Also checks the result shape."""
     global _rpc_id
     _rpc_id += 1
     msg = {"jsonrpc": "2.0", "id": _rpc_id, "method": "tools/call", "params": {"name": tool, "arguments": args}}
-    reply = _request("/mcp", msg)
+    reply = _request("/mcp" if seat == "p1" else f"/mcp/{seat}", msg)
     result = reply.get("result")
     if not isinstance(result, dict):
         raise Smoke(f"{tool}: no result object in reply: {str(reply)[:200]}")
@@ -105,23 +105,36 @@ def call(tool: str, /, **args) -> tuple[bool, str]:
     return (not result["isError"]), text
 
 
-def ok(tool: str, /, **args) -> str:
-    good, text = call(tool, **args)
+def call(tool: str, /, **args) -> tuple[bool, str]:
+    """call_seat for p1, the seat the single-player cases use."""
+    return call_seat("p1", tool, args)
+
+
+def ok_seat(seat: str, tool: str, /, **args) -> str:
+    good, text = call_seat(seat, tool, args)
     if not good:
-        raise Smoke(f"{tool}({args}) failed: {text.splitlines()[0][:200]}")
+        raise Smoke(f"{seat} {tool}({args}) failed: {text.splitlines()[0][:200]}")
     return text
 
 
-def debug(op: str, **args) -> str:
+def ok(tool: str, /, **args) -> str:
+    return ok_seat("p1", tool, **args)
+
+
+def debug_seat(seat: str, op: str, **args) -> str:
     try:
-        reply = _request(f"/api/debug/{op}", args)
+        reply = _request(f"/api/debug/{op}" if seat == "p1" else f"/api/debug/{seat}/{op}", args)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             raise SystemExit("Debug API is off. Set \"EnableDebugApi\": true in Mods/StardewMCP/config.json and restart the game.")
         raise
     if not reply.get("ok"):
-        raise Smoke(f"debug {op}({args}) failed: {reply.get('text')}")
+        raise Smoke(f"debug {seat} {op}({args}) failed: {reply.get('text')}")
     return reply.get("text", "")
+
+
+def debug(op: str, **args) -> str:
+    return debug_seat("p1", op, **args)
 
 
 # ---------------------------------------------------------------------- save handling
@@ -444,6 +457,213 @@ def choose_profession():
         raise Smoke(f"expected Tiller (chosen) and Fisher (default) in status, got: {m.group(0) if m else status}")
     if "Pending profession choice" in status:
         raise Smoke("a profession choice is still pending after bedtime")
+
+
+# ---------------------------------------------------------------------- multi-seat (social tools)
+# These need split-screen (SplitScreen: true in config.json) and run last: once p2/p3 have talked to the mod
+# they count as connected AIs, and an idle one holds the world frozen until it is disconnected again.
+
+
+def seat_active(seat: str) -> bool:
+    return any(p.get("id") == seat and p.get("active") for p in state().get("players", []))
+
+
+def ensure_seats() -> None:
+    """Make sure p2 and p3 are in the game; build the cabins on the smoke copy when the save has none."""
+    def wait(seconds: int) -> bool:
+        t0 = time.time()
+        while time.time() - t0 < seconds:
+            if seat_active("p2") and seat_active("p3"):
+                return True
+            time.sleep(2)
+        return False
+
+    if wait(25):
+        return
+    if state().get("screens", 1) <= 1:
+        debug("build_cabins", n=3)
+    if not wait(120):
+        raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
+
+
+def hear(seat: str, tool: str = "status") -> str:
+    """Call a cheap observation on a seat; its result carries any new Messages: block."""
+    return ok_seat(seat, tool)
+
+
+def p1_tile() -> tuple[str, int, int]:
+    p1 = next(p for p in fresh_state()["players"] if p["id"] == "p1")["state"]
+    return p1["location"], p1["tile"][0], p1["tile"][1]
+
+
+def chat_lines(seat: str) -> str:
+    return debug_seat(seat, "chat_log")
+
+
+def wait_chat(seat: str, needle: str, timeout: float = 4) -> None:
+    """The game relays chat over its own network; give it a moment to reach the other screen."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if needle in chat_lines(seat):
+            return
+        time.sleep(0.3)
+    raise Smoke(f'{seat} chat box lacks "{needle}"')
+
+
+def unfreeze() -> None:
+    """A warp needs the world running, and any connected AI that is not in an action freezes it."""
+    for seat in ("p1", "p2", "p3"):
+        debug_seat(seat, "disconnect")
+
+
+def social(fn):
+    """Run a multi-seat case, then disconnect p2/p3 so they stop holding the world frozen."""
+    def run():
+        ensure_seats()
+        try:
+            fn()
+        finally:
+            for seat in ("p2", "p3"):
+                try:
+                    debug_seat(seat, "disconnect")
+                except Exception:
+                    pass
+    run.__name__ = fn.__name__
+    return run
+
+
+@case("chat")
+@social
+def chat():
+    reset("Farm")
+    text = ok_seat("p1", "say", text="hello from p1 SMOKE1")
+    if "other player" not in text:
+        raise Smoke(f"say did not report listeners: {text.splitlines()[0]}")
+    wait_chat("p1", "SMOKE1")
+    wait_chat("p2", "SMOKE1")  # the real in-game chat box on the other screen
+    heard = hear("p2")
+    if "Messages:" not in heard or "SMOKE1" not in heard or "(p1)" not in heard:
+        raise Smoke(f"p2's next result lacks p1's line:\n{heard}")
+    if "SMOKE1" in hear("p2"):
+        raise Smoke("p2 got the same chat line twice")
+
+    ok_seat("p2", "say", text="hi p1, p2 here SMOKE2")
+    back = hear("p1", "inventory")
+    if "SMOKE2" not in back or "(p2)" not in back:
+        raise Smoke(f"p1's next result lacks p2's reply:\n{back}")
+
+    for bad in ({"text": "  "}, {}):
+        if call_seat("p1", "say", bad)[0]:
+            raise Smoke(f"say accepted {bad}")
+
+
+@case("whisper")
+@social
+def whisper():
+    reset("Farm")
+    ok_seat("p3", "status")  # p3 is connected but must never learn about this
+    ok_seat("p1", "whisper", to="p2", text="the WSECRET is under the rock")
+    heard = hear("p2")
+    if "whispers" not in heard or "WSECRET" not in heard or "(p1)" not in heard:
+        raise Smoke(f"p2 did not get the whisper:\n{heard}")
+    p3 = hear("p3") + hear("p3", "inventory")
+    if "WSECRET" in p3 or "whisper" in p3.lower():
+        raise Smoke("p3 got a hint of a whisper meant for p2")
+    time.sleep(1)
+    for seat in ("p1", "p2", "p3"):
+        if "WSECRET" in chat_lines(seat):
+            raise Smoke(f"whisper text reached {seat}'s game chat box")
+    feed = _request("/api/feed")["entries"]
+    seen = [e for e in feed if e.get("kind") == "whisper" and e.get("player") == "p1" and (e.get("args") or {}).get("to") == "p2"]
+    if not seen or "WSECRET" not in seen[-1].get("text", ""):
+        raise Smoke("viewers' feed has no whisper entry p1 -> p2")
+    for bad in ({"to": "p1", "text": "x"}, {"to": "nobody", "text": "x"}, {"to": "p2", "text": ""}):
+        if call_seat("p1", "whisper", bad)[0]:
+            raise Smoke(f"whisper accepted {bad}")
+
+
+@case("plan_board")
+@social
+def plan_board():
+    ok_seat("p1", "plan_edit", section="Smoke crops", text="p1 plans parsnips")
+    ok_seat("p2", "plan_edit", section="Smoke water", text="p2 waters at noon")
+    ok_seat("p2", "plan_edit", section="Smoke crops", text="p2 changed it to potatoes")
+    board = ok_seat("p3", "plan_read", history=20)
+    for needle in ("p2 changed it to potatoes", "p2 waters at noon"):
+        if needle not in board:
+            raise Smoke(f'plan_read lacks "{needle}":\n{board}')
+    hist = [ln for ln in board.splitlines() if re.match(r"\s+#\d+ day \d+ \S+ ", ln) and "Smoke crops" in ln]
+    if not any("(p1)" in ln for ln in hist) or not any("(p2)" in ln for ln in hist):
+        raise Smoke(f'history should show p1 and p2 editing "Smoke crops":\n{board}')
+    if not any(s.get("section") == "Smoke crops" for s in fresh_state()["plan"]["sections"]):
+        raise Smoke("/api/state has no plan board")
+    for section in ("Smoke crops", "Smoke water"):
+        ok_seat("p1", "plan_edit", section=section, text="")
+    if "p2 waters at noon" in ok_seat("p1", "plan_read", history=0):
+        raise Smoke("cleared section is still on the board")
+
+
+@case("emote")
+@social
+def emote():
+    text = ok_seat("p1", "emote", name="happy")
+    if "happy" not in text:
+        raise Smoke(f"unexpected emote result: {text}")
+    good, text = call_seat("p1", "emote", {"name": "no-such-emote"})
+    if good or "Names:" not in text:
+        raise Smoke(f"unknown emote should fail and list names: {text}")
+
+
+@case("give")
+@social
+def give():
+    reset("Farm")
+    debug("add_item", id="(O)24", qty=3)  # Parsnip
+    loc, x, y = p1_tile()
+    unfreeze()
+    debug_seat("p2", "warp", location="Town", x=10, y=10)
+    good, text = call_seat("p1", "give", {"to": "p2", "item": "Parsnip", "count": 1})
+    if good or "too far" not in text:
+        raise Smoke(f"give to a far player should fail with 'too far', got: {text.splitlines()[0]}")
+
+    unfreeze()
+    debug_seat("p2", "warp", location=loc, x=x + 1, y=y)
+
+    seen = []  # every inventory result, since each one also carries (and consumes) p2's new messages
+
+    def count(seat: str) -> int:
+        text = ok_seat(seat, "inventory")
+        seen.append(text)
+        for line in text.splitlines():
+            m = re.match(r"\s*slot \d+: Parsnip x(\d+) ", line)
+            if m:
+                return int(m.group(1))
+        return 0
+
+    before2 = count("p2")
+    text = ok_seat("p1", "give", to="Gemini", item="Parsnip", count=2)
+    t0 = time.time()
+    while count("p2") != before2 + 2 and time.time() - t0 < 4:
+        time.sleep(0.3)
+    if count("p2") != before2 + 2 or count("p1") != 1:
+        raise Smoke(f"expected p2 +2 and p1 left with 1 Parsnip, got p2 {count('p2')} (was {before2}), p1 {count('p1')}. {text}")
+    if not any("gave you 2 x Parsnip" in t for t in seen + [hear("p2")]):
+        raise Smoke("p2 was not told about the gift")
+    if call_seat("p1", "give", {"to": "p2", "item": "Parsnip", "count": 5})[0]:
+        raise Smoke("give accepted more than p1 has")
+    if call_seat("p1", "give", {"to": "p2", "item": "Axe"})[0]:
+        raise Smoke("give accepted a tool")
+
+    for i in range(16, 90):  # fill p2's pack with one of everything
+        try:
+            debug_seat("p2", "add_item", id=f"(O){i}", qty=1)
+        except Smoke as e:
+            if "Inventory is full" in str(e):
+                break
+    debug("add_item", id="(O)388", qty=1)  # Wood: p2 has none, so it can't stack into an existing slot
+    good, text = call_seat("p1", "give", {"to": "p2", "item": "Wood"})
+    if good or "inventory is full" not in text:
+        raise Smoke(f"give to a full pack should fail, got: {text.splitlines()[0]}")
 
 
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))

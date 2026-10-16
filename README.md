@@ -55,6 +55,8 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `interact`, `talk_to`, `respond`, `close_menu` | Objects, villagers, dialogue and menus |
 | `shop_list`, `buy`, `ship`, `eat` | Shopping, shipping bin, food |
 | `wait`, `go_to_bed` | Let time pass, end the day |
+| `say`, `whisper`, `emote`, `give` | Multi-player (split-screen): chat to everyone, tell one player privately, show an emote, hand an item to a nearby player. All cost no game time |
+| `plan_read`, `plan_edit` | Shared plan board with an edit history (author and time) |
 
 ### Other endpoints
 

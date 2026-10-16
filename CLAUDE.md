@@ -100,6 +100,7 @@ mod/StardewMCP/
     AgentHttp.cs       HttpListener on localhost:8770: /mcp, /overlay, /replay, /api/*
     AgentRuntime.cs    Runs tool calls on the game thread as coroutines; freezes time between calls
     AgentTools.cs      Tool definitions (ToolDef) and their coroutines
+    SocialTools.cs     say / whisper / emote / give / plan board; per-seat inbox appended to the next tool result
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries
     ModConfig.cs       config.json settings
