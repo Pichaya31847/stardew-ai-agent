@@ -15,6 +15,9 @@ public class ModConfig
     /// <summary>Save folder name (e.g. "Duck_123456789") to load automatically from the title screen. Empty = off.</summary>
     public string AutoLoadSave { get; set; } = "";
 
+    /// <summary>Serve POST /api/debug/* (warp, set_time, add_item...) for runner/smoke.py. Keep off for normal play.</summary>
+    public bool EnableDebugApi { get; set; } = false;
+
     /// <summary>Language the AI is told to use for on-screen text: thoughts, action reasons and the diary (e.g. "English").</summary>
     public string ThoughtLanguage { get; set; } = "Thai";
 }

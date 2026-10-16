@@ -43,6 +43,7 @@ public class ModEntry : Mod
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
     {
+        SaveFolder.OnSaveLoaded();
         // The agent keeps playing while the terminal or OBS window has focus.
         Game1.options.pauseWhenOutOfFocus = false;
         _agent.Log.Add("system", text: $"Save loaded: {Game1.player.Name} / {Game1.player.farmName} Farm");
@@ -51,6 +52,7 @@ public class ModEntry : Mod
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         TryAutoLoad(e.Ticks);
+        DebugApi.Tick();
         _agent.Tick();
         if (e.IsMultipleOf(15))
             _http.RefreshState();
@@ -65,6 +67,7 @@ public class ModEntry : Mod
             return;
 
         _autoLoadDone = true;
+        SaveFolder.Pending = _config.AutoLoadSave;
         Monitor.Log($"Auto-loading save {_config.AutoLoadSave}", LogLevel.Info);
         SaveGame.Load(_config.AutoLoadSave);
         Game1.exitActiveMenu();

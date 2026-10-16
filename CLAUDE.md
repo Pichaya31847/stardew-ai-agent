@@ -16,8 +16,10 @@ mod/StardewMCP/
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries
     ModConfig.cs       config.json settings
+    DebugApi.cs        /api/debug/* test hooks (warp, set_time, add_item, load_save...), off by default
   assets/              overlay.html (OBS source), replay.html
 runner/
+  smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
   run_days.py          One `claude -p` session per in-game day
   obs_recorder.py      Pauses OBS recording while the game is frozen
   system_prompt.md     System prompt used by run_days.py
