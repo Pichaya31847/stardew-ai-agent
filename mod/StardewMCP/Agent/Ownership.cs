@@ -75,9 +75,9 @@ public static class Ownership
             args: new { victim, what, item, location, tile = new[] { x, y } });
     }
 
-    private static void Harvest_Postfix(Crop __instance, int xTile, int yTile, HoeDirt soil, bool __result)
+    private static void Harvest_Postfix(Crop __instance, int xTile, int yTile, HoeDirt soil, StardewValley.Characters.JunimoHarvester junimoHarvester, bool __result)
     {
-        if (!__result || soil == null || OwnerOf(soil) is not { } owner) return;
+        if (!__result || junimoHarvester != null || soil == null || OwnerOf(soil) is not { } owner) return;
         Theft("crop", owner, WorldText.CropName(__instance), Game1.currentLocation?.NameOrUniqueName ?? "", xTile, yTile);
     }
 
