@@ -14,10 +14,10 @@ Every system behind that handler is then covered without new code.
 | Input | Human | AI tool | Game entry point | Status |
 |---|---|---|---|---|
 | Move | WASD | `walk_to`, `travel_to` | pathfinder, warps, doors | ✅ |
-| Action button | right-click | `interact(x, y)` | `Game1.pressActionButton`: the held item's use action or eating, else `tryToCheckAt` → `GameLocation.checkAction` | 🟡 can't choose the held item |
+| Action button | right-click | `interact(x, y, holding?)` | `Game1.pressActionButton`: the held item's use action or eating, else `tryToCheckAt` → `GameLocation.checkAction` | ✅ `holding` picks the item; handlers that wait for a fresh press (`didPlayerJustRightClick`: chests, shipping bin, fish ponds) see it |
 | Use button | left-click | `use_tool`, `plant` | `Farmer.BeginUsingTool`, `Utility.tryToPlaceItem` | 🟡 places only on tilled soil |
 | Dialogue answer | click an option | `respond(option)` | `DialogueBox` → `answerDialogueAction` or the question's callback | ✅ |
-| Menu | click, type | `shop_list`, `buy`, `close_menu` | the menu's own click and handler methods | ❌ no general menu tool |
+| Menu | click, type | `menu`; `shop_list`, `buy`, `close_menu` | the menu's own click and handler methods | 🟡 reader, fallback, `take`/`put`, `choose`, `amount`, `type`, `ok`/`cancel`; `buy`/`sell`/`craft` adapters to come |
 | Minigame | timing | none | `BobberBar`, `IMinigame` | ❌ |
 
 Rules:
@@ -63,16 +63,16 @@ Rules:
 | Plant seeds, fertilizer | item on soil | `plant` | ✅ | |
 | Harvest crops, forage | action on a tile | `harvest` | ✅ | |
 | Place machines, chests, sprinklers, fences, furniture | use button with the item | `place` | ❌ | #3 |
-| Load a machine | action while holding the input | `interact(holding)` | ❌ | #3 |
-| Collect from a machine | action | `interact` | 🟡 untested | #3 |
-| Chests, fridge | action → `ItemGrabMenu` | `menu take/put` | ❌ `look` says "use chest tool", which doesn't exist | #3 |
+| Load a machine | action while holding the input | `interact(holding)` | ✅ smoke `furnace` | #3 |
+| Collect from a machine | action | `interact` | ✅ smoke `furnace` | #3 |
+| Chests, fridge | action → `ItemGrabMenu` | `interact`, then `menu take/put` | ✅ chests (smoke `chest`); 🟡 fridge untested (needs the kitchen) | #3 |
 | Ship | shipping bin → `ItemGrabMenu` (`Farm.shipItem`) | `ship` | ✅ | |
 | Eat | action holding food → "Eat?" | `eat` | ✅ | |
 | Sleep | bed → `Sleep_Yes` → ready check `sleep` | `go_to_bed` | ✅ one player; 🟡 untested with 4 seats | #38 |
 | Pass out (2:00, no energy) | automatic | | 🟡 | #22 |
 | TV: weather, luck, recipes | action on the TV → question | `interact` + `respond` | 🟡 untested | #14 |
 | Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `interact` + `respond` | 🟡 untested | #2 (plan is wrong) |
-| Totems, books | action button while holding the item (`performUseAction`) | `interact(holding)` without a tile | ❌ | |
+| Totems, books | action button while holding the item (`performUseAction`) | `interact(holding)` without a tile | ✅ totems (smoke `totem`); 🟡 books untested | |
 | Animal care | pet (action), milk/shear (tool), hay (hopper) | `interact`, `use_tool` | 🟡 | #10 |
 | Horse | stable, name, mount (action) | `interact` | 🟡 riding untested | #10 |
 
@@ -101,7 +101,7 @@ Rules:
 | Heart events | cutscenes with questions | skipped, then option 0 | ❌ the AI makes no choice | #9 |
 | Dating, marriage | give a bouquet, later a Mermaid Pendant | `talk_to(gift_item)` | 🟡 untested | |
 | Children | night question, then `NamingMenu` | choice policy | ❌ name is random | |
-| Naming pets, animals, horse | `NamingMenu` | `menu type` | ❌ name is random | |
+| Naming pets, animals, horse | `NamingMenu` | `menu type` | 🟡 `menu type` works, but the choice policy names first at random | |
 | Mail | mailbox → `LetterViewerMenu` | `interact` + `close_menu` | ✅ attachments are claimed | |
 | Help Wanted, quest log | `Billboard` tile, `QuestLog` | menu adapter | ❌ | #14 |
 | Special Orders | `SpecialOrders` tile → `SpecialOrdersBoard` | menu adapter | ❌ | #27 |
@@ -116,7 +116,7 @@ Rules:
 | Fishing | cast, then `BobberBar` | fishing driver | ❌ | #4 |
 | Crab pots | place, then action holding bait | `place`, `interact(holding)` | ❌ | #4 |
 | Mine ladders, shafts | action on a tile | `interact` | ✅ | |
-| Mine elevator | `MineElevator` → `MineElevatorMenu` | `menu choose` | ❌ | #2 |
+| Mine elevator | `MineElevator` → `MineElevatorMenu` | `menu choose` | ✅ smoke `mine_elevator` | #2 |
 | Combat | weapon swings, aim | fight driver | ❌ | #5, #6 |
 | Festivals | arrive on time → ready check `festivalStart` → actions, shops, games | travel + primitives + game drivers | ❌ | #11 |
 | Night events: fairy, witch, meteorite, Qi plane | automatic | | 🟡 they play by themselves | |
@@ -130,7 +130,7 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 | System | How the game does it | Covered by | Status | Issue |
 |---|---|---|---|---|
 | Separate wallets | host reads the ledger in Lewis's house (`LedgerBook`); it switches overnight | `interact` + `respond` | 🟡 untested | |
-| Send money | ledger → `SendMoney` → recipient → `DigitEntryMenu`; chat shows "X sent Y" | `interact` + `respond` + `menu amount` | ❌ needs `menu` | |
+| Send money | ledger → `SendMoney` → recipient → `DigitEntryMenu`; chat shows "X sent Y" | `interact` + `respond` + `menu amount` | ✅ smoke `send_money` (split-screen) | |
 | Loans, debts | no mechanic | a promise on the plan board, paid with Send money | story | #39, #48 |
 | Give an item to a player | action holding the item → `SendProposal(Gift)`: one item, the receiver may decline | `give` (PR #50 moves the stack directly, no decline) | ✅ different path | #39 |
 | Marriage, dance, baby between players | `SendProposal(Marriage/Dance/Baby)` → `PendingProposalDialog` | `interact(holding)` + `menu choose` | ❌ | |
@@ -149,11 +149,11 @@ What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselv
 | Question in a cutscene | skips the event, then answers option 0 | the AI answers with `respond` |
 | `PendingProposalDialog` | not handled | the AI accepts or declines |
 | `ReadyCheckDialog` | not handled | AI seats wait; P4 accepts automatically |
-| Any other menu | "Menu open: X", `close_menu` | `menu` fallback lists its buttons |
+| Any other menu | "Menu open: X"; `menu` lists its labelled buttons (`click`, `ok`, `cancel`) | keep |
 
 ## Build order
 
-1. `interact(holding)`; `menu` with the reader, the fallback, `take`/`put`, `choose`, `amount` and
+1. ✅ `interact(holding)`; `menu` with the reader, the fallback, `take`/`put`, `choose`, `amount` and
    `type`; fix the chest label. This unlocks machines, chests, the fridge, simple menus and Send money.
 2. `place`: `plant` for every placeable item.
 3. Choice policy: naming, cutscene questions, proposals, P4 ready checks.
