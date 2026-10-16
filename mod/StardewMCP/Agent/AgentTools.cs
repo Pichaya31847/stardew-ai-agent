@@ -840,39 +840,107 @@ public static class AgentTools
     private static IEnumerator ShopList(JsonElement a, CallContext c)
     {
         if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail("No shop is open. interact with a shop counter (A tile) during opening hours first."); yield break; }
-        var sb = new StringBuilder($"Shop {shop.ShopId} — you have {P.Money}g\n");
+        var cur = CurrencyUnit(shop.currency);
+        var sb = new StringBuilder($"Shop {shop.ShopId} — you have {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}\n");
         foreach (var s in shop.forSale)
         {
             if (!shop.itemPriceAndStock.TryGetValue(s, out var st)) continue;
             var stock = st.Stock == int.MaxValue ? "" : $" (stock {st.Stock})";
-            var trade = st.TradeItem != null ? $" + {st.TradeItemCount}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName}" : "";
-            sb.AppendLine($"  {s.DisplayName}: {st.Price}g{trade}{stock}");
+            var trade = st.TradeItem != null ? $" + {st.TradeItemCount ?? 5}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName}" : "";
+            var recipe = s.IsRecipe ? " [recipe: buying teaches it]" : "";
+            sb.AppendLine($"  {s.DisplayName}: {st.Price}{cur}{trade}{stock}{recipe}");
         }
         c.Result = sb.ToString().TrimEnd();
     }
 
+    private static string CurrencyUnit(int currency) => currency switch
+    {
+        1 => " star tokens",
+        2 => " Qi coins",
+        4 => " Qi gems",
+        _ => "g"
+    };
+
+    /// <summary>Buys through the game's own ShopMenu.tryToPurchaseItem, so recipes are learned, trade items
+    /// are consumed, purchase actions run and limited stock is synced, exactly like a click in the menu.</summary>
     private static IEnumerator Buy(JsonElement a, CallContext c)
     {
         if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail("No shop is open."); yield break; }
+        if (shop.readOnly) { c.Fail("This shop menu is read-only; nothing can be bought here."); yield break; }
         var name = S(a, "item").Trim().ToLowerInvariant();
         int qty = Math.Clamp(I(a, "quantity", 1), 1, 999);
         var sal = shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant() == name)
                   ?? shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant().Contains(name));
         if (sal == null || !shop.itemPriceAndStock.TryGetValue(sal, out var st)) { c.Fail($"\"{name}\" is not sold here. Use shop_list."); yield break; }
-        if (st.TradeItem != null) { c.Fail("Items that need a trade item are not supported."); yield break; }
-        if (sal is not Item proto) { c.Fail($"{sal.DisplayName} can't be bought this way (recipe/building)."); yield break; }
-        qty = Math.Min(qty, st.Stock);
-        int total = st.Price * qty;
-        if (P.Money < total) { c.Fail($"Not enough money: {qty}x {sal.DisplayName} costs {total}g, you have {P.Money}g."); yield break; }
+        if (shop.canPurchaseCheck != null && !shop.canPurchaseCheck(shop.forSale.IndexOf(sal))) { c.Fail($"{sal.DisplayName} can't be bought right now."); yield break; }
 
-        var item = ItemRegistry.Create(proto.QualifiedItemId, qty);
-        if (!P.couldInventoryAcceptThisItem(item)) { c.Fail("Inventory is full."); yield break; }
-        P.Money -= total;
-        P.addItemToInventoryBool(item);
-        if (st.Stock != int.MaxValue) st.Stock -= qty;
-        Game1.playSound("purchaseClick");
+        // Friendly pre-checks; the game's purchase would only play a "cancel" sound.
+        if (sal.IsRecipe) qty = 1;
+        qty = Math.Min(qty, st.Stock);
+        if (qty <= 0) { c.Fail($"{sal.DisplayName} is sold out."); yield break; }
+        var cur = CurrencyUnit(shop.currency);
+        int have = ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
+        if (have < st.Price * qty) { c.Fail($"Not enough money: {qty}x {sal.DisplayName} costs {st.Price * qty}{cur}, you have {have}{cur}."); yield break; }
+        if (st.TradeItem != null)
+        {
+            int need = (st.TradeItemCount ?? 5) * qty;
+            if (!shop.HasTradeItem(st.TradeItem, need)) { c.Fail($"{sal.DisplayName} also needs {need}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName ?? st.TradeItem}."); yield break; }
+        }
+        var probe = sal.GetSalableInstance();
+        probe.Stack = qty * sal.Stack;
+        if (!sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P)) { c.Fail($"Can't buy {sal.DisplayName}: inventory is full or you can't hold it."); yield break; }
+
+        // A leftover held item (e.g. from a manual click) would be stacked onto; put it away first.
+        if (shop.heldItem is Item leftover)
+        {
+            shop.heldItem = null;
+            if (P.addItemToInventory(leftover) is Item rest) Game1.createItemDebris(rest, P.getStandingPosition(), P.FacingDirection);
+        }
+
+        var purchase = Rt.Helper.Reflection.GetMethod(shop, "tryToPurchaseItem");
+        int maxChunk = Math.Max(1, sal.GetSalableInstance().maximumStackSize());
+        int bought = 0, spent = 0;
+        bool dropped = false;
+        while (bought < qty)
+        {
+            int n = Math.Min(qty - bought, maxChunk);
+            int before = ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
+            bool soldOut = purchase.Invoke<bool>(sal, null, n, 0, 0);
+            int paid = before - ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
+            if (soldOut)
+            {
+                // Same bookkeeping the menu does after a click that empties the stock.
+                shop.itemPriceAndStock.Remove(sal);
+                shop.forSale.Remove(sal);
+            }
+            bool got = paid > 0 || shop.heldItem != null || st.Price == 0;
+            if (shop.heldItem is Item held)
+            {
+                shop.heldItem = null;
+                if (P.addItemToInventory(held) is Item rest)
+                {
+                    Game1.createItemDebris(rest, P.getStandingPosition(), P.FacingDirection);
+                    dropped = true;
+                }
+            }
+            if (!got) break;
+            bought += n;
+            spent += paid;
+            if (soldOut || Game1.activeClickableMenu != shop) break;
+        }
         yield return Ticks(10);
-        c.Result = $"Bought {qty}x {sal.DisplayName} for {total}g. Money left {P.Money}g.";
+
+        if (bought == 0) { c.Fail($"The shop refused to sell {sal.DisplayName}."); yield break; }
+        var left = $"Money left {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}.";
+        if (sal.IsRecipe)
+        {
+            var key = (sal as Item)?.BaseName ?? sal.Name;
+            bool known = P.cookingRecipes.ContainsKey(key) || P.craftingRecipes.ContainsKey(key);
+            c.Result = known ? $"Learned recipe: {key} for {spent}{cur}. {left}" : $"Paid {spent}{cur} for {sal.DisplayName}, but the recipe is not in your recipe list. {left}";
+            yield break;
+        }
+        var note = dropped ? " Inventory was full: the rest was dropped at your feet." : "";
+        c.Result = $"Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note} {left}";
     }
 
     private static IEnumerator Ship(JsonElement a, CallContext c)

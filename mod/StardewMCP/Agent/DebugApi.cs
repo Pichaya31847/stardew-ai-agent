@@ -44,6 +44,7 @@ public static class DebugApi
             Op("set_skill", SetSkill),
             Op("set_health", SetHealth),
             Op("set_stamina", SetStamina),
+            Op("open_shop", OpenShop),
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
             Op("capture", Capture, needsWorld: false),
@@ -98,6 +99,19 @@ public static class DebugApi
         Game1.player.Money = Math.Max(0, I(a, "n", 0));
         c.Result = $"Money set to {Game1.player.Money}g";
         yield break;
+    }
+
+    /// <summary>Open a shop by id even when its owner is away (set_time does not move NPCs).</summary>
+    private static IEnumerator OpenShop(JsonElement a, CallContext c)
+    {
+        var id = S(a, "id");
+        if (Game1.activeClickableMenu != null) Game1.exitActiveMenu();
+        if (!Utility.TryOpenShopMenu(id, Game1.currentLocation, forceOpen: true) || Game1.activeClickableMenu is not ShopMenu)
+        {
+            c.Fail($"Could not open shop \"{id}\"");
+            yield break;
+        }
+        c.Result = $"Opened shop {id}";
     }
 
     private static readonly int[] XpForLevel = { 0, 100, 380, 770, 1300, 2150, 3300, 4800, 6900, 10000, 15000 };

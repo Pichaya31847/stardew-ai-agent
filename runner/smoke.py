@@ -265,6 +265,20 @@ def inventory_count(name: str) -> int:
     return total
 
 
+def open_shop(location: str, hhmm: int) -> str:
+    """Set the time, travel to `location` and interact with its action tiles until a shop opens. Returns shop_list."""
+    debug("set_time", time=hhmm)
+    ok("travel_to", location=location, reason="smoke test")
+    look = ok("look", radius=12)
+    counters = [t for _, tiles in parse_things(look, "A") for t in tiles]
+    for x, y in counters:
+        ok("interact", x=x, y=y, reason="smoke test: find the shop counter")
+        good, text = call("shop_list")
+        if good:
+            return text
+    raise Smoke(f"no action tile in {location} opened a shop (tried {counters[:6]})")
+
+
 def fresh_state() -> dict:
     """/api/state is a snapshot refreshed about 4 times a second; wait for it to catch up after a tool call."""
     time.sleep(0.6)
@@ -315,19 +329,7 @@ def shop_buy():
     if fresh_state().get("dayOfMonth", 0) % 7 == 3:
         raise SkipCase("Pierre's is closed on Wednesdays; run the gate on another day to cover the shop")
     reset("Farm")
-    debug("set_time", time=1000)  # Pierre's is open 9:00-17:00 (closed Wednesdays)
-    ok("travel_to", location="SeedShop", reason="smoke test")
-    look = ok("look", radius=12)
-    counters = [t for _, tiles in parse_things(look, "A") for t in tiles]
-    opened = False
-    for x, y in counters:
-        ok("interact", x=x, y=y, reason="smoke test: find the shop counter")
-        good, _ = call("shop_list")
-        if good:
-            opened = True
-            break
-    if not opened:
-        raise Smoke(f"no action tile opened a shop (tried {counters[:6]})")
+    open_shop("SeedShop", 1000)  # Pierre's is open 9:00-17:00 (closed Wednesdays)
 
     before = inventory_count("Parsnip Seeds")
     money = fresh_state().get("money")
@@ -381,7 +383,36 @@ def ship_and_sleep():
         raise Smoke("day did not advance")
 
 
-CASES.append(Case("buy_recipe", lambda: None, skip="needs the recipe purchase fix (#7)"))
+@case("buy_recipe")
+def buy_recipe():
+    """#7: a bought recipe is learned, not handed over as the dish."""
+    reset("Farm")
+    debug("set_time", time=1300)
+    for shop_id in ("Saloon", "SeedShop"):  # Gus sells cooking recipes, Pierre some crafting ones
+        ok("travel_to", location=shop_id, reason="smoke test")
+        debug("open_shop", id=shop_id)  # set_time doesn't move the owner to the counter
+        listing = ok("shop_list")
+        recipes = [m.group(1) for m in re.finditer(r"^\s+(.+?): (\d+)g.*\[recipe", listing, re.M)]
+        if recipes:
+            break
+        ok("close_menu")
+    else:
+        raise SkipCase("neither the Saloon nor Pierre's sells a recipe today")
+
+    listed = recipes[0]
+    dish = re.sub(r"\s*\(?Recipe\)?$", "", listed)  # shops list "Hashbrowns (Recipe)"
+    before = inventory_count(dish)
+    money = fresh_state().get("money")
+    text = ok("buy", item=listed, quantity=1, reason="smoke test")
+    if not text.startswith("Learned recipe:"):
+        raise Smoke(f"expected 'Learned recipe', got: {text.splitlines()[0]}")
+    if inventory_count(dish) != before:
+        raise Smoke(f"buying {listed} put the dish in the inventory")
+    if fresh_state().get("money", money) >= money:
+        raise Smoke("money did not drop after buying a recipe")
+    ok("close_menu")
+
+
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
 
 
