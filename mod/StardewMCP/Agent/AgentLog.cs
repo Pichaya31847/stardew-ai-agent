@@ -35,6 +35,7 @@ public class LogEntry
 public class AgentLog
 {
     private readonly object _lock = new();
+    private readonly object _memoryLock = new();
     private readonly List<LogEntry> _feed = new();
     private readonly IMonitor _monitor;
     private long _seq;
@@ -126,12 +127,149 @@ public class AgentLog
     public string DiaryFile(int day, string? player = null) =>
         Path.Combine(Dir, player is null or "p1" ? $"diary_{day:000}.md" : $"diary_{day:000}_{player}.md");
 
+    /// <summary>
+    /// A player's own long-term memory file (lessons, plan, notes...). p1 (or a single-player run) keeps the plain
+    /// name like the diary; other seats get a "_p2" suffix. Per-seat character notes (#48: self, people) belong here too.
+    /// </summary>
+    public string MemoryFile(string stem, string? player = null, string ext = "md") =>
+        Path.Combine(Dir, player is null or "p1" ? $"{stem}.{ext}" : $"{stem}_{player}.{ext}");
+
+    /// <summary>What the player learned, one "- Day N: ..." line per lesson; appended by the journal tool.</summary>
+    public string LessonsFile(string? player = null) => MemoryFile("lessons", player);
+
+    /// <summary>The player's plan (## Season, ## Week, ## Today); replaced by the journal tool.</summary>
+    public string PlanFile(string? player = null) => MemoryFile("plan", player);
+
+    /// <summary>Facts the player found out, one "- [topic, day N] ..." line each; appended by the journal tool.</summary>
+    public string NotesFile(string? player = null) => MemoryFile("notes", player);
+
+    /// <summary>"spring 3 Y1" for a 1-based farm day (28 days a season, 4 seasons a year).</summary>
+    public static string DateLabel(int day)
+    {
+        int t = Math.Max(day, 1) - 1;
+        string[] seasons = { "spring", "summer", "fall", "winter" };
+        return $"{seasons[t / 28 % 4]} {t % 28 + 1} Y{t / 112 + 1}";
+    }
+
+    private readonly HashSet<string> _journals = new();
+    private string? _journalsFrom;
+
+    private string JournalsFile => Path.Combine(Dir, "journals.txt");
+
+    private static string JournalKey(int day, string? player) => $"{SaveFolder.Name}|{player ?? "p1"}|{day}";
+
+    private void LoadJournals()
+    {
+        var path = JournalsFile;
+        if (_journalsFrom == path) return; // the real log folder and the smoke one are told apart
+        _journalsFrom = path;
+        _journals.Clear();
+        if (File.Exists(path))
+            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+                if (line.Length > 0) _journals.Add(line);
+    }
+
+    /// <summary>
+    /// True once the player's journal for <paramref name="day"/> of the loaded save is written (see <see cref="MarkJournal"/>).
+    /// Remembered in journals.txt, so it survives a game restart, and keyed by save folder, so a reloaded
+    /// or fresh save never inherits another run's days. go_to_bed requires today's.
+    /// </summary>
+    public bool HasJournal(int day, string? player = null)
+    {
+        if (day <= 0) return false;
+        lock (_memoryLock)
+        {
+            LoadJournals();
+            return _journals.Contains(JournalKey(day, player));
+        }
+    }
+
+    /// <summary>Record that the player's journal for <paramref name="day"/> is complete. Call it after the diary, lessons and plan are written.</summary>
+    public void MarkJournal(int day, string? player = null)
+    {
+        lock (_memoryLock)
+        {
+            LoadJournals();
+            var key = JournalKey(day, player);
+            if (_journals.Add(key))
+                File.AppendAllText(JournalsFile, key + "\n", Encoding.UTF8);
+        }
+    }
+
     public void WriteDiary(int day, string text, string? player = null)
     {
-        var header = $"# Day {day} — {Game1.currentSeason} {Game1.dayOfMonth} Y{Game1.year}\n\n";
-        File.WriteAllText(DiaryFile(day, player), header + text.Trim() + "\n", Encoding.UTF8);
-        Add("diary", text: text, player: player);
+        var header = $"# Day {day} — {DateLabel(day)}\n\n";
+        lock (_memoryLock)
+            File.WriteAllText(DiaryFile(day, player), header + text.Trim() + "\n", Encoding.UTF8);
+        // A catch-up diary (day < today) is logged on today's page; args say which day it belongs to.
+        Add("diary", text: text, args: day == FarmDay ? (object?)null : new { day }, player: player);
     }
+
+    /// <summary>
+    /// Add one day's lessons to lessons.md as "- Day N: text" lines. Lines already written for that day are replaced,
+    /// so calling the journal twice in a day never duplicates. Returns the number of lines in the file.
+    /// </summary>
+    public int WriteLessons(int day, IEnumerable<string> lessons, string? player = null)
+    {
+        lock (_memoryLock)
+        {
+            var prefix = $"- Day {day}: ";
+            var lines = ReadLines(LessonsFile(player)).Where(l => !l.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            lines.AddRange(lessons.Select(l => prefix + l));
+            File.WriteAllText(LessonsFile(player), string.Join("\n", lines) + "\n", Encoding.UTF8);
+            return lines.Count;
+        }
+    }
+
+    /// <summary>Replace plan.md with <paramref name="plan"/>.</summary>
+    public void WritePlan(string plan, string? player = null)
+    {
+        lock (_memoryLock)
+            File.WriteAllText(PlanFile(player), plan.Trim() + "\n", Encoding.UTF8);
+    }
+
+    /// <summary>
+    /// Append facts to notes.md as "- [topic, day N] text". A fact that is already there (same text) is skipped.
+    /// Returns (facts added, lines in the file).
+    /// </summary>
+    public (int added, int total) AppendNotes(int day, IEnumerable<(string topic, string text)> notes, string? player = null)
+    {
+        lock (_memoryLock)
+        {
+            var lines = ReadLines(NotesFile(player));
+            int added = 0;
+            foreach (var (topic, text) in notes)
+            {
+                if (lines.Any(l => l.EndsWith("] " + text, StringComparison.OrdinalIgnoreCase))) continue;
+                lines.Add($"- [{topic}, day {day}] {text}");
+                added++;
+            }
+            if (added > 0)
+                File.WriteAllText(NotesFile(player), string.Join("\n", lines) + "\n", Encoding.UTF8);
+            return (added, lines.Count);
+        }
+    }
+
+    /// <summary>Text of a memory file ("" when it does not exist yet).</summary>
+    public string ReadMemoryText(string path)
+    {
+        lock (_memoryLock)
+        {
+            try { return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : ""; }
+            catch (IOException) { return ""; }
+        }
+    }
+
+    /// <summary>A player's lessons, plan and notes, as served by /api/memory.</summary>
+    public object ReadMemory(string? player = null) => new
+    {
+        lessons = ReadMemoryText(LessonsFile(player)),
+        plan = ReadMemoryText(PlanFile(player)),
+        notes = ReadMemoryText(NotesFile(player))
+    };
+
+    private List<string> ReadLines(string path) =>
+        ReadMemoryText(path).Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Trim().Length > 0).ToList();
 
     public List<int> Days()
     {
@@ -161,4 +299,18 @@ public class PlayerLog
         _log.Add(kind, tool, text, args, ok, ms, Player);
 
     public void WriteDiary(int day, string text) => _log.WriteDiary(day, text, Player);
+
+    /// <summary>True once this player's journal for <paramref name="day"/> is written (go_to_bed needs today's).</summary>
+    public bool HasJournal(int day) => _log.HasJournal(day, Player);
+
+    /// <summary>Record that this player's journal for <paramref name="day"/> is complete.</summary>
+    public void MarkJournal(int day) => _log.MarkJournal(day, Player);
+
+    public int WriteLessons(int day, IEnumerable<string> lessons) => _log.WriteLessons(day, lessons, Player);
+
+    public string ReadPlan() => _log.ReadMemoryText(_log.PlanFile(Player));
+
+    public void WritePlan(string plan) => _log.WritePlan(plan, Player);
+
+    public (int added, int total) AppendNotes(int day, IEnumerable<(string topic, string text)> notes) => _log.AppendNotes(day, notes, Player);
 }

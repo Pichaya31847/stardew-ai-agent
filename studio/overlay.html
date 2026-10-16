@@ -273,9 +273,9 @@ function onEntry(e, state) {
     const t = (e.text || "").match(/^Talking to (.+?) \(/);
     if (e.tool === "talk_to" && e.ok !== false && t) talk = t[1];
     if (/^Dialogue closed/.test(e.text || "") || e.tool === "close_menu") talk = null;
-    if (e.tool === "go_to_bed" && e.ok === false) { pendingDiary = null; hideDiary(); }
+    if (e.tool === "go_to_bed" && e.ok === false) hideDiary(); // the diary written by journal stays pending for the next go_to_bed
   } else if (e.kind === "diary") {
-    // logged mid go_to_bed, so the action stays current; written before the walk home; held until the mod logs that the player is actually in bed
+    // logged by the journal tool (any time before go_to_bed); held until the mod logs that the player is actually in bed
     pendingDiary = { text: e.text || "", sub: diarySub(state) };
   } else if (e.kind === "system") {
     if (/^Sleeping/.test(e.text || "") && pendingDiary) {

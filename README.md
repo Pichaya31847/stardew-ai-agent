@@ -55,7 +55,8 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `interact`, `talk_to`, `respond`, `close_menu` | Objects, villagers, dialogue and menus; `interact` can hold an item first (load a machine, use a totem) |
 | `menu` | Read any open menu, then use it: take/put (chests), choose (mine elevator), amount (send money), type (names), ok/cancel, or click a listed button |
 | `shop_list`, `buy`, `ship`, `eat` | Shopping, shipping bin, food |
-| `wait`, `go_to_bed` | Let time pass, end the day |
+| `wait`, `go_to_bed` | Let time pass, end the day (`go_to_bed` refuses until today's `journal` is written) |
+| `journal` | The AI's memory across days, costs no game time: a diary for the viewers, lessons (appended), a plan with Season / Week / Today sections (replaced section by section) and optional facts. Written to `diary_NNN.md`, `lessons.md`, `plan.md`, `notes.md` in the log folder; `day` catches up a missed day |
 | `say`, `whisper`, `emote`, `give` | Multi-player (split-screen): chat to everyone, tell one player privately, show an emote, hand an item to a nearby player. All cost no game time |
 | `plan_read`, `plan_edit` | Shared plan board with an edit history (author and time) |
 
@@ -66,6 +67,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `http://localhost:8770/overlay` | OBS browser source (thoughts + actions) |
 | `http://localhost:8770/replay` | Day-by-day replay of the logs |
 | `http://localhost:8770/api/state` | Raw game state JSON |
+| `http://localhost:8770/api/memory` | Each AI seat's lessons, plan and notes (what `journal` wrote) |
 
 ## Configuration
 
@@ -78,7 +80,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `LogDir` | `""` | Log folder; empty = `logs/` in the mod folder |
 | `AutoLoadSave` | `""` | Save folder to load automatically from the title screen |
 | `EnableDebugApi` | `false` | Serve `/api/debug/*` test hooks for `runner/smoke.py`; leave off for normal play |
-| `ThoughtLanguage` | `"Thai"` | Language the AI is asked to use for on-screen text (`think`, action reasons, diary), e.g. `"English"` |
+| `ThoughtLanguage` | `"Thai"` | Language the AI is asked to use for on-screen text (`think`, action reasons, journal), e.g. `"English"` |
 | `SplitScreen` | `false` | Three AIs + a camera screen in split-screen co-op (see below) |
 | `FarmhandNames` | `["Gemini","GPT","Camera"]` | Farmhand names for P2, P3, P4; an existing farmhand with that name is reused |
 | `ThinkTimeoutSeconds` | `300` | Split-screen: an AI silent for longer stops holding the world frozen (0 = never) |
@@ -111,8 +113,14 @@ The first time the game starts its local co-op server, Windows Firewall may ask 
 
 `runner/` contains Python scripts (standard library only):
 
-- `run_days.py` runs one Claude Code session per in-game day, keeps diaries between days and
-  backs up the save. Example: `py runner/run_days.py --days 3`
+- `run_days.py` runs one Claude Code session per in-game day, keeps the AI's memory between days
+  (its lessons, plan, facts and recent diaries go into the next day's system prompt) and backs up the
+  save. Example: `py runner/run_days.py --days 3`. It reads those files from `<out>/logs`, so set the
+  mod's `LogDir` to that folder. After the last day of a batch, one short text-only session shortens
+  `lessons.md` and `notes.md` (the old lists stay as `lessons_before_batchN.md`) and writes a digest
+  of each finished week (`--skip-consolidation` skips it), so run in batches of about a week.
+- `memory.py` is the memory logic behind that (placeholders, consolidation); its tests run without the
+  game: `py -m pytest runner/tests`.
 - `smoke.py` runs LLM-free checks of the tools (farm loop, shop, shipping, sleep) on a copy of your
   save, then reloads your save. `run_days.py` runs it before every batch and stops if a case fails.
   It needs `"EnableDebugApi": true` in `config.json`; see `py runner/smoke.py --list`. The debug

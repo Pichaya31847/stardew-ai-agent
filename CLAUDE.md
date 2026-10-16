@@ -103,7 +103,8 @@ mod/StardewMCP/
     MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters (part of AgentTools)
     SocialTools.cs     say / whisper / emote / give / plan board; per-seat inbox appended to the next tool result
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
-    AgentLog.cs        Per-day JSONL logs and diaries
+    AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
+    JournalTools.cs    journal(diary, lessons, plan, notes, day): the AI's memory across days; go_to_bed needs today's
     ModConfig.cs       config.json settings
     DebugApi.cs        /api/debug/* and /api/debug/p{N}/* test hooks (warp, build_cabins, capture...), off by default
     Players.cs         The 4 split-screen seats (P1-P3 AI, P4 camera) and their per-screen state
@@ -119,6 +120,8 @@ runner/
   smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
   run_days.py          One `claude -p` session per in-game day
   obs_recorder.py      Pauses OBS recording while the game is frozen
+  memory.py            Lessons / plan / notes injected into the system prompt; batch-end consolidation
+  tests/               pytest tests for memory.py (no game needed)
   system_prompt.md     System prompt used by run_days.py
 ```
 

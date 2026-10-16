@@ -6,11 +6,15 @@ Usage (from a normal terminal where `claude` is logged in, with the game running
     py runner/run_days.py --until-day 100 --goal "..."
 
 Each day:
-  * builds the system prompt (rules + goal + recent diaries),
+  * builds the system prompt (rules + goal + the AI's lessons, plan and notes + recent diaries; see memory.py),
   * runs `claude -p` with only the in-game MCP server (http://localhost:8770/mcp),
   * saves Claude's full stream-json transcript next to the game logs (proof of a real run),
   * continues the same day in a new session if Haiku stopped before sleeping,
   * backs up the save folder after the day ends.
+
+After the last day of the batch, one short text-only session shortens lessons.md and notes.md (the old lists stay
+as lessons_before_batchN.md) and writes a digest for each finished week. Use --skip-consolidation to skip it.
+The mod's LogDir must be the same folder as <out>/logs, where this script reads diaries, lessons and plans.
 
 Before the first day it runs runner/smoke.py (LLM-free tool checks on a copy of the save) and stops if
 any case fails. That needs "EnableDebugApi": true in the mod's config.json; pass --skip-smoke to skip.
@@ -28,6 +32,8 @@ import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+
+import memory
 
 HERE = Path(__file__).resolve().parent
 API = "http://localhost:8770"
@@ -171,6 +177,59 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     return tool_calls
 
 
+def claude_text_session(args, out_dir: Path, label: str) -> memory.Session:
+    """A memory.Session backed by `claude -p` with no tools and no MCP servers: returns the reply text.
+
+    The material goes into the system prompt file, so a long lessons list never hits the command-line length limit.
+    """
+    def run(system_prompt: str, prompt: str) -> str:
+        sys_file = out_dir / f"system_{label}.md"
+        sys_file.write_text(system_prompt, encoding="utf-8")
+        mcp_cfg = out_dir / "mcp_none.json"
+        mcp_cfg.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+        transcript = out_dir / "logs" / f"claude_{label}.jsonl"
+        workdir = out_dir / "workdir"
+        workdir.mkdir(exist_ok=True)
+        cmd = [
+            "claude", "-p", prompt,
+            "--model", args.model,
+            "--system-prompt-file", str(sys_file),
+            "--mcp-config", str(mcp_cfg), "--strict-mcp-config",
+            "--tools", "",
+            "--setting-sources", "project",
+            "--output-format", "stream-json", "--verbose",
+            "--max-turns", "3",
+        ]
+        reply, failed = "", ""
+        with transcript.open("a", encoding="utf-8") as tf:
+            proc = subprocess.Popen(cmd, cwd=workdir, env=dict(os.environ), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace", shell=False)
+            assert proc.stdout
+            for line in proc.stdout:
+                tf.write(line)
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if ev.get("type") == "result":
+                    reply = ev.get("result") or ""
+                    if ev.get("is_error"):
+                        failed = reply or "claude reported an error"
+            proc.wait()
+        if failed or not reply.strip():
+            raise RuntimeError(failed or "empty reply")
+        return reply
+    return run
+
+
+def batch_end_memory(args, out_dir: Path, log_dir: Path, current_day: int):
+    """Shorter lessons and notes, a digest per finished week (memory.consolidate_batch), printed one line each."""
+    print(f"[{datetime.now():%H:%M:%S}] batch finished: consolidating lessons, notes and weekly digests")
+    session = claude_text_session(args, out_dir, f"consolidate_day_{current_day:03}")
+    for result in memory.consolidate_batch(log_dir, current_day, session):
+        print("  " + result.describe())
+
+
 def backup_save(out_dir: Path, day: int):
     src = save_folder()
     if not src:
@@ -192,6 +251,7 @@ def main():
     ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if Haiku stops before sleeping")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
+    ap.add_argument("--skip-consolidation", action="store_true", help="Do not shorten lessons.md and notes.md after the batch")
     args = ap.parse_args()
 
     out_dir = Path(args.out)
@@ -206,6 +266,7 @@ def main():
             raise SystemExit("Smoke tests failed, not starting the batch. Fix the failing case above, or pass --skip-smoke.")
 
     days_played = 0
+    stopped_early = False
     while True:
         state = wait_ready()
         day = state["day"]
@@ -214,14 +275,16 @@ def main():
         if not args.until_day and days_played >= args.days:
             break
 
-        system_prompt = template.replace("{GOAL}", args.goal).replace("{MEMORY}", recent_diaries(log_dir, day))
+        system_prompt = memory.inject(template, log_dir, args.goal, recent_diaries(log_dir, day))
         for part in range(1, args.max_parts + 1):
             if part == 1:
                 prompt = (f"วันนี้คือวันที่ {day} ของชาเลนจ์ 100 วัน เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
-                          "จากนั้นเล่นทั้งวันจนเข้านอนด้วย go_to_bed")
+                          "จากนั้นเล่นทั้งวัน ก่อนนอนให้เขียน journal (diary, lessons, plan) แล้วเข้านอนด้วย go_to_bed")
+                prompt = memory.with_reminder(prompt, state, log_dir)
             else:
                 prompt = (f"เล่นวันที่ {day} ต่อจากเดิม (session ก่อนหน้าหยุดก่อนเข้านอน) นี่คือสิ่งที่เพิ่งทำไป:\n"
-                          f"{last_actions(log_dir, day)}\n\nเช็ก status แล้วเล่นต่อจนเข้านอนด้วย go_to_bed")
+                          f"{last_actions(log_dir, day)}\n\n{memory.continuation_context(log_dir, day)}\n\n"
+                          "เช็ก status แล้วเล่นต่อจนถึงเวลานอน (เขียน journal ถ้ายังไม่ได้เขียน แล้วเข้านอนด้วย go_to_bed)")
             run_session(args, out_dir, day, prompt, system_prompt, part)
             time.sleep(3)
             s = wait_ready()
@@ -235,7 +298,11 @@ def main():
             days_played += 1
         else:
             print(f"Day {day} still not finished after {args.max_parts} sessions — stopping for a human to check.")
+            stopped_early = True
             break
+
+    if days_played and not stopped_early and not args.skip_consolidation:
+        batch_end_memory(args, out_dir, log_dir, wait_ready()["day"])
 
 
 if __name__ == "__main__":
