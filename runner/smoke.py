@@ -62,6 +62,10 @@ class Smoke(Exception):
     """A failed assertion inside a case."""
 
 
+class SkipCase(Exception):
+    """The case cannot run in the current game state (not a failure)."""
+
+
 def _request(path: str, body: dict | None = None, timeout: float = 600):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(API + path, data=data, headers={"Content-Type": "application/json"},
@@ -80,7 +84,7 @@ def state() -> dict:
 _rpc_id = 0
 
 
-def call(tool: str, **args) -> tuple[bool, str]:
+def call(tool: str, /, **args) -> tuple[bool, str]:
     """Call an MCP tool directly. Returns (ok, text). Also checks the result shape."""
     global _rpc_id
     _rpc_id += 1
@@ -101,7 +105,7 @@ def call(tool: str, **args) -> tuple[bool, str]:
     return (not result["isError"]), text
 
 
-def ok(tool: str, **args) -> str:
+def ok(tool: str, /, **args) -> str:
     good, text = call(tool, **args)
     if not good:
         raise Smoke(f"{tool}({args}) failed: {text.splitlines()[0][:200]}")
@@ -145,6 +149,13 @@ def copy_save(src: Path, dst: Path) -> None:
         elif name == src.name + "_old":
             name = dst.name + "_old"
         shutil.copy2(f, dst / name)
+
+
+def remove_smoke_saves() -> None:
+    """Delete every smoke_* save folder. Sleeping in the copy makes the game write its own smoke_<id> folder too."""
+    for p in saves_dir().iterdir():
+        if p.is_dir() and p.name.startswith(SMOKE_PREFIX):
+            shutil.rmtree(p, ignore_errors=True)
 
 
 def pick_source_save(explicit: str | None) -> Path:
@@ -301,6 +312,8 @@ def travel():
 
 @case("shop_buy")
 def shop_buy():
+    if fresh_state().get("dayOfMonth", 0) % 7 == 3:
+        raise SkipCase("Pierre's is closed on Wednesdays; run the gate on another day to cover the shop")
     reset("Farm")
     debug("set_time", time=1000)  # Pierre's is open 9:00-17:00 (closed Wednesdays)
     ok("travel_to", location="SeedShop", reason="smoke test")
@@ -376,6 +389,8 @@ CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flo
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(errors="replace")  # game text may hold characters the console codepage lacks
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", action="append", help="Run only this case (repeatable)")
     ap.add_argument("--list", action="store_true", help="List cases and exit")
@@ -403,9 +418,11 @@ def main() -> int:
     src = pick_source_save(args.save)
     smoke_name = f"{SMOKE_PREFIX}{src.name}_{time.strftime('%H%M%S')}"
     dst = saves_dir() / smoke_name
+    if not args.keep:
+        remove_smoke_saves()  # leftovers from an earlier aborted run
     before_hash = hash_dir(src)
 
-    print(f"Copying save {src.name} → {smoke_name}")
+    print(f"Copying save {src.name} -> {smoke_name}")
     copy_save(src, dst)
     log = SmapiLog(Path(args.smapi_log))
 
@@ -424,6 +441,8 @@ def main() -> int:
                 if errs:
                     raise Smoke("SMAPI log has new errors:\n    " + "\n    ".join(errs[:5]))
                 print(f"  PASS {c.name} ({time.time() - t0:.0f}s)")
+            except SkipCase as e:
+                print(f"  SKIP {c.name}: {e}")
             except Smoke as e:
                 failures += 1
                 log.new_errors()
@@ -440,8 +459,8 @@ def main() -> int:
             except SystemExit as e:
                 print(f"  could not reload the original save: {e}")
                 failures += 1
-        if not args.keep and not args.no_restore and dst.name.startswith(SMOKE_PREFIX):
-            shutil.rmtree(dst, ignore_errors=True)
+        if not args.keep and not args.no_restore:
+            remove_smoke_saves()
 
     if hash_dir(src) != before_hash:
         failures += 1

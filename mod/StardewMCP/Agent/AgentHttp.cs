@@ -270,7 +270,7 @@ public class AgentHttp
         StateJson = JsonSerializer.Serialize(new
         {
             ready = true,
-            saveFolder = Constants.SaveFolderName,
+            saveFolder = SaveFolder.Name,
             day = AgentLog.FarmDay,
             season = Game1.currentSeason,
             dayOfMonth = Game1.dayOfMonth,

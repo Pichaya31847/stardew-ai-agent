@@ -51,7 +51,7 @@ public class AgentLog
     {
         get
         {
-            if (Constants.SaveFolderName?.StartsWith("smoke_", StringComparison.OrdinalIgnoreCase) != true) return _baseDir;
+            if (SaveFolder.Name?.StartsWith("smoke_", StringComparison.OrdinalIgnoreCase) != true) return _baseDir;
             var dir = Path.Combine(_baseDir, "smoke");
             Directory.CreateDirectory(dir);
             return dir;

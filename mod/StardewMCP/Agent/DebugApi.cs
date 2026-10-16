@@ -172,8 +172,28 @@ public static class DebugApi
             var name = _pendingLoad;
             _pendingLoad = null;
             _exiting = false;
+            SaveFolder.Pending = name;
             SaveGame.Load(name);
             Game1.exitActiveMenu();
         }
+    }
+}
+
+/// <summary>
+/// The folder name of the loaded save. SMAPI's own save name drops everything after the first underscore of a
+/// custom folder name (smoke_x_123 becomes smoke_123), so remember what we asked the game to load.
+/// </summary>
+public static class SaveFolder
+{
+    /// <summary>Set right before SaveGame.Load; becomes <see cref="Loaded"/> when the save finishes loading.</summary>
+    public static string? Pending;
+    public static string? Loaded;
+
+    public static string? Name => Context.IsWorldReady ? Loaded ?? Constants.SaveFolderName : null;
+
+    public static void OnSaveLoaded()
+    {
+        Loaded = Pending;
+        Pending = null;
     }
 }

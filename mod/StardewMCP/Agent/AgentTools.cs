@@ -794,7 +794,10 @@ public static class AgentTools
                 yield return WalkTo(near.Value, sub);
                 if (Loc == loc)
                 {
-                    if (!sub.Ok) { c.Fail($"Can't reach the exit to {next}: {sub.Result}"); yield break; }
+                    // The last step onto an edge exit is often blocked by the map edge itself, so being right next to it is enough.
+                    var here = P.TilePoint;
+                    bool atExit = Math.Abs(here.X - exit.Tile.X) + Math.Abs(here.Y - exit.Tile.Y) <= 1;
+                    if (!sub.Ok && !atExit) { c.Fail($"Can't reach the exit to {next}: {sub.Result}"); yield break; }
                     var w = exit.Warp!;
                     Game1.warpFarmer(w.TargetName, w.TargetX, w.TargetY, false);
                 }
