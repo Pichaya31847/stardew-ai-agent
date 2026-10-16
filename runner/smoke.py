@@ -745,6 +745,32 @@ def ownership():
         raise Smoke("p1 harvesting its own crop was logged as theft")
 
 
+@case("pay")
+@social
+def pay():
+    reset("Farm")
+    unfreeze()
+    debug_seat("p2", "set_money", n=100)
+    debug("set_money", n=1000)
+    text = ok_seat("p1", "pay", to="Gemini", amount=250, reason="PAYREASON for the seeds")
+    if "paid 250g" not in text or "now have 750g" not in text:
+        raise Smoke(f"unexpected pay result: {text}")
+    if (seat_money("p1"), seat_money("p2")) != (750, 350):
+        raise Smoke(f"wallets after pay: p1 {seat_money('p1')}, p2 {seat_money('p2')}")
+    heard = hear("p2")
+    if "(p1) paid you 250g" not in heard or "PAYREASON" not in heard or "now have 350g" not in heard:
+        raise Smoke(f"p2 was not told about the payment:\n{heard}")
+    entry = [e for e in _request("/api/feed")["entries"] if e.get("kind") == "pay" and e.get("player") == "p1"]
+    a = (entry[-1].get("args") or {}) if entry else {}
+    if (a.get("to"), a.get("amount"), a.get("from"), a.get("receiver")) != ("p2", 250, {"before": 1000, "after": 750}, {"before": 100, "after": 350}):
+        raise Smoke(f"viewers' feed has no correct pay entry: {entry[-1:] }")
+    for bad in ({"to": "p2", "amount": 751}, {"to": "p2", "amount": 0}, {"to": "p2", "amount": -5}, {"to": "p1", "amount": 5}, {"to": "nobody", "amount": 5}):
+        if call_seat("p1", "pay", bad)[0]:
+            raise Smoke(f"pay accepted {bad}")
+    if (seat_money("p1"), seat_money("p2")) != (750, 350):
+        raise Smoke("a rejected pay still moved money")
+
+
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
 
 
