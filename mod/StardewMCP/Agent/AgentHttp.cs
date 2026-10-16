@@ -353,6 +353,7 @@ public class AgentHttp
                 ? new { speaker = box.characterDialogue?.speaker?.displayName, question = box.isQuestion }
                 : null,
             screens = GameRunner.instance.gameInstances.Count,
+            plan = PlanBoard.Snapshot(),
             players
         }, AgentLog.Json);
     }

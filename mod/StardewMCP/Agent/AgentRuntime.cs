@@ -80,6 +80,7 @@ public class AgentRuntime
     {
         _globalTicks++;
         AutoHandleOverlays();
+        SocialTools.Tick(Log.Player);
         _actionLane.Tick(_actions);
         _observeLane.Tick(_observations);
     }
@@ -93,7 +94,8 @@ public class AgentRuntime
         {
             switch (Game1.activeClickableMenu)
             {
-                case StardewValley.Menus.ShippingMenu sm:
+                // Click once: each click restarts the 800 ms outro fade, so repeated clicks keep the menu open.
+                case StardewValley.Menus.ShippingMenu sm when !Helper.Reflection.GetField<bool>(sm, "outro").GetValue():
                     Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
                     break;
                 case StardewValley.Menus.LevelUpMenu lm when lm.isActive:
@@ -252,6 +254,8 @@ public class AgentRuntime
             _ctx = null;
 
             var text = ctx.Result;
+            var mail = call.Tool.Mail ? SocialTools.TakeMail(_rt.Log.Player) : "";
+            if (mail.Length > 0) text = text.TrimEnd() + "\n" + mail;
             if (call.Tool.AppendStatus && Context.IsWorldReady)
                 text = text.TrimEnd() + "\n" + AgentTools.Footer();
 

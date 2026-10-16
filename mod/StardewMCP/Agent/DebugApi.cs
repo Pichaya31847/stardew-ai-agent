@@ -33,7 +33,7 @@ public static class DebugApi
     public static Dictionary<string, ToolDef> All()
     {
         ToolDef Op(string name, ToolRunner run, bool needsWorld = true) =>
-            new() { Name = name, Description = "debug", Schema = new { }, Instant = true, NeedsWorld = needsWorld, AppendStatus = false, Run = run };
+            new() { Name = name, Description = "debug", Schema = new { }, Instant = true, NeedsWorld = needsWorld, AppendStatus = false, Mail = false, Run = run };
 
         return new[]
         {
@@ -47,6 +47,8 @@ public static class DebugApi
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
             Op("capture", Capture, needsWorld: false),
+            Op("chat_log", ChatLog),
+            Op("disconnect", Disconnect),
         }.ToDictionary(t => t.Name);
     }
 
@@ -196,6 +198,22 @@ public static class DebugApi
         }
         if (built.Count < want) { c.Fail($"Built {built.Count} of {want} cabins: {string.Join(" ", built)}"); yield break; }
         c.Result = $"Built {built.Count} cabins at {string.Join(" ", built)}";
+    }
+
+    /// <summary>Forget that an AI is attached to this seat, so an idle seat stops holding the world frozen.</summary>
+    private static IEnumerator Disconnect(JsonElement a, CallContext c)
+    {
+        Players.Current.Connected = false;
+        c.Result = $"{Players.Current.Id} disconnected";
+        yield break;
+    }
+
+    /// <summary>What this screen's chat box shows, one line per message (to prove a line reached this player's screen).</summary>
+    private static IEnumerator ChatLog(JsonElement a, CallContext c)
+    {
+        var lines = Game1.chatBox?.messages.Select(m => string.Concat(m.message.Select(sn => sn.message))) ?? Enumerable.Empty<string>();
+        c.Result = string.Join("\n", lines) is { Length: > 0 } t ? t : "(chat box is empty)";
+        yield break;
     }
 
     /// <summary>Save the next composed game frame (every screen, never the desktop) as PNG.</summary>
