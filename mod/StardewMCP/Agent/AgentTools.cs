@@ -886,25 +886,32 @@ public static class AgentTools
             int need = (st.TradeItemCount ?? 5) * qty;
             if (!shop.HasTradeItem(st.TradeItem, need)) { c.Fail($"{sal.DisplayName} also needs {need}x {ItemRegistry.GetData(st.TradeItem)?.DisplayName ?? st.TradeItem}."); yield break; }
         }
+        // Move the shop's held item into the inventory; whatever doesn't fit is dropped at the player's feet.
+        bool dropped = false;
+        void PutAwayHeld()
+        {
+            if (shop.heldItem is not Item held) return;
+            shop.heldItem = null;
+            if (P.addItemToInventory(held) is Item rest)
+            {
+                Game1.createItemDebris(rest, P.getStandingPosition(), P.FacingDirection);
+                dropped = true;
+            }
+        }
+
+        // A leftover held item (e.g. from a manual click) would be stacked onto; put it away before the space check.
+        PutAwayHeld();
         var probe = sal.GetSalableInstance();
         probe.Stack = qty * sal.Stack;
         if (!sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P)) { c.Fail($"Can't buy {sal.DisplayName}: inventory is full or you can't hold it."); yield break; }
 
-        // A leftover held item (e.g. from a manual click) would be stacked onto; put it away first.
-        if (shop.heldItem is Item leftover)
-        {
-            shop.heldItem = null;
-            if (P.addItemToInventory(leftover) is Item rest) Game1.createItemDebris(rest, P.getStandingPosition(), P.FacingDirection);
-        }
-
         var purchase = Rt.Helper.Reflection.GetMethod(shop, "tryToPurchaseItem");
         int maxChunk = Math.Max(1, sal.GetSalableInstance().maximumStackSize());
         int bought = 0, spent = 0;
-        bool dropped = false;
         while (bought < qty)
         {
             int n = Math.Min(qty - bought, maxChunk);
-            int before = ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
+            int before = ShopMenu.getPlayerCurrencyAmount(P, shop.currency), stockBefore = st.Stock;
             bool soldOut = purchase.Invoke<bool>(sal, null, n, 0, 0);
             int paid = before - ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
             if (soldOut)
@@ -913,16 +920,10 @@ public static class AgentTools
                 shop.itemPriceAndStock.Remove(sal);
                 shop.forSale.Remove(sal);
             }
-            bool got = paid > 0 || shop.heldItem != null || st.Price == 0;
-            if (shop.heldItem is Item held)
-            {
-                shop.heldItem = null;
-                if (P.addItemToInventory(held) is Item rest)
-                {
-                    Game1.createItemDebris(rest, P.getStandingPosition(), P.FacingDirection);
-                    dropped = true;
-                }
-            }
+            // Free items charge nothing: count them only if something visibly happened.
+            bool got = paid > 0 || shop.heldItem != null || st.Stock < stockBefore ||
+                       (sal.IsRecipe && sal is Item r && (P.cookingRecipes.ContainsKey(r.BaseName) || P.craftingRecipes.ContainsKey(r.BaseName)));
+            PutAwayHeld();
             if (!got) break;
             bought += n;
             spent += paid;

@@ -388,7 +388,10 @@ def buy_recipe():
     """#7: a bought recipe is learned, not handed over as the dish."""
     reset("Farm")
     debug("set_time", time=1300)
+    wednesday = fresh_state().get("dayOfMonth", 0) % 7 == 3
     for shop_id in ("Saloon", "SeedShop"):  # Gus sells cooking recipes, Pierre some crafting ones
+        if shop_id == "SeedShop" and wednesday:
+            continue  # Pierre's door is locked on Wednesdays
         ok("travel_to", location=shop_id, reason="smoke test")
         debug("open_shop", id=shop_id)  # set_time doesn't move the owner to the counter
         listing = ok("shop_list")
