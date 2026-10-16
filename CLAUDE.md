@@ -22,7 +22,11 @@ get caught and betray each other. The story must emerge from the game, not from 
 - Backends are the CLIs the user already subscribes to: `claude` (Claude), `agy` (Gemini),
   `opencode` (GPT). Each session gets only the stardew MCP tools (no shell, no file edits).
   A direct API backend may be added later per player if a CLI proves unreliable.
-- Each player has a persona file (name, traits, optional secret goal) loaded by the runner.
+- Characters **emerge from experience** on top of the base model, not from hand-written personas (#48):
+  each AI writes its own `self` note (overwritten every evening, about 150 words) and a one-line `people`
+  note per other player. Only the owner and the viewers see them (overlay, like `think`); the viewers get
+  a before → after card each evening at bedtime. Writing is reminded, not forced. A persona file with an
+  optional secret goal stays an extra if the emerged characters turn out flat.
 
 **Time: event-driven, no fixed rounds**
 - Each AI acts independently, one action at a time; nobody waits for a turn.
@@ -79,7 +83,8 @@ get caught and betray each other. The story must emerge from the game, not from 
    scheduler (`netWorldState.IsPaused`), thinking timeout, per-player logs.
 2. Social tools (#39): say, whisper, think, emote, give, plan board.
 3. Perception and interrupts (#40).
-4. Runner for claude / agy / opencode with personas and day phases (#41).
+4. Runner for claude / agy / opencode with day phases and per-seat memory (#41). Before filming, a 3-day, 2-seat
+   warm-up (Haiku + Gemini Flash) tests the emergent-persona mechanism (#48).
 5. Studio (#42): `/api/events`, overlay and replay moved out, OBS director and scenes, recorder.
 
 ## Layout
