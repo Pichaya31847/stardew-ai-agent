@@ -170,7 +170,7 @@ public static class WorldText
             if (obj is Chest chest)
             {
                 if (chest.giftbox.Value) return ('O', "Gift box (open it with interact)");
-                if (chest.playerChest.Value) return ('O', $"Chest ({chest.Items.Count(i => i != null)} items — use chest tool)");
+                if (chest.playerChest.Value) return ('O', $"Chest ({chest.Items.Count(i => i != null)} items)");
             }
             var held = obj.heldObject.Value != null ? $" (holding {obj.heldObject.Value.DisplayName}{(obj.readyForHarvest.Value ? ", READY" : "")})" : "";
             return ('O', obj.DisplayName + held);
