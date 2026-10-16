@@ -13,9 +13,10 @@
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.*" />
   </ItemGroup>
 
-  <!-- Overlay and replay pages served by the in-game HTTP server. -->
+  <!-- Overlay and replay pages moved to studio/; linked here while AgentHttp still serves /overlay and /replay. -->
   <ItemGroup>
-    <None Include="assets\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\studio\overlay.html" Link="assets\overlay.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\studio\replay.html" Link="assets\replay.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
