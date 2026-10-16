@@ -27,6 +27,8 @@ public class LogEntry
     public long? Ms { get; set; }
     /// <summary>Player money when the entry was written (overlay's day-card delta).</summary>
     public int? Money { get; set; }
+    /// <summary>Player id (p1..p4) the entry belongs to; null for run-wide system lines.</summary>
+    public string? Player { get; set; }
 }
 
 /// <summary>Writes the proof-of-run log (JSONL per in-game day) and keeps a feed for the overlay.</summary>
@@ -72,7 +74,10 @@ public class AgentLog
     /// <summary>Days since the farm started, 1-based (spring 1 year 1 = day 1).</summary>
     public static int FarmDay => Context.IsWorldReady ? Game1.Date.TotalDays + 1 : 0;
 
-    public LogEntry Add(string kind, string? tool = null, string? text = null, object? args = null, bool? ok = null, long? ms = null)
+    /// <summary>A view of this log that stamps every entry with one player's id.</summary>
+    public PlayerLog For(string player) => new(this, player);
+
+    public LogEntry Add(string kind, string? tool = null, string? text = null, object? args = null, bool? ok = null, long? ms = null, string? player = null)
     {
         var e = new LogEntry
         {
@@ -87,7 +92,8 @@ public class AgentLog
             Args = args,
             Ok = ok,
             Ms = ms,
-            Money = Context.IsWorldReady ? Game1.player.Money : null
+            Money = Context.IsWorldReady ? Game1.player.Money : null,
+            Player = player
         };
 
         lock (_lock)
@@ -116,13 +122,15 @@ public class AgentLog
 
     public string DayFile(int day) => Path.Combine(Dir, $"day_{day:000}.jsonl");
 
-    public string DiaryFile(int day) => Path.Combine(Dir, $"diary_{day:000}.md");
+    /// <summary>Diary of one player; p1 (or a single-player run) keeps the original file name.</summary>
+    public string DiaryFile(int day, string? player = null) =>
+        Path.Combine(Dir, player is null or "p1" ? $"diary_{day:000}.md" : $"diary_{day:000}_{player}.md");
 
-    public void WriteDiary(int day, string text)
+    public void WriteDiary(int day, string text, string? player = null)
     {
         var header = $"# Day {day} — {Game1.currentSeason} {Game1.dayOfMonth} Y{Game1.year}\n\n";
-        File.WriteAllText(DiaryFile(day), header + text.Trim() + "\n", Encoding.UTF8);
-        Add("diary", text: text);
+        File.WriteAllText(DiaryFile(day, player), header + text.Trim() + "\n", Encoding.UTF8);
+        Add("diary", text: text, player: player);
     }
 
     public List<int> Days()
@@ -134,4 +142,23 @@ public class AgentLog
             .OrderBy(d => d)
             .ToList();
     }
+}
+
+/// <summary>One player's side of the shared <see cref="AgentLog"/>.</summary>
+public class PlayerLog
+{
+    private readonly AgentLog _log;
+
+    public string Player { get; }
+
+    public PlayerLog(AgentLog log, string player)
+    {
+        _log = log;
+        Player = player;
+    }
+
+    public LogEntry Add(string kind, string? tool = null, string? text = null, object? args = null, bool? ok = null, long? ms = null) =>
+        _log.Add(kind, tool, text, args, ok, ms, Player);
+
+    public void WriteDiary(int day, string text) => _log.WriteDiary(day, text, Player);
 }

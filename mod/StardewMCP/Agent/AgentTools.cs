@@ -34,7 +34,11 @@ public class ToolDef
 /// <summary>The actions the AI can take. Mechanics (walking, aiming, button presses) are automated; decisions are the AI's.</summary>
 public static class AgentTools
 {
-    public static AgentRuntime Rt = null!;
+    /// <summary>Runtime of the seat whose screen is updating (tools run on that screen's tick).</summary>
+    public static AgentRuntime Rt => Players.Current.Runtime;
+
+    /// <summary>Shared settings; set once at startup so tool schemas can be built on any thread.</summary>
+    public static ModConfig Config = new();
     private static Farmer P => Game1.player;
     private static GameLocation Loc => Game1.currentLocation;
 
@@ -52,7 +56,7 @@ public static class AgentTools
 
     /// <summary>Language for text shown to viewers (config ThoughtLanguage).</summary>
     private static string Lang =>
-        string.IsNullOrWhiteSpace(Rt?.Config.ThoughtLanguage) ? "Thai" : Rt.Config.ThoughtLanguage.Trim();
+        string.IsNullOrWhiteSpace(Config.ThoughtLanguage) ? "Thai" : Config.ThoughtLanguage.Trim();
 
     private static string ReasonDesc => Lang.Equals("Thai", StringComparison.OrdinalIgnoreCase)
         ? "Short reason IN THAI shown to viewers on screen (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"
