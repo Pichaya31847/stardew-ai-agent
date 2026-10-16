@@ -94,8 +94,7 @@ public class AgentRuntime
         {
             switch (Game1.activeClickableMenu)
             {
-                // Click once: each click restarts the 800 ms outro fade, so repeated clicks keep the menu open.
-                case StardewValley.Menus.ShippingMenu sm when !Helper.Reflection.GetField<bool>(sm, "outro").GetValue():
+                case StardewValley.Menus.ShippingMenu sm:
                     Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
                     break;
                 case StardewValley.Menus.LevelUpMenu lm when lm.isActive:

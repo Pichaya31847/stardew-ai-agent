@@ -958,11 +958,14 @@ public static class AgentTools
         house.answerDialogueAction("Sleep_Yes", Array.Empty<string>());
         Rt.Log.Add("system", text: "Sleeping...");
 
-        // Wait for the new day; click through end-of-day screens (AgentRuntime closes the shipping summary).
+        // Wait for the new day; click through end-of-day screens.
         for (int t = 0; t < 60 * 60 * 5; t++)
         {
             switch (Game1.activeClickableMenu)
             {
+                case ShippingMenu sm when t % 60 == 0:
+                    Rt.Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
+                    break;
                 case LevelUpMenu lm when t % 60 == 0 && lm.isActive:
                     if (lm.isProfessionChooser)
                     {
