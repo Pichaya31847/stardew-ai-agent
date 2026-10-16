@@ -342,6 +342,8 @@ public static class AgentTools
         for (int t = 0; t < limit; t++)
         {
             if (Game1.currentLocation != loc) yield break; // walked through a warp
+            // Stepped onto a warp: stop pushing into it, or the game re-warps (restarting the fade) every tick.
+            if (Game1.isWarping) { P.controller = null; yield break; }
             if (P.controller == null) break;
             if (Vector2.DistanceSquared(P.Position, last) < 0.01f) stuck++; else stuck = 0;
             last = P.Position;
@@ -796,7 +798,7 @@ public static class AgentTools
                 var near = Pathfinder.IsWalkable(loc, exit.Tile.X, exit.Tile.Y) ? exit.Tile : NearestWalkable(loc, exit.Tile, 3);
                 if (near == null) { c.Fail($"Can't find a walkable tile near the exit to {next}."); yield break; }
                 yield return WalkTo(near.Value, sub);
-                if (Loc == loc)
+                if (Loc == loc && !Game1.isWarping)
                 {
                     // The last step onto an edge exit is often blocked by the map edge itself, so being right next to it is enough.
                     var here = P.TilePoint;
