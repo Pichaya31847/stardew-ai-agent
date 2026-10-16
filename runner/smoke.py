@@ -416,6 +416,36 @@ def buy_recipe():
     ok("close_menu")
 
 
+@case("choose_profession")
+def choose_profession():
+    """#8: level-5 profession choices wait for the AI; an unmade choice gets the default at bedtime."""
+    reset("Farm")
+    if "Professions:" in ok("status"):
+        raise SkipCase("this save already has professions; run the gate on an earlier save")
+    debug("set_skill", skill="farming", level=5)
+    debug("set_skill", skill="fishing", level=5)
+    ok("go_to_bed", diary="Smoke test diary: reached farming and fishing level 5 today.", reason="smoke test")
+
+    status = ok("status")
+    for skill in ("Farming 5", "Fishing 5"):
+        if f"Pending profession choice (permanent): {skill}" not in status:
+            raise Smoke(f"no pending {skill} choice in status:\n{status}")
+    text = ok("choose_profession", option=1, skill="Farming", reason="smoke test")
+    if "Tiller" not in text:
+        raise Smoke(f"expected Tiller for Farming option 1, got: {text.splitlines()[0]}")
+    good, _ = call("choose_profession", option=1, skill="Mining", reason="smoke test")
+    if good:
+        raise Smoke("choose_profession accepted a skill with no pending choice")
+
+    ok("go_to_bed", diary="Smoke test diary: chose Tiller and left the fishing choice to the default.", reason="smoke test")
+    status = ok("status")
+    m = re.search(r"^Professions: (.+)$", status, re.M)
+    if not m or "Tiller" not in m.group(1) or "Fisher" not in m.group(1):
+        raise Smoke(f"expected Tiller (chosen) and Fisher (default) in status, got: {m.group(0) if m else status}")
+    if "Pending profession choice" in status:
+        raise Smoke("a profession choice is still pending after bedtime")
+
+
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
 
 

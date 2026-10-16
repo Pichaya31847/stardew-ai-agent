@@ -93,11 +93,19 @@ public static class AgentTools
         return list;
     }
 
+    private static string StatusText()
+    {
+        var prof = Professions.PendingText(Rt, P);
+        return prof.Length > 0 ? WorldText.Status() + "\n" + prof : WorldText.Status();
+    }
+
     public static string Footer()
     {
         var sb = new StringBuilder($"[{WorldText.FormatTime(Game1.timeOfDay)} · {Loc?.Name} ({P.TilePoint.X},{P.TilePoint.Y}) · energy {(int)P.Stamina}/{P.MaxStamina} · {P.Money}g]");
         var menu = WorldText.MenuState().Trim();
         if (menu.Length > 0) sb.Append('\n').Append(menu);
+        var prof = Professions.PendingText(Rt, P);
+        if (prof.Length > 0) sb.Append('\n').Append(prof);
         return sb.ToString();
     }
 
@@ -121,7 +129,7 @@ public static class AgentTools
                 Description = "Current day, time, weather, location, position, energy, money, held item and any open dialogue/menu.",
                 Schema = Obj(new { }),
                 Instant = true, AppendStatus = false,
-                Run = (a, c) => Instant(c, WorldText.Status())
+                Run = (a, c) => Instant(c, StatusText())
             },
             new()
             {
@@ -245,6 +253,13 @@ public static class AgentTools
                 Description = "Let game time pass (e.g. until a shop opens).",
                 Schema = Obj(new { minutes = Int("Game minutes, 10-240"), reason = Str(ReasonDesc) }, "minutes", "reason"),
                 Run = Wait
+            },
+            new()
+            {
+                Name = "choose_profession",
+                Description = "Make a pending profession choice (offered at skill level 5 and 10, shown in status). It is permanent and changes what pays off, so read both options first.",
+                Schema = Obj(new { option = Int("0 or 1, as numbered in status"), skill = Str("Skill name if more than one choice is pending (Farming, Fishing, Foraging, Mining, Combat)"), reason = Str(ReasonDesc) }, "option", "reason"),
+                Run = ChooseProfession
             },
             new()
             {
@@ -1002,6 +1017,26 @@ public static class AgentTools
             Rt.Helper.Reflection.GetMethod(sm, "okClicked").Invoke();
     }
 
+    private static IEnumerator ChooseProfession(JsonElement a, CallContext c)
+    {
+        var pending = Rt.PendingProfessions;
+        if (pending.Count == 0) { c.Fail("No profession choice is pending. They come with skill levels 5 and 10."); yield break; }
+        var skillName = S(a, "skill");
+        Point choice;
+        if (skillName.Length > 0)
+        {
+            int skill = Professions.SkillIndex(skillName);
+            var match = pending.Where(p => p.X == skill).OrderBy(p => p.Y).ToList();
+            if (match.Count == 0) { c.Fail($"No pending choice for \"{skillName}\". Pending: {string.Join(", ", pending.Select(p => $"{Professions.SkillName(p.X)} {p.Y}"))}."); yield break; }
+            choice = match[0];
+        }
+        else choice = pending.OrderBy(p => p.Y).First();
+        var text = Professions.Choose(Rt, P, choice, I(a, "option", -1), out var err);
+        if (text == null) { c.Fail(err); yield break; }
+        Rt.Log.Add("system", text: $"Profession chosen: {text}");
+        c.Result = text;
+    }
+
     private static IEnumerator GoToBed(JsonElement a, CallContext c)
     {
         var diary = S(a, "diary").Trim();
@@ -1010,6 +1045,7 @@ public static class AgentTools
         int dayBefore = Game1.Date.TotalDays;
         int moneyBefore = P.Money;
         Rt.Log.WriteDiary(AgentLog.FarmDay, diary);
+        Professions.ResolveDefaults(Rt, P, "not chosen before bed");
 
         if (Loc is not FarmHouse)
         {
@@ -1040,11 +1076,7 @@ public static class AgentTools
                     break;
                 case LevelUpMenu lm when t % 60 == 0 && lm.isActive:
                     if (lm.isProfessionChooser)
-                    {
-                        // TODO: let the AI choose; for now pick the first profession and log it.
-                        Rt.Log.Add("system", text: $"Level up: profession choice auto-picked option 1 ({Rt.Helper.Reflection.GetField<List<int>>(lm, "professionsToChoose").GetValue().FirstOrDefault()})");
-                        lm.receiveLeftClick(lm.leftProfession.bounds.Center.X, lm.leftProfession.bounds.Center.Y);
-                    }
+                        Professions.Defer(lm, Rt);
                     else
                         lm.okButtonClicked();
                     break;
