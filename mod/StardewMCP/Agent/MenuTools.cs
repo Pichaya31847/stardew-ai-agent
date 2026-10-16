@@ -113,7 +113,7 @@ public static partial class AgentTools
         return sb.ToString();
     }
 
-    private static string MenuName(IClickableMenu menu)
+    internal static string MenuName(IClickableMenu menu)
     {
         var name = menu switch
         {

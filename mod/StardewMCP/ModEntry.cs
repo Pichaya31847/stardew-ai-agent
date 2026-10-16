@@ -32,6 +32,7 @@ public class ModEntry : Mod
         SplitScreen.Init(helper, Monitor, _config);
         SplitScreenPatches.Apply(ModManifest, _config);
         SocialTools.Apply(ModManifest);
+        AgentTools.Apply(ModManifest);
         _http = new AgentHttp(_log, _config, Monitor, Path.Combine(helper.DirectoryPath, "assets"));
 
         helper.Events.GameLoop.GameLaunched += (_, _) => _http.Start(_config.HttpPort);

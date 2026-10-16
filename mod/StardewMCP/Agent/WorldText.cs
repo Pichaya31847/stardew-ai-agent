@@ -89,7 +89,7 @@ public static class WorldText
                 sb.AppendLine($"Letter open: \"{letterText}\". Use close_menu (attached items and quests will be claimed automatically).");
                 break;
             default:
-                sb.AppendLine($"Menu open: {Game1.activeClickableMenu.GetType().Name}. Use menu() to read and use it, or close_menu.");
+                sb.AppendLine($"Menu open: {AgentTools.MenuName(Game1.activeClickableMenu)}. Use menu() to read and use it, or close_menu.");
                 break;
         }
         return sb.ToString();

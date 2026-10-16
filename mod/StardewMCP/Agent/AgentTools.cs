@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using HarmonyLib;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
@@ -646,6 +647,29 @@ public static partial class AgentTools
         c.Result = string.Join("\n", lines) + "\n" + (diff.Length > 0 ? diff : "Nothing was collected.");
     }
 
+    /// <summary>True while interact presses the action button; see <see cref="JustRightClick_Prefix"/>.</summary>
+    private static bool _pressingAction;
+
+    public static void Apply(IManifest manifest) =>
+        new Harmony(manifest.UniqueID + ".input").Patch(AccessTools.Method(typeof(Game1), nameof(Game1.didPlayerJustRightClick)),
+            prefix: new HarmonyMethod(typeof(AgentTools), nameof(JustRightClick_Prefix)));
+
+    /// <summary>Player chests, the shipping bin, fish ponds, bushes and furniture only answer a fresh action-button press.</summary>
+    private static bool JustRightClick_Prefix(ref bool __result)
+    {
+        if (!_pressingAction) return true;
+        __result = true;
+        return false;
+    }
+
+    /// <summary>Game1.tryToCheckAt with the action button seen as just pressed.</summary>
+    private static bool PressAction(Point tile)
+    {
+        _pressingAction = true;
+        try { return Game1.tryToCheckAt(tile.ToVector2(), P); }
+        finally { _pressingAction = false; }
+    }
+
     /// <summary>The action button, as in Game1.pressActionButton: check the tile with the held item, or use the held item in place.</summary>
     private static IEnumerator Interact(JsonElement a, CallContext c)
     {
@@ -674,7 +698,7 @@ public static partial class AgentTools
 
         string what;
         if (atTile)
-            what = Game1.tryToCheckAt(t.ToVector2(), P) ? $"Interacted with ({t.X},{t.Y})" : $"Nothing happened at ({t.X},{t.Y})";
+            what = PressAction(t) ? $"Interacted with ({t.X},{t.Y})" : $"Nothing happened at ({t.X},{t.Y})";
         else if (P.ActiveObject is { } obj and not StardewValley.Objects.Furniture && obj.performUseAction(Loc))
         {
             P.reduceActiveItemByOne();
