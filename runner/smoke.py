@@ -478,12 +478,12 @@ def ensure_seats() -> None:
             time.sleep(2)
         return False
 
-    if wait(25):
-        return
-    if state().get("screens", 1) <= 1:
-        debug("build_cabins", n=3)
-    if not wait(120):
-        raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
+    if not wait(25):
+        if state().get("screens", 1) <= 1:
+            debug("build_cabins", n=3)
+        if not wait(120):
+            raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
+    debug("separate_wallets")  # the filming save has separate wallets; the smoke copy of a shared one needs the switch
 
 
 def hear(seat: str, tool: str = "status") -> str:
@@ -664,6 +664,35 @@ def give():
     good, text = call_seat("p1", "give", {"to": "p2", "item": "Wood"})
     if good or "inventory is full" not in text:
         raise Smoke(f"give to a full pack should fail, got: {text.splitlines()[0]}")
+
+
+def seat_money(seat: str) -> int:
+    return next(p for p in fresh_state()["players"] if p["id"] == seat)["state"]["money"]
+
+
+@case("wallets")
+@social
+def wallets():
+    """Each seat spends and sees its own money: a purchase by p2 must not touch p1's wallet."""
+    if fresh_state().get("dayOfMonth", 0) % 7 == 3:
+        raise SkipCase("Pierre's is closed on Wednesdays; run the gate on another day to cover the shop")
+    reset("Farm")
+    unfreeze()
+    debug_seat("p2", "set_money", n=500)
+    debug_seat("p3", "set_money", n=300)
+    debug("set_money", n=2000)
+    if [seat_money(s) for s in ("p1", "p2", "p3")] != [2000, 500, 300]:
+        raise Smoke(f"wallets are not separate: {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
+    for seat, g in (("p2", 500), ("p3", 300)):
+        if f"Money {g}g" not in ok_seat(seat, "status"):
+            raise Smoke(f"{seat} status does not show its own {g}g")
+
+    debug_seat("p2", "open_shop", id="SeedShop")
+    text = ok_seat("p2", "buy", item="Parsnip Seeds", quantity=2)
+    paid = int(re.search(r"for (\d+)g", text).group(1))
+    if (seat_money("p1"), seat_money("p2"), seat_money("p3")) != (2000, 500 - paid, 300):
+        raise Smoke(f"p2 paid {paid}g but wallets are {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
+    ok_seat("p2", "close_menu")
 
 
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))

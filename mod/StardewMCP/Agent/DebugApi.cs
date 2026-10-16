@@ -47,6 +47,7 @@ public static class DebugApi
             Op("open_shop", OpenShop),
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
+            Op("separate_wallets", EconomyTools.DebugSeparateWallets),
             Op("capture", Capture, needsWorld: false),
             Op("chat_log", ChatLog),
             Op("disconnect", Disconnect),
