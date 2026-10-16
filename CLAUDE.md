@@ -12,8 +12,13 @@ get caught and betray each other. The story must emerge from the game, not from 
 ### Requirements
 
 **Players and backends**
-- One game instance, split-screen local co-op, 3 farmers: P1 = host, P2/P3 = local farmhands.
-- Each farmer is driven by one AI through its own MCP endpoint: `/mcp/p1`, `/mcp/p2`, `/mcp/p3`.
+- One game instance, split-screen local co-op with **4 screens** in the game's even 2×2 grid:
+  P1 = host, P2/P3 = local farmhands, each driven by an AI; **P4 = camera / summary screen**
+  for the video (no AI). P4's farmer is parked out of the way and excluded from the scheduler,
+  perception and interrupts; what P4 shows is chosen by studio through a generic mod API.
+- Each AI farmer has its own MCP endpoint: `/mcp/p1`, `/mcp/p2`, `/mcp/p3`.
+- The save needs 3 cabins (new co-op farm with starting cabins); the mod joins P2–P4 itself
+  (`GameRunner.AddGameInstance`, no gamepads) and locks physical keyboard/mouse input on P1.
 - Backends are the CLIs the user already subscribes to: `claude` (Claude), `agy` (Gemini),
   `opencode` (GPT). Each session gets only the stardew MCP tools (no shell, no file edits).
   A direct API backend may be added later per player if a CLI proves unreliable.
@@ -57,15 +62,21 @@ get caught and betray each other. The story must emerge from the game, not from 
 - OBS scenes: "all three" plus "focus P1/P2/P3" (crop of that player's screen, others as
   picture-in-picture). The director switches scenes from `/api/events`: focus whoever speaks,
   whispers or triggers a key event (theft, gift, caught slacking); grid during plain work.
-- Record at 1440p or higher so a cropped screen is still sharp. The recorder keeps cutting
-  frozen time, holding a few seconds for chat bubbles and thoughts.
+- Record at 2560×1440 (DLDSR 1.78x, exclusive fullscreen): 1280×720 per screen at effective
+  zoom 1.0, the sharpest setting. Launch with `SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0` so the game
+  keeps rendering when OBS has focus. Fallback: 1080p borderless + OBS point upscale.
+- Per-screen base zoom = 1.5 × (screen width / 960), keeping about 20 tiles in view.
+- Frozen frames must look like live ones: no "Paused" banner, HUD kept, no gamepad hint,
+  join/hosting chat lines or cursor. The recorder keeps cutting frozen time, holding a few
+  seconds for chat bubbles and thoughts.
 
 ### Phases
 
-0. **Spike: split-screen with 3 mod-driven farmers** (#37). Spawn P2/P3 from the mod without gamepads,
-   run tools per screen, freeze all three at once. Go/no-go; fallback is LAN co-op with 3 windows.
-1. Multi-player core (#38): per-player endpoints and runtime, freeze-while-anyone-thinks scheduler,
-   thinking timeout, per-player logs.
+0. ~~Spike: split-screen with mod-driven farmers~~ (#37), **done: GO**. Findings and API names
+   are in the #37 comments; throwaway code on `spike/37-splitscreen` and `spike/37-layout`.
+1. Multi-player core (#38): split-screen setup (join P2–P4, focus/sleep fixes, P1 input lock,
+   recording-artefact patches, zoom), per-player endpoints and runtime, freeze-while-anyone-thinks
+   scheduler (`netWorldState.IsPaused`), thinking timeout, per-player logs.
 2. Social tools (#39): say, whisper, think, emote, give, plan board.
 3. Perception and interrupts (#40).
 4. Runner for claude / agy / opencode with personas and day phases (#41).
