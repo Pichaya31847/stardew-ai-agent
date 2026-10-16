@@ -51,6 +51,7 @@ public class ModEntry : Mod
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         TryAutoLoad(e.Ticks);
+        DebugApi.Tick();
         _agent.Tick();
         if (e.IsMultipleOf(15))
             _http.RefreshState();

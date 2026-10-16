@@ -1,0 +1,179 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using StardewModdingAPI;
+using StardewValley;
+using StardewValley.Menus;
+
+namespace StardewMCP.Agent;
+
+/// <summary>
+/// Test hooks for runner/smoke.py, served at POST /api/debug/{op} only when
+/// ModConfig.EnableDebugApi is true. They are deliberately not MCP tools, so the player AI
+/// never sees them. Each op runs on the game thread through the normal AgentRuntime queue.
+/// </summary>
+public static class DebugApi
+{
+    private static string? _pendingLoad;
+    private static bool _exiting;
+    private static int _titleTicks;
+
+    private static string S(JsonElement a, string name, string def = "") =>
+        a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? def : def;
+
+    private static int I(JsonElement a, string name, int def) =>
+        a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : def;
+
+    private static bool Has(JsonElement a, string name) =>
+        a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number;
+
+    public static Dictionary<string, ToolDef> All()
+    {
+        ToolDef Op(string name, ToolRunner run, bool needsWorld = true) =>
+            new() { Name = name, Description = "debug", Schema = new { }, Instant = true, NeedsWorld = needsWorld, AppendStatus = false, Run = run };
+
+        return new[]
+        {
+            Op("warp", Warp),
+            Op("set_time", SetTime),
+            Op("add_item", AddItem),
+            Op("set_money", SetMoney),
+            Op("set_skill", SetSkill),
+            Op("set_health", SetHealth),
+            Op("set_stamina", SetStamina),
+            Op("load_save", LoadSave, needsWorld: false),
+        }.ToDictionary(t => t.Name);
+    }
+
+    // ------------------------------------------------------------------ ops
+
+    private static IEnumerator Warp(JsonElement a, CallContext c)
+    {
+        var name = S(a, "location");
+        if (Game1.getLocationFromName(name) == null) { c.Fail($"Unknown location \"{name}\""); yield break; }
+        int x = I(a, "x", 0), y = I(a, "y", 0);
+
+        if (Game1.activeClickableMenu != null) Game1.exitActiveMenu();
+        Game1.warpFarmer(name, x, y, false);
+        for (int i = 0; i < 600 && (Game1.isWarping || Game1.fadeToBlack || Game1.currentLocation?.Name != name); i++)
+            yield return null;
+        if (Game1.currentLocation?.Name != name) { c.Fail($"Warp to {name} did not finish"); yield break; }
+        yield return null;
+        c.Result = $"Warped to {name} ({Game1.player.TilePoint.X},{Game1.player.TilePoint.Y})";
+    }
+
+    private static IEnumerator SetTime(JsonElement a, CallContext c)
+    {
+        int t = I(a, "time", -1);
+        if (t < 600 || t > 2600 || t % 10 != 0 || t % 100 >= 60) { c.Fail("time must be HHMM in 600..2600 (e.g. 900, 1830)"); yield break; }
+        Game1.timeOfDay = t;
+        c.Result = $"Time set to {WorldText.FormatTime(t)}";
+    }
+
+    private static IEnumerator AddItem(JsonElement a, CallContext c)
+    {
+        var id = S(a, "id").Trim();
+        int qty = Math.Max(1, I(a, "qty", 1));
+        if (id.Length == 0) { c.Fail("id is required (e.g. \"(O)472\" or \"472\")"); yield break; }
+        if (!id.StartsWith("(")) id = "(O)" + id;
+
+        Item? item;
+        try { item = ItemRegistry.Create(id, qty); }
+        catch (Exception ex) { c.Fail($"Cannot create {id}: {ex.Message}"); yield break; }
+        if (item == null) { c.Fail($"Cannot create {id}"); yield break; }
+
+        if (!Game1.player.addItemToInventoryBool(item)) { c.Fail("Inventory is full"); yield break; }
+        c.Result = $"Added {qty} x {item.DisplayName}";
+        yield break;
+    }
+
+    private static IEnumerator SetMoney(JsonElement a, CallContext c)
+    {
+        if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
+        Game1.player.Money = Math.Max(0, I(a, "n", 0));
+        c.Result = $"Money set to {Game1.player.Money}g";
+        yield break;
+    }
+
+    private static readonly int[] XpForLevel = { 0, 100, 380, 770, 1300, 2150, 3300, 4800, 6900, 10000, 15000 };
+
+    private static IEnumerator SetSkill(JsonElement a, CallContext c)
+    {
+        var skill = S(a, "skill").ToLowerInvariant();
+        int level = Math.Clamp(I(a, "level", 0), 0, 10);
+        var p = Game1.player;
+        int index;
+        switch (skill)
+        {
+            case "farming": index = 0; p.farmingLevel.Value = level; break;
+            case "fishing": index = 1; p.fishingLevel.Value = level; break;
+            case "foraging": index = 2; p.foragingLevel.Value = level; break;
+            case "mining": index = 3; p.miningLevel.Value = level; break;
+            case "combat": index = 4; p.combatLevel.Value = level; break;
+            default: c.Fail("skill must be farming, fishing, foraging, mining or combat"); yield break;
+        }
+        p.experiencePoints[index] = XpForLevel[level];
+        c.Result = $"{skill} level set to {level}";
+        yield break;
+    }
+
+    private static IEnumerator SetHealth(JsonElement a, CallContext c)
+    {
+        if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
+        Game1.player.health = Math.Clamp(I(a, "n", 0), 1, Game1.player.maxHealth);
+        c.Result = $"Health set to {Game1.player.health}/{Game1.player.maxHealth}";
+        yield break;
+    }
+
+    private static IEnumerator SetStamina(JsonElement a, CallContext c)
+    {
+        if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
+        Game1.player.Stamina = Math.Clamp(I(a, "n", 0), 0, Game1.player.MaxStamina);
+        c.Result = $"Energy set to {(int)Game1.player.Stamina}/{Game1.player.MaxStamina}";
+        yield break;
+    }
+
+    private static IEnumerator LoadSave(JsonElement a, CallContext c)
+    {
+        var name = S(a, "name").Trim();
+        if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.Contains(".."))
+        { c.Fail("name must be a save folder name"); yield break; }
+        if (!Directory.Exists(Path.Combine(Constants.SavesPath, name))) { c.Fail($"No save folder \"{name}\""); yield break; }
+
+        _pendingLoad = name;
+        _exiting = false;
+        _titleTicks = 0;
+        c.Result = $"Loading {name}; poll /api/state until saveFolder matches and ready is true";
+        yield break;
+    }
+
+    // ------------------------------------------------------------------ save switching
+
+    /// <summary>Called every tick from ModEntry: leave the current save, then load the requested one from the title screen.</summary>
+    public static void Tick()
+    {
+        if (_pendingLoad == null) return;
+
+        if (Context.IsWorldReady)
+        {
+            if (!_exiting)
+            {
+                _exiting = true;
+                Game1.ExitToTitle();
+            }
+            return;
+        }
+
+        if (Game1.activeClickableMenu is TitleMenu && ++_titleTicks > 60)
+        {
+            var name = _pendingLoad;
+            _pendingLoad = null;
+            _exiting = false;
+            SaveGame.Load(name);
+            Game1.exitActiveMenu();
+        }
+    }
+}

@@ -44,16 +44,28 @@ public class AgentLog
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    public string Dir { get; }
+    private readonly string _baseDir;
+
+    /// <summary>Log folder. Smoke-test saves (smoke_*) log to a "smoke" subfolder so they never mix with a real run.</summary>
+    public string Dir
+    {
+        get
+        {
+            if (Constants.SaveFolderName?.StartsWith("smoke_", StringComparison.OrdinalIgnoreCase) != true) return _baseDir;
+            var dir = Path.Combine(_baseDir, "smoke");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
 
     /// <summary>Free-form metadata posted by the runner (model, session id...). Shown on the overlay.</summary>
     public Dictionary<string, string> Meta { get; } = new();
 
     public AgentLog(string dir, IMonitor monitor)
     {
-        Dir = dir;
+        _baseDir = dir;
         _monitor = monitor;
-        Directory.CreateDirectory(Dir);
+        Directory.CreateDirectory(_baseDir);
         _seq = DateTime.UtcNow.Ticks / 10000; // monotonic across restarts
     }
 

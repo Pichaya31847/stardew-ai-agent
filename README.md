@@ -74,6 +74,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `FreezeTimeWhileThinking` | `true` | Stop the clock while no action is running |
 | `LogDir` | `""` | Log folder; empty = `logs/` in the mod folder |
 | `AutoLoadSave` | `""` | Save folder to load automatically from the title screen |
+| `EnableDebugApi` | `false` | Serve `/api/debug/*` test hooks for `runner/smoke.py`; leave off for normal play |
 | `ThoughtLanguage` | `"Thai"` | Language the AI is asked to use for on-screen text (`think`, action reasons, diary), e.g. `"English"` |
 
 The SMAPI console command `mcp_freeze [on|off]` toggles time freezing at runtime.
@@ -87,6 +88,10 @@ The SMAPI console command `mcp_freeze [on|off]` toggles time freezing at runtime
 
 - `run_days.py` runs one Claude Code session per in-game day, keeps diaries between days and
   backs up the save. Example: `py runner/run_days.py --days 3`
+- `smoke.py` runs LLM-free checks of the tools (farm loop, shop, shipping, sleep) on a copy of your
+  save, then reloads your save. `run_days.py` runs it before every batch and stops if a case fails.
+  It needs `"EnableDebugApi": true` in `config.json`; see `py runner/smoke.py --list`. The debug
+  endpoints are not MCP tools, so the AI cannot see or call them.
 - `obs_recorder.py` pauses the OBS recording while the game is frozen, so the video only contains
   gameplay. Needs OBS with obs-websocket enabled.
 

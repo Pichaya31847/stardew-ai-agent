@@ -11,6 +11,9 @@ Each day:
   * saves Claude's full stream-json transcript next to the game logs (proof of a real run),
   * continues the same day in a new session if Haiku stopped before sleeping,
   * backs up the save folder after the day ends.
+
+Before the first day it runs runner/smoke.py (LLM-free tool checks on a copy of the save) and stops if
+any case fails. That needs "EnableDebugApi": true in the mod's config.json; pass --skip-smoke to skip.
 """
 
 from __future__ import annotations
@@ -188,12 +191,19 @@ def main():
     ap.add_argument("--max-turns", type=int, default=600)
     ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if Haiku stops before sleeping")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
     args = ap.parse_args()
 
     out_dir = Path(args.out)
     log_dir = out_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
+
+    if not args.skip_smoke:
+        wait_ready()
+        print("Running smoke tests before the batch (use --skip-smoke to skip)...")
+        if subprocess.run([sys.executable, str(HERE / "smoke.py")]).returncode != 0:
+            raise SystemExit("Smoke tests failed, not starting the batch. Fix the failing case above, or pass --skip-smoke.")
 
     days_played = 0
     while True:

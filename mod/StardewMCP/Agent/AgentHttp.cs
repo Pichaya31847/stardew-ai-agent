@@ -25,6 +25,7 @@ public class AgentHttp
     private readonly IMonitor _monitor;
     private readonly string _assetDir;
     private readonly Dictionary<string, ToolDef> _tools;
+    private readonly Dictionary<string, ToolDef> _debug = DebugApi.All();
     private HttpListener? _listener;
     private const string ProtocolFallback = "2025-06-18";
 
@@ -56,6 +57,8 @@ public class AgentHttp
             _listener.Start();
         }
         _monitor.Log($"Agent MCP at http://localhost:{port}/mcp · overlay /overlay · replay /replay", LogLevel.Info);
+        if (_rt.Config.EnableDebugApi)
+            _monitor.Log("Debug API is ON (/api/debug/*). Turn EnableDebugApi off for normal play.", LogLevel.Warn);
         Task.Run(Loop);
     }
 
@@ -80,6 +83,11 @@ public class AgentHttp
         try
         {
             var path = req.Url?.AbsolutePath.TrimEnd('/') ?? "";
+            if (path.StartsWith("/api/debug/"))
+            {
+                await HandleDebug(req, res, path.Substring("/api/debug/".Length));
+                return;
+            }
             switch (path)
             {
                 case "/mcp" when req.HttpMethod == "POST":
@@ -138,6 +146,28 @@ public class AgentHttp
             _monitor.Log($"HTTP error: {ex.Message}", LogLevel.Warn);
             try { res.StatusCode = 500; res.Close(); } catch { }
         }
+    }
+
+    // ------------------------------------------------------------------ debug (smoke tests)
+
+    private async Task HandleDebug(HttpListenerRequest req, HttpListenerResponse res, string op)
+    {
+        if (!_rt.Config.EnableDebugApi || !_debug.TryGetValue(op, out var tool))
+        {
+            res.StatusCode = 404;
+            res.Close();
+            return;
+        }
+        if (req.HttpMethod != "POST") { res.StatusCode = 405; res.Close(); return; }
+
+        string body;
+        using (var r = new StreamReader(req.InputStream, Encoding.UTF8)) body = await r.ReadToEndAsync();
+        JsonElement args;
+        try { args = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body).RootElement.Clone(); }
+        catch (JsonException) { res.StatusCode = 400; res.Close(); return; }
+
+        var (ok, text) = await _rt.Enqueue(tool, args);
+        await Json(res, new { ok, text });
     }
 
     // ------------------------------------------------------------------ MCP
@@ -240,6 +270,7 @@ public class AgentHttp
         StateJson = JsonSerializer.Serialize(new
         {
             ready = true,
+            saveFolder = Constants.SaveFolderName,
             day = AgentLog.FarmDay,
             season = Game1.currentSeason,
             dayOfMonth = Game1.dayOfMonth,
