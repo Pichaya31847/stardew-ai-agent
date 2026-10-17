@@ -89,7 +89,7 @@ public static class WorldText
                 sb.AppendLine($"Letter open: \"{letterText}\". Use close_menu (attached items and quests will be claimed automatically).");
                 break;
             default:
-                sb.AppendLine($"Menu open: {Game1.activeClickableMenu.GetType().Name}. Use close_menu if you don't need it.");
+                sb.AppendLine($"Menu open: {AgentTools.MenuName(Game1.activeClickableMenu)}. Use menu() to read and use it, or close_menu.");
                 break;
         }
         return sb.ToString();
@@ -171,7 +171,7 @@ public static class WorldText
             {
                 if (chest.giftbox.Value) return ('O', "Gift box (open it with interact)");
                 if (chest.playerChest.Value)
-                    return ('O', $"Chest ({chest.Items.Count(i => i != null)} items{OwnerNote(Ownership.OwnerOf(chest), ", owner ")})");
+                    return ('O', $"Chest ({chest.Items.Count(i => i != null)} items{OwnerNote(Ownership.OwnerOf(chest), ", owner ")} — interact, then menu take/put)");
             }
             var held = obj.heldObject.Value != null ? $" (holding {obj.heldObject.Value.DisplayName}{(obj.readyForHarvest.Value ? ", READY" : "")})" : "";
             return ('O', obj.DisplayName + held + (obj.GetMachineData() != null ? OwnerNote(Ownership.OwnerOf(obj), " (owner ", ")") : ""));

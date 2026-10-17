@@ -25,10 +25,7 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
 - `theft` log entry (kind `theft`, player = thief, args `{victim, what: crop|chest, item, location, tile}`) when a
   seat harvests a crop planted by another seat (`Crop.harvest`) or takes an item out of a chest another seat
   placed (`Chest.grabItemFromChest`, the callback the chest menu uses). The hooks are Harmony patches, so every
-  path counts: `harvest`, `interact`, a scythe swing, and the future chest tool (#3) as long as it goes through the menu.
-- Gap for the chest tool (#3): `interact` cannot open a player chest, because the game requires
-  `didPlayerJustRightClick`. The debug op `chest_take(x, y)` takes items through the chest's own callback so
-  the theft hook can be tested; a real chest tool needs the same path.
+  path counts: `harvest`, `interact`, a scythe swing, and the chest menu (`menu take`).
 - Not recorded: opening someone's chest without taking anything, putting items into it, the starting plot as a
   fixed tile area. A plot is "whatever the seat planted"; a fixed area per seat would be a config of rectangles.
 

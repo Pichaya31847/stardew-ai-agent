@@ -33,12 +33,14 @@ public class ModEntry : Mod
         SplitScreenPatches.Apply(ModManifest, _config);
         SocialTools.Apply(ModManifest);
         Ownership.Apply(ModManifest);
+        AgentTools.Apply(ModManifest);
         _http = new AgentHttp(_log, _config, Monitor, Path.Combine(helper.DirectoryPath, "assets"));
 
         helper.Events.GameLoop.GameLaunched += (_, _) => _http.Start(_config.HttpPort);
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.GameLoop.ReturnedToTitle += (_, _) => SplitScreen.OnReturnedToTitle();
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+        helper.Events.GameLoop.DayStarted += (_, _) => Briefing.OnDayStarted();
 
         helper.ConsoleCommands.Add(
             "mcp_freeze",
@@ -78,6 +80,7 @@ public class ModEntry : Mod
         SplitScreen.ScreenTick();
 
         seat.Runtime.Tick();
+        Briefing.Tick(seat, e.IsMultipleOf(300));
         if (e.IsMultipleOf(15))
             seat.State = ScreenState.Capture();
 

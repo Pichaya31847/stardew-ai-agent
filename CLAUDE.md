@@ -62,7 +62,7 @@ get caught and betray each other. The story must emerge from the game, not from 
   event stream `/api/events` (SSE). It never references OBS or video concerns.
 - `studio/` is the YouTube layer and optional: overlay (per-player think/chat/whisper), replay,
   OBS director, recorder, story log for editing. It only reads the mod's HTTP API.
-  `assets/overlay.html` and `assets/replay.html` move here.
+  `studio/overlay.html` and `studio/replay.html` live here.
 - `runner/` launches and supervises the three AI sessions and the day loop.
 
 **Video**
@@ -100,6 +100,7 @@ mod/StardewMCP/
     AgentHttp.cs       HttpListener on localhost:8770: /mcp, /overlay, /replay, /api/*
     AgentRuntime.cs    Runs tool calls on the game thread as coroutines; freezes time between calls
     AgentTools.cs      Tool definitions (ToolDef) and their coroutines
+    MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters (part of AgentTools)
     SocialTools.cs     say / whisper / emote / give / plan board; per-seat inbox appended to the next tool result
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries
@@ -109,7 +110,11 @@ mod/StardewMCP/
     WorldClock.cs      Freezes the world while any connected AI thinks (host pause); thinking timeout
     SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
     SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
-  assets/              overlay.html (OBS source), replay.html
+studio/
+  overlay.html         OBS browser-source overlay
+  replay.html          Day-by-day replay of the logs
+  director.py          OBS scene switcher driven by /api/events (SSE)
+  test_director.py     Unit tests for director scene picking
 runner/
   smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
   run_days.py          One `claude -p` session per in-game day
@@ -143,4 +148,6 @@ dotnet build -p:EnableModDeploy=false -p:EnableModZip=false   # compile check on
 - Keep everything original: don't copy code from other mods or repos unless their license
   allows it, and credit them if so.
 - Never commit game files, saves, logs or personal paths.
+- New game features follow `docs/coverage.md`: reuse the game's own entry points, and update the
+  feature's row in the same PR.
 - Reference: https://stardewvalleywiki.com/Modding:Modder_Guide/APIs

@@ -41,15 +41,17 @@ public static class DebugApi
             Op("set_time", SetTime),
             Op("add_item", AddItem),
             Op("set_money", SetMoney),
+            Op("add_mail", AddMail),
             Op("set_skill", SetSkill),
             Op("set_health", SetHealth),
             Op("set_stamina", SetStamina),
             Op("open_shop", OpenShop),
+            Op("place_object", PlaceObject),
+            Op("set_mine_level", SetMineLevel),
+            Op("separate_wallets", SeparateWallets),
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
-            Op("separate_wallets", EconomyTools.DebugSeparateWallets),
             Op("place_chest", PlaceChest),
-            Op("chest_take", ChestTake),
             Op("grow_crops", GrowCrops),
             Op("capture", Capture, needsWorld: false),
             Op("chat_log", ChatLog),
@@ -104,6 +106,16 @@ public static class DebugApi
         if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
         Game1.player.Money = Math.Max(0, I(a, "n", 0));
         c.Result = $"Money set to {Game1.player.Money}g";
+        yield break;
+    }
+
+    /// <summary>Put a letter in the mailbox (any id works for the briefing and footer checks; opening it needs a real Data/Mail id).</summary>
+    private static IEnumerator AddMail(JsonElement a, CallContext c)
+    {
+        var id = S(a, "id").Trim();
+        if (id.Length == 0) { c.Fail("id is required (a mail id, e.g. \"smoke_letter\")"); yield break; }
+        Game1.player.mailbox.Add(id);
+        c.Result = $"Mailbox now holds {Game1.player.mailbox.Count} letter(s)";
         yield break;
     }
 
@@ -164,6 +176,34 @@ public static class DebugApi
         Game1.player.Stamina = Math.Clamp(I(a, "n", 0), 0, Game1.player.MaxStamina);
         c.Result = $"Energy set to {(int)Game1.player.Stamina}/{Game1.player.MaxStamina}";
         yield break;
+    }
+
+    /// <summary>Put a machine, chest or other placeable item on a tile through the game's own placementAction.</summary>
+    private static IEnumerator PlaceObject(JsonElement a, CallContext c)
+    {
+        var id = S(a, "id").Trim();
+        int x = I(a, "x", -1), y = I(a, "y", -1);
+        var loc = Game1.currentLocation;
+        if (ItemRegistry.Create(id) is not StardewValley.Object obj) { c.Fail($"{id} is not a placeable object (e.g. \"(BC)13\")"); yield break; }
+        if (loc.Objects.ContainsKey(new Microsoft.Xna.Framework.Vector2(x, y)) || !obj.placementAction(loc, x * 64, y * 64, Game1.player))
+        { c.Fail($"Could not place {obj.DisplayName} at ({x},{y}) on {loc.Name}"); yield break; }
+        c.Result = $"Placed {obj.DisplayName} at ({x},{y})";
+    }
+
+    /// <summary>Deepest mine floor reached, which decides the elevator's floors.</summary>
+    private static IEnumerator SetMineLevel(JsonElement a, CallContext c)
+    {
+        StardewValley.Locations.MineShaft.lowestLevelReached = Math.Clamp(I(a, "n", 0), 0, 120);
+        c.Result = $"Lowest mine level {StardewValley.Locations.MineShaft.lowestLevelReached}";
+        yield break;
+    }
+
+    /// <summary>Switch to separate wallets now instead of overnight, the same call the ledger book's choice makes at night.</summary>
+    private static IEnumerator SeparateWallets(JsonElement a, CallContext c)
+    {
+        if (!Context.IsMainPlayer) { c.Fail("Run separate_wallets on p1 (the host)"); yield break; }
+        StardewValley.Locations.ManorHouse.SeparateWallets();
+        c.Result = Game1.player.team.useSeparateWallets.Value ? $"Separate wallets on; you have {Game1.player.Money}g" : "Wallets are still shared";
     }
 
     private static IEnumerator LoadSave(JsonElement a, CallContext c)
@@ -236,22 +276,6 @@ public static class DebugApi
         Game1.currentLocation.objects[tile] = chest;
         c.Result = $"Chest placed at ({tile.X},{tile.Y}), owner {Players.Current.Id}";
         yield break;
-    }
-
-    /// <summary>
-    /// Take the first item out of the chest at (x, y) through the chest's own grab callback, as a click in its menu does.
-    /// (interact can't open a player chest: the game only opens one on a real right-click. The chest tool is #3.)
-    /// </summary>
-    private static IEnumerator ChestTake(JsonElement a, CallContext c)
-    {
-        var tile = new Microsoft.Xna.Framework.Vector2(I(a, "x", 0), I(a, "y", 0));
-        if (!Game1.currentLocation.objects.TryGetValue(tile, out var obj) || obj is not StardewValley.Objects.Chest chest) { c.Fail($"No chest at ({tile.X},{tile.Y})"); yield break; }
-        var item = chest.GetItemsForPlayer().FirstOrDefault(i => i != null);
-        if (item == null) { c.Fail("The chest is empty"); yield break; }
-        chest.grabItemFromChest(item, Game1.player);
-        Game1.player.addItemToInventoryBool(item);
-        if (Game1.activeClickableMenu is ItemGrabMenu) Game1.exitActiveMenu();
-        c.Result = $"Took {item.Stack} x {item.DisplayName} from the chest";
     }
 
     /// <summary>Ripen every crop on the current map.</summary>

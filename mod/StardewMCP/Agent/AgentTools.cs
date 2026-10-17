@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using HarmonyLib;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewValley;
@@ -27,6 +28,8 @@ public class ToolDef
     public ToolRunner Run = null!;
     /// <summary>Instant tools (observations, thinking) do not unfreeze game time.</summary>
     public bool Instant;
+    /// <summary>Instant for these arguments only, e.g. menu() reads while menu(action) acts.</summary>
+    public Func<JsonElement, bool>? InstantFor;
     public bool NeedsWorld = true;
     public bool AppendStatus = true;
     /// <summary>Chat and whispers waiting for the player are appended to this tool's result (false for debug ops).</summary>
@@ -34,7 +37,7 @@ public class ToolDef
 }
 
 /// <summary>The actions the AI can take. Mechanics (walking, aiming, button presses) are automated; decisions are the AI's.</summary>
-public static class AgentTools
+public static partial class AgentTools
 {
     /// <summary>Runtime of the seat whose screen is updating (tools run on that screen's tick).</summary>
     public static AgentRuntime Rt => Players.Current.Runtime;
@@ -103,11 +106,14 @@ public static class AgentTools
 
     public static string Footer()
     {
-        var sb = new StringBuilder($"[{WorldText.FormatTime(Game1.timeOfDay)} · {Loc?.Name} ({P.TilePoint.X},{P.TilePoint.Y}) · energy {(int)P.Stamina}/{P.MaxStamina} · {P.Money}g]");
+        var sb = new StringBuilder($"[{WorldText.FormatTime(Game1.timeOfDay)} · {Loc?.Name} ({P.TilePoint.X},{P.TilePoint.Y}) · energy {(int)P.Stamina}/{P.MaxStamina}{MineHealthFooter()} · {P.Money}g]");
+        sb.Append(MineLateWarning());
         var menu = WorldText.MenuState().Trim();
         if (menu.Length > 0) sb.Append('\n').Append(menu);
         var prof = Professions.PendingText(Rt, P);
         if (prof.Length > 0) sb.Append('\n').Append(prof);
+        var mail = Briefing.MailHint();
+        if (mail.Length > 0) sb.Append('\n').Append(mail);
         return sb.ToString();
     }
 
@@ -176,6 +182,8 @@ public static class AgentTools
                 }, "tool", "tiles", "reason"),
                 Run = UseTool
             },
+            CombatTool(),
+            LeaveMineTool(),
             new()
             {
                 Name = "plant",
@@ -193,8 +201,16 @@ public static class AgentTools
             new()
             {
                 Name = "interact",
-                Description = "Walk next to a tile and press the action button on it: open doors, shop counters (A tiles), chests, machines, mailbox, read signs, check objects.",
-                Schema = Obj(new { x = Int("Tile x"), y = Int("Tile y"), reason = Str(ReasonDesc) }, "x", "y", "reason"),
+                Description = "Walk next to a tile and press the action button on it: open doors, shop counters (A tiles), chests, machines, mailbox, read signs, check objects. " +
+                              "With holding, hold that item while pressing: load a machine with it (e.g. Copper Ore into a Furnace), give it to the villager on that tile. " +
+                              "With holding and no tile, use the item where you stand (totems, books). Without holding you hold a tool, so nothing is loaded or gifted by accident.",
+                Schema = Obj(new
+                {
+                    x = Int("Tile x"),
+                    y = Int("Tile y"),
+                    holding = Str("Optional item from your inventory to hold while pressing"),
+                    reason = Str(ReasonDesc)
+                }, "reason"),
                 Run = Interact
             },
             new()
@@ -218,6 +234,7 @@ public static class AgentTools
                 Schema = Obj(new { }),
                 Run = CloseMenu
             },
+            MenuTool(),
             new()
             {
                 Name = "travel_to",
@@ -431,13 +448,16 @@ public static class AgentTools
 
     // ------------------------------------------------------------------ items
 
-    internal static int FindItem(string name, Func<Item, bool>? filter = null)
+    internal static int FindItem(string name, Func<Item, bool>? filter = null) => FindIn(P.Items, name, filter);
+
+    /// <summary>Index of the item called <paramref name="name"/> (exact name first, else the first partial match), or -1.</summary>
+    private static int FindIn(IList<Item> items, string name, Func<Item, bool>? filter = null)
     {
         name = name.Trim().ToLowerInvariant();
         int partial = -1;
-        for (int i = 0; i < P.Items.Count; i++)
+        for (int i = 0; i < items.Count; i++)
         {
-            var it = P.Items[i];
+            var it = items[i];
             if (it == null || (filter != null && !filter(it))) continue;
             var dn = it.DisplayName.ToLowerInvariant();
             var n = it.Name.ToLowerInvariant();
@@ -632,19 +652,82 @@ public static class AgentTools
         c.Result = string.Join("\n", lines) + "\n" + (diff.Length > 0 ? diff : "Nothing was collected.");
     }
 
+    /// <summary>True while interact presses the action button; see <see cref="JustRightClick_Prefix"/>.</summary>
+    private static bool _pressingAction;
+
+    public static void Apply(IManifest manifest) =>
+        new Harmony(manifest.UniqueID + ".input").Patch(AccessTools.Method(typeof(Game1), nameof(Game1.didPlayerJustRightClick)),
+            prefix: new HarmonyMethod(typeof(AgentTools), nameof(JustRightClick_Prefix)));
+
+    /// <summary>Player chests, the shipping bin, fish ponds, bushes and furniture only answer a fresh action-button press.</summary>
+    private static bool JustRightClick_Prefix(ref bool __result)
+    {
+        if (!_pressingAction) return true;
+        __result = true;
+        return false;
+    }
+
+    /// <summary>Game1.tryToCheckAt with the action button seen as just pressed.</summary>
+    private static bool PressAction(Point tile)
+    {
+        _pressingAction = true;
+        try { return Game1.tryToCheckAt(tile.ToVector2(), P); }
+        finally { _pressingAction = false; }
+    }
+
+    /// <summary>The action button, as in Game1.pressActionButton: check the tile with the held item, or use the held item in place.</summary>
     private static IEnumerator Interact(JsonElement a, CallContext c)
     {
-        var t = new Point(I(a, "x", -1), I(a, "y", -1));
+        var holding = S(a, "holding").Trim();
+        int slot = holding.Length > 0 ? FindItem(holding) : -1;
+        if (holding.Length > 0 && slot < 0) { c.Fail($"No \"{holding}\" in inventory."); yield break; }
+        bool atTile = Has(a, "x") && Has(a, "y");
+        if (!atTile && slot < 0) { c.Fail("Give the tile (x, y), or holding to use an item where you stand."); yield break; }
+
         var before = Snapshot();
         var startLoc = Loc;
-        yield return WalkAdjacent(t, c);
-        if (!c.Ok) yield break;
-        Game1.tryToCheckAt(t.ToVector2(), P);
+        var t = new Point(I(a, "x", -1), I(a, "y", -1));
+        if (atTile)
+        {
+            yield return WalkAdjacent(t, c);
+            if (!c.Ok) yield break;
+        }
+        else
+            yield return WaitIdle();
+
+        // Without holding, put away a held object so nothing gets loaded or gifted by accident.
+        if (slot >= 0) P.CurrentToolIndex = slot;
+        else if (P.ActiveObject != null) P.CurrentToolIndex = FirstToolSlot();
+        var held = P.CurrentItem?.DisplayName;
+        var was = atTile ? WorldText.Describe(Loc, t.X, t.Y).label : null;
+
+        string what;
+        if (atTile)
+            what = PressAction(t) ? $"Interacted with ({t.X},{t.Y})" : $"Nothing happened at ({t.X},{t.Y})";
+        else if (P.ActiveObject is { } obj and not StardewValley.Objects.Furniture && obj.performUseAction(Loc))
+        {
+            P.reduceActiveItemByOne();
+            what = $"Used {held}";
+        }
+        else
+        {
+            c.Fail($"{held} can't be used where you stand.");
+            yield break;
+        }
         yield return Ticks(30);
-        yield return WaitIdle(180);
-        var diff = Diff(before);
-        var moved = Loc != startLoc ? $"You are now in {Loc.Name}. " : "";
-        c.Result = $"Interacted with ({t.X},{t.Y}). {moved}{diff}".Trim();
+        yield return WaitIdle(atTile ? 180 : 600);
+        if (!atTile)
+        {
+            // After its animation a totem hides the farmer and warps after a delayed fade.
+            for (int i = 0; i < 600 && (!Game1.displayFarmer || Game1.globalFade || P.freezePause > 0); i++) yield return null;
+            yield return WaitIdle();
+        }
+
+        if (slot >= 0 && atTile) what += $" holding {held}";
+        var now = atTile && Loc == startLoc ? WorldText.Describe(Loc, t.X, t.Y).label : was;
+        var changed = now != was ? $" Now: {now ?? "empty"}." : "";
+        var moved = Loc != startLoc ? $" You are now in {Loc.Name}." : "";
+        c.Result = $"{what}.{changed}{moved} {Diff(before)}".Trim();
     }
 
     private static IEnumerator TalkTo(JsonElement a, CallContext c)
@@ -1006,12 +1089,18 @@ public static class AgentTools
         yield return WaitIdle();
         var before = (int)P.Stamina;
         var itemName = P.Items[slot].DisplayName;
+        yield return EatSlot(slot);
+        c.Result = $"Ate {itemName}: energy {before} → {(int)P.Stamina}.";
+    }
+
+    /// <summary>Eat the item in a slot with the game's own <c>Farmer.eatHeldObject</c> and wait for the animation to end (shared by eat and fight's eat_below).</summary>
+    internal static IEnumerator EatSlot(int slot)
+    {
         P.CurrentToolIndex = slot;
         P.eatHeldObject();
         yield return Ticks(30);
         for (int i = 0; i < 400 && P.isEating; i++) yield return null;
         yield return WaitIdle();
-        c.Result = $"Ate {itemName}: energy {before} → {(int)P.Stamina}.";
     }
 
     // ------------------------------------------------------------------ sleep
@@ -1072,6 +1161,7 @@ public static class AgentTools
         else if (Game1.activeClickableMenu != null)
             Game1.exitActiveMenu();
         Game1.dialogueUp = false;
+        Briefing.CaptureForSleep();
         P.isInBed.Value = true;
         house.answerDialogueAction("Sleep_Yes", Array.Empty<string>());
         Rt.Log.Add("system", text: "Sleeping...");
@@ -1097,7 +1187,7 @@ public static class AgentTools
         }
         yield return Ticks(60);
 
-        if (Game1.Date.TotalDays <= dayBefore) { c.Fail("Tried to sleep but the day did not change."); yield break; }
+        if (Game1.Date.TotalDays <= dayBefore) { Briefing.Unseal(); c.Fail("Tried to sleep but the day did not change."); yield break; }
         Rt.Log.Add("system", text: $"New day: farm day {AgentLog.FarmDay}");
         c.Result = $"Good morning! It's now farm day {AgentLog.FarmDay}. Money {moneyBefore}g → {P.Money}g (shipping income {P.Money - moneyBefore}g). Your day is over — stop here.";
     }

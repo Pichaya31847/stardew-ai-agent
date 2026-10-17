@@ -396,6 +396,30 @@ def ship_and_sleep():
         raise Smoke("day did not advance")
 
 
+@case("briefing")
+def morning_briefing():
+    reset("Farm")
+    debug("add_item", id="(O)24", qty=5)  # Parsnip, 35g each
+    ok("ship", item="Parsnip", quantity=5, reason="smoke test")
+    debug("add_mail", id="smoke_letter")
+    if "📬" not in ok("inventory"):
+        raise Smoke("the footer does not show the mailbox hint while a letter is waiting")
+    ok("go_to_bed", diary="Smoke test diary: shipped five parsnips and left a letter in the mailbox.", reason="smoke test")
+    data = {}
+    for _ in range(30):  # the report is built about 1.5 s after the morning starts
+        data = _request("/api/briefing?seat=p1", timeout=10)
+        if data.get("ready"):
+            break
+        time.sleep(1)
+    if not data.get("ready"):
+        raise Smoke(f"briefing never became ready: {str(data)[:200]}")
+    text = data.get("text", "")
+    # 175g for normal-quality Parsnips; a profession bonus can raise it, so only the shape is checked.
+    for pattern in (r"Parsnip x5 = \d+g", r"Mail: \d+ letters?", r"Weather today: \w+", r"Crops: "):
+        if not re.search(pattern, text):
+            raise Smoke(f"briefing misses /{pattern}/:\n{text}")
+
+
 @case("buy_recipe")
 def buy_recipe():
     """#7: a bought recipe is learned, not handed over as the dish."""
@@ -457,6 +481,117 @@ def choose_profession():
         raise Smoke(f"expected Tiller (chosen) and Fisher (default) in status, got: {m.group(0) if m else status}")
     if "Pending profession choice" in status:
         raise Smoke("a profession choice is still pending after bedtime")
+
+
+def place_near(item_id: str) -> tuple[int, int]:
+    """Place an object (debug) in the middle of a run of three free tiles near the player, so a side stays reachable."""
+    for run in parse_tillable_runs(ok("look", radius=10), 3):
+        x, y = run[1]
+        try:
+            debug("place_object", id=item_id, x=x, y=y)
+            return x, y
+        except Smoke:
+            continue
+    raise Smoke(f"no free tile near the player for {item_id}")
+
+
+def question_options() -> dict[str, int]:
+    """Options of the open question dialogue, by text, from the status footer."""
+    return {m.group(2).strip(): int(m.group(1)) for m in re.finditer(r"option (\d+): (.+)", ok("status"))}
+
+
+@case("totem")
+def totem():
+    """interact(holding) with no tile uses the item where you stand (performUseAction): a Warp Totem: Farm."""
+    reset("Farm")
+    ok("travel_to", location="FarmHouse", reason="smoke test")
+    debug("add_item", id="(O)688", qty=1)  # Warp Totem: Farm
+    text = ok("interact", holding="Warp Totem: Farm", reason="smoke test")
+    if "You are now in Farm" not in text or inventory_count("Warp Totem: Farm") != 0:
+        raise Smoke(f"the totem did not warp home and get used up: {text.splitlines()[0]}")
+
+
+@case("furnace")
+def furnace():
+    """interact(holding) loads a machine through checkAction; interact without holding collects the output."""
+    reset("Farm")
+    debug("add_item", id="(O)378", qty=10)  # Copper Ore
+    debug("add_item", id="(O)382", qty=2)  # Coal
+    x, y = place_near("(BC)13")  # Furnace
+    ore, coal, bars = inventory_count("Copper Ore"), inventory_count("Coal"), inventory_count("Copper Bar")
+    text = ok("interact", x=x, y=y, holding="Copper Ore", reason="smoke test")
+    if "holding Copper Bar" not in text:
+        raise Smoke(f"furnace did not take the ore: {text.splitlines()[0]}")
+    if inventory_count("Copper Ore") != ore - 5 or inventory_count("Coal") != coal - 1:
+        raise Smoke(f"expected 5 ore and 1 coal used: {text.splitlines()[0]}")
+    ok("wait", minutes=40, reason="smoke test: smelting")  # a copper bar takes 30 minutes
+    text = ok("interact", x=x, y=y, reason="smoke test")
+    if inventory_count("Copper Bar") != bars + 1:
+        raise Smoke(f"expected one Copper Bar collected: {text.splitlines()[0]}")
+    if inventory_count("Copper Ore") != ore - 5:
+        raise Smoke("collecting without holding loaded more ore")
+
+
+@case("chest")
+def chest():
+    """A chest opens an ItemGrabMenu; menu put/take click its slots (whole stacks and single items)."""
+    reset("Farm")
+    debug("add_item", id="(O)24", qty=5)  # Parsnip
+    x, y = place_near("(BC)130")  # Chest
+    have = inventory_count("Parsnip")
+    try:
+        ok("interact", x=x, y=y, reason="smoke test: open the chest")
+        text = ok("menu")
+        if "Chest (ItemGrabMenu)" not in text or "put(" not in text:
+            raise Smoke(f"menu() does not show an open chest:\n{text}")
+        text = ok("menu", action="put", item="Parsnip", count=2, reason="smoke test")
+        if "Inside (1/" not in text or "Parsnip x2" not in text or inventory_count("Parsnip") != have - 2:
+            raise Smoke(f"put 2 Parsnip did not land in the chest:\n{text}")
+        ok("menu", action="put", item="Parsnip", reason="smoke test")  # the rest of the stack
+        if inventory_count("Parsnip") != 0:
+            raise Smoke("put without count left Parsnips in the inventory")
+        ok("menu", action="take", item="Parsnip", count=1, reason="smoke test")
+        if inventory_count("Parsnip") != 1:
+            raise Smoke(f"take 1 gave {inventory_count('Parsnip')}")
+        text = ok("menu", action="take", item="Parsnip", reason="smoke test")
+        if inventory_count("Parsnip") != have or "Inside (0/" not in text:
+            raise Smoke(f"take without count did not empty the chest:\n{text}")
+        if call("menu", action="take", item="Parsnip", reason="smoke test")[0]:
+            raise Smoke("take from an empty chest succeeded")
+        if "The menu is closed." not in ok("menu", action="ok", reason="smoke test"):
+            raise Smoke("menu ok did not close the chest")
+    finally:
+        call("close_menu")
+
+
+@case("mine_elevator")
+def mine_elevator():
+    """The MineElevator tile opens MineElevatorMenu; menu choose rides to a floor and back."""
+    reset("Farm")
+    _, x, y = p1_tile()
+    debug("set_mine_level", n=10)
+    debug("warp", location="Mine", x=17, y=4)  # where the elevator drops you; the landslide may still block the path
+    try:
+        elevators = [t for label, tiles in parse_things(ok("look", radius=12), "A") if label == "MineElevator" for t in tiles]
+        if not elevators:
+            raise Smoke("no MineElevator tile in the Mine")
+        ok("interact", x=elevators[0][0], y=elevators[0][1], reason="smoke test")
+        text = ok("menu")
+        if "Mine elevator" not in text or "Floors: 0, 5, 10" not in text:
+            raise Smoke(f"menu() does not show the elevator floors:\n{text}")
+        text = ok("menu", action="choose", option="5", reason="smoke test")
+        if "UndergroundMine5" not in text:
+            raise Smoke(f"choose 5 did not ride to floor 5: {text.splitlines()[0]}")
+        up = [t for label, tiles in parse_things(ok("look", radius=12), "A") if label.startswith("Mine Elevator") for t in tiles]
+        if not up:
+            raise Smoke("no elevator on floor 5")
+        ok("interact", x=up[0][0], y=up[0][1], reason="smoke test")
+        text = ok("menu", action="choose", option="0", reason="smoke test")
+        if "(Mine)" not in text:
+            raise Smoke(f"choose 0 did not ride back to the entrance: {text.splitlines()[0]}")
+    finally:
+        call("close_menu")
+        debug("warp", location="Farm", x=x, y=y)
 
 
 # ---------------------------------------------------------------------- multi-seat (social tools)
@@ -640,16 +775,16 @@ def give():
                 return int(m.group(1))
         return 0
 
-    before2 = count("p2")
+    before1, before2 = count("p1"), count("p2")  # earlier cases may leave p1 holding Parsnips
     text = ok_seat("p1", "give", to="Gemini", item="Parsnip", count=2)
     t0 = time.time()
     while count("p2") != before2 + 2 and time.time() - t0 < 4:
         time.sleep(0.3)
-    if count("p2") != before2 + 2 or count("p1") != 1:
-        raise Smoke(f"expected p2 +2 and p1 left with 1 Parsnip, got p2 {count('p2')} (was {before2}), p1 {count('p1')}. {text}")
+    if count("p2") != before2 + 2 or count("p1") != before1 - 2:
+        raise Smoke(f"expected p2 +2 and p1 -2 Parsnip, got p2 {count('p2')} (was {before2}), p1 {count('p1')} (was {before1}). {text}")
     if not any("gave you 2 x Parsnip" in t for t in seen + [hear("p2")]):
         raise Smoke("p2 was not told about the gift")
-    if call_seat("p1", "give", {"to": "p2", "item": "Parsnip", "count": 5})[0]:
+    if call_seat("p1", "give", {"to": "p2", "item": "Parsnip", "count": before1})[0]:
         raise Smoke("give accepted more than p1 has")
     if call_seat("p1", "give", {"to": "p2", "item": "Axe"})[0]:
         raise Smoke("give accepted a tool")
@@ -687,6 +822,7 @@ def wallets():
     for seat, g in (("p2", 500), ("p3", 300)):
         if f"Money {g}g" not in ok_seat(seat, "status"):
             raise Smoke(f"{seat} status does not show its own {g}g")
+    unfreeze()  # idle p2 would hold p3's purchase frozen
 
     debug_seat("p3", "open_shop", id="SeedShop")  # p3: the give case leaves p2's pack full
     try:
@@ -719,7 +855,7 @@ def ownership():
     debug("grow_crops")
 
     look = ok("look", radius=10)
-    if "Chest (1 items, owner p1)" not in look or "Parsnip READY (owner p1)" not in look:
+    if "Chest (1 items, owner p1" not in look or "Parsnip READY (owner p1)" not in look:
         raise Smoke(f"look lacks the owners:\n{look}")
     if not any(o["kind"] == "chest" and o["owner"] == "p1" and o["tile"] == chest_tile for o in fresh_state().get("owned", [])):
         raise Smoke("/api/state does not list p1's chest")
@@ -729,7 +865,11 @@ def ownership():
     debug_seat("p2", "warp", location=loc, x=x, y=y + 1)
     if theft_entries("p2"):
         raise Smoke("p2 has theft entries before it took anything")
-    debug_seat("p2", "chest_take", x=chest_tile[0], y=chest_tile[1])  # interact can't open a player chest yet (#3)
+    ok_seat("p2", "interact", x=chest_tile[0], y=chest_tile[1], reason="smoke test")
+    try:
+        ok_seat("p2", "menu", action="take", item="Parsnip", reason="smoke test")
+    finally:
+        ok_seat("p2", "close_menu")
     ok_seat("p2", "harvest", tiles=[crop_tile], reason="smoke test")
     unfreeze()  # p2 is now an idle AI and would hold the world (and p1's next action) frozen
 
@@ -802,6 +942,8 @@ def sleep_together():
     import threading
     reset("Farm")
     unfreeze()
+    for seat, x in (("p1", 63), ("p2", 65)):  # in front of the farmhouse: earlier cases leave chests that can box a farmer in
+        debug_seat(seat, "warp", location="Farm", x=x, y=15)
     debug("set_time", time=2000)
     day = fresh_state()["day"]
     results: dict[str, tuple] = {}
@@ -833,6 +975,43 @@ def sleep_together():
         raise Smoke(f"the day only ended at {latest}: something is still waiting for 2:00 AM")
     if time.time() - t0 > 120:
         raise Smoke(f"everyone slept but go_to_bed took {time.time() - t0:.0f}s: an idle seat held a farmer in bed")
+
+
+@case("send_money")
+@social
+def send_money():
+    """Separate wallets: ledger book -> SendMoney -> recipient -> DigitEntryMenu, typed with menu amount."""
+    reset("Farm")
+    debug("separate_wallets")
+    debug("set_money", n=2000)
+    p2 = next(p for p in fresh_state()["players"] if p["id"] == "p2")["state"]
+    p2_money = p2["money"]
+    ok("travel_to", location="ManorHouse", reason="smoke test")
+    books = [t for label, tiles in parse_things(ok("look", radius=15), "A") if label == "LedgerBook" for t in tiles]
+    if not books:
+        raise Smoke("no LedgerBook tile in Lewis's house")
+    try:
+        ok("interact", x=books[0][0], y=books[0][1], reason="smoke test")
+        send = next((i for text, i in question_options().items() if "send" in text.lower()), None)
+        if send is None:
+            raise Smoke("the ledger offers no Send money option")
+        ok("respond", option=send, reason="smoke test")
+        to = question_options().get(p2["name"])
+        if to is None:
+            raise Smoke(f"{p2['name']} is not a recipient: {question_options()}")
+        ok("respond", option=to, reason="smoke test")
+        if "Number entry" not in ok("menu"):
+            raise Smoke("no amount menu after choosing the recipient")
+        ok("menu", action="amount", value=150, reason="smoke test")
+        t0 = time.time()
+        while time.time() - t0 < 5:
+            s = fresh_state()
+            now2 = next(p for p in s["players"] if p["id"] == "p2")["state"]["money"]
+            if s.get("money") == 1850 and now2 == p2_money + 150:
+                return
+        raise Smoke(f"expected p1 1850g and p2 {p2_money + 150}g, got p1 {s.get('money')}g and p2 {now2}g")
+    finally:
+        call("close_menu")
 
 
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))

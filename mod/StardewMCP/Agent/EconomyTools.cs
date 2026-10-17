@@ -70,12 +70,4 @@ public static class EconomyTools
         monitor.Log(text, LogLevel.Warn);
         Players.Host.Runtime.Log.Add("system", text: text);
     }
-
-    /// <summary>Debug op: switch the loaded smoke save to separate wallets right now (the game's own ledger code, minus the overnight wait).</summary>
-    internal static IEnumerator DebugSeparateWallets(JsonElement a, CallContext c)
-    {
-        if (!Context.IsMainPlayer) { c.Fail("Run separate_wallets on p1 (the host)"); yield break; }
-        ManorHouse.SeparateWallets();
-        c.Result = Game1.player.team.useSeparateWallets.Value ? "Wallets are separate" : "Wallets are still shared";
-    }
 }
