@@ -380,8 +380,6 @@ internal static class Romance
 /// <summary>bouquet, mermaid_pendant, propose and answer_proposal (#53). Registered in <see cref="AgentTools.All"/>.</summary>
 public static partial class AgentTools
 {
-    private static JsonElement ArgsOf(object o) => JsonSerializer.SerializeToElement(o);
-
     internal static List<ToolDef> RomanceTools() => new()
     {
         new()

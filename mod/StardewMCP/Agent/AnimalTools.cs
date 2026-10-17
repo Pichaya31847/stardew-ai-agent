@@ -237,8 +237,12 @@ public static partial class AgentTools
 
     private static long NewAnimalId()
     {
-        var r = RanchReflect.TryCall(Game1.multiplayer, "getNewID");
-        if (r.found && r.error == null && r.value is long id && id != 0) return id;
+        var mp = HarmonyLib.AccessTools.Field(typeof(Game1), "multiplayer")?.GetValue(null);
+        if (mp != null)
+        {
+            var r = RanchReflect.TryCall(mp, "getNewID");
+            if (r.found && r.error == null && r.value is long id && id != 0) return id;
+        }
         return Random.Shared.NextInt64(1, long.MaxValue);
     }
 

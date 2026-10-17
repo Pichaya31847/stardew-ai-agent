@@ -206,7 +206,7 @@ internal static class BundleReader
     {
         var world = Game1.netWorldState.Value;
         var list = new List<BundleInfo>();
-        foreach (var kv in world.BundleData.Pairs)
+        foreach (var kv in world.BundleData)
         {
             var keyParts = kv.Key.Split('/');
             if (keyParts.Length < 2 || !int.TryParse(keyParts[1], out var index)) continue;

@@ -413,7 +413,7 @@ public class DayStats
         foreach (var t in p.Items.OfType<Tool>())
         {
             string? key = t switch { Axe => "axe", Pickaxe => "pickaxe", Hoe => "hoe", WateringCan => "wateringCan", _ => null };
-            if (key != null) d[key] = Math.Max(d.TryGetValue(key, out var old) ? old : 0, t.upgradeLevel.Value);
+            if (key != null) d[key] = Math.Max(d.TryGetValue(key, out var old) ? old : 0, t.UpgradeLevel);
         }
         return d;
     }

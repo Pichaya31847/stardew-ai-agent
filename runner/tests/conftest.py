@@ -3,6 +3,7 @@
 import json
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -73,3 +74,28 @@ def game():
     g = FakeGame()
     yield g
     g.close()
+
+
+@pytest.fixture(autouse=True)
+def _mock_watchdog_for_runner_tests(monkeypatch, request):
+    if "test_game_watchdog" not in request.node.nodeid:
+        import game_watchdog
+        old_from_args = game_watchdog.from_args
+
+        def fake_from_args(args, log_dir, api_get, api=game_watchdog.DEFAULT_API):
+            if not getattr(args, "game_cmd", "") and getattr(args, "game_process", "") == game_watchdog.default_process_name():
+                return game_watchdog.NullWatchdog()
+            return old_from_args(args, log_dir, api_get, api)
+
+        monkeypatch.setattr(game_watchdog, "from_args", fake_from_args)
+
+    if "test_pass_out" not in request.node.nodeid:
+        import pass_out
+        old_let_time = pass_out.let_time_run_out
+
+        def fake_let_time(day, get_state, post, sleep=time.sleep, *, timeout=1800.0, **kwargs):
+            return old_let_time(day, get_state, post, sleep, timeout=min(timeout, 0.0), **kwargs)
+
+        monkeypatch.setattr(pass_out, "let_time_run_out", fake_let_time)
+
+

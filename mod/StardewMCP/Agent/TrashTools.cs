@@ -224,11 +224,11 @@ public static partial class AgentTools
             yield return Ticks(10);
             foreach (var n in villagers)
                 if (before.TryGetValue(n.Name, out var b) && P.friendshipData.TryGetValue(n.Name, out var f) && f.Points < b)
-                    seen[n.DisplayName] = f.Points - b;
+                    seen[n.displayName] = f.Points - b;
         }
         yield return WaitIdle(120);
 
-        var near = villagers.Where(n => Vector2.Distance(n.Tile, new Vector2(t.X, t.Y)) <= TrashWitnessTiles).Select(n => n.DisplayName).ToList();
+        var near = villagers.Where(n => Vector2.Distance(n.Tile, new Vector2(t.X, t.Y)) <= TrashWitnessTiles).Select(n => n.displayName).ToList();
         var players = Players.Slots.Where(s => s.Role == SeatRole.Ai && s.Id != Rt.Log.Player && s.Active && (s.State as ScreenState)?.Name != null)
             .Select(s => (s.State as ScreenState)!)
             .Where(st => st.Location == loc.Name && st.Tile != null && Vector2.Distance(new Vector2(st.Tile[0], st.Tile[1]), new Vector2(t.X, t.Y)) <= TrashWitnessTiles)

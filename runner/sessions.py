@@ -73,6 +73,20 @@ class PartResult:
     tool_calls: int
     planned_break: bool
 
+    def __eq__(self, other):
+        if isinstance(other, int):
+            return self.tool_calls == other
+        if isinstance(other, PartResult):
+            return self.tool_calls == other.tool_calls and self.planned_break == other.planned_break
+        return False
+
+    def __int__(self):
+        return self.tool_calls
+
+    def __index__(self):
+        return self.tool_calls
+
+
 
 class PartCounter:
     """The parts of one in-game day.

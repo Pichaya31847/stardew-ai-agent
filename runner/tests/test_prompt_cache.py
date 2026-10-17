@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import language
 import run_days
 
 TEMPLATE = (Path(run_days.__file__).parent / "system_prompt.md").read_text(encoding="utf-8")
@@ -17,6 +18,7 @@ GOAL = "Build the best farm you can."
 
 
 def render(template: str, memory: str, goal: str = GOAL) -> str:
+    template = language.fill_prompt(template, "Thai")
     return template.replace("{GOAL}", goal).replace("{MEMORY}", memory)
 
 
@@ -37,8 +39,9 @@ def test_memory_is_the_last_thing_in_the_template():
 def test_every_placeholder_but_the_goal_comes_after_the_memory_heading():
     heading = TEMPLATE.index("# Memory")
     for m in re.finditer(r"\{[A-Z_]+\}", TEMPLATE):
-        if m.group() != "{GOAL}":
+        if m.group() != "{GOAL}" and m.group() not in language.PLACEHOLDERS:
             assert m.start() > heading, f"{m.group()} changes from day to day, so it must come after '# Memory'"
+
 
 
 def test_other_days_and_parts_share_the_whole_prompt_up_to_the_memory():

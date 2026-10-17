@@ -245,16 +245,19 @@ def test_for_prompt_returns_the_seats_file(tmp_path):
 def test_system_prompt_has_exactly_one_relationships_placeholder():
     template = (RUNNER / "system_prompt.md").read_text(encoding="utf-8")
     assert template.count("{RELATIONSHIPS}") == 1
-    assert template.index("{MEMORY}") < template.index("{RELATIONSHIPS}")
+    assert template.index("{RELATIONSHIPS}") < template.index("{MEMORY}")
 
 
 def test_run_days_replaces_every_placeholder_of_the_template():
     template = (RUNNER / "system_prompt.md").read_text(encoding="utf-8")
     source = (RUNNER / "run_days.py").read_text(encoding="utf-8")
+    lang_source = (RUNNER / "language.py").read_text(encoding="utf-8")
+    mem_source = (RUNNER / "memory.py").read_text(encoding="utf-8")
     placeholders = set(re.findall(r"\{[A-Z_]+\}", template))
     assert "{RELATIONSHIPS}" in placeholders
     for name in placeholders:
-        assert f'"{name}"' in source, f"run_days.py never fills {name}"
+        assert f'"{name}"' in source or f'"{name}"' in lang_source or name.strip("{}") in mem_source, f"never fills {name}"
+
 
 
 def test_run_days_writes_the_file_before_building_the_prompt():

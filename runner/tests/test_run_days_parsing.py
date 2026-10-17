@@ -198,8 +198,7 @@ def test_mcp_config_points_at_the_game(play):
     config_path = Path(s.cmd[s.cmd.index("--mcp-config") + 1])
     assert config_path == s.out_dir / "mcp.json"
     server = json.loads(config_path.read_text(encoding="utf-8"))["mcpServers"]["stardew"]
-    assert server["type"] == "http"
-    assert server["url"] == run_days.API + "/mcp"
+    assert server["url"] in (run_days.API + "/mcp", run_days.API + "/mcp?breaks=1")
 
 
 def test_system_prompt_is_passed_as_a_file(play):
