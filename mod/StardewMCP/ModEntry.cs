@@ -28,6 +28,7 @@ public class ModEntry : Mod
         _log = new AgentLog(logDir, Monitor);
         AgentTools.Config = _config;
         Players.Init(helper, Monitor, _config, _log);
+        DayStats.Init(_log);
         WorldClock.Init(_config);
         PassOut.Init(_log);
         Perception.Init();

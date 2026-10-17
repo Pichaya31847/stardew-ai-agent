@@ -93,6 +93,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `http://localhost:8770/api/relationships` | Every AI farmer's friendships (hearts, birthdays, gift tastes found out); `runner/run_days.py` turns it into `relationships.md` |
 | `POST http://localhost:8770/api/release_freeze` | Runner only: stop an idle seat from freezing the world (`{"seat": "p1"}`, or `"all"`; `"on": false` takes it back) so game time runs until the farmer passes out. Ends with the farm day |
 | `http://localhost:8770/api/briefing?seat=p1` | Morning briefing of one AI seat: overnight results, shipping by item, mail, weather, farm (the runner puts it in the first prompt of a day) |
+| `http://localhost:8770/api/stats` | Daily stats: the days that have a `stats_NNN.json`; `?n=3` returns day 3 of every AI seat |
 
 ## Configuration
 
@@ -170,6 +171,7 @@ stop a running `wait`, `walk_to`, `travel_to` or farm action, so a model never s
 - `obs_recorder.py` pauses the OBS recording while the game is frozen, so the video only contains
   gameplay. Needs OBS with obs-websocket enabled.
 - `game_watchdog.py` is used by `run_days.py` to survive a game crash or hang (below).
+- `stats.py` and `compare_runs.py` turn the daily stats into reports (see below).
 
 ### Watchdog: crash and hang recovery
 
@@ -212,6 +214,30 @@ py runner/run_days.py --days 3 --game-cmd "C:\Program Files (x86)\Steam\steamapp
   "no answer" signal fire for real. `/api/state` also carries `heartbeat`, `eventUp` and `festival` for the watchdog.
 
 `studio/` contains the YouTube / OBS layer (`overlay.html`, `replay.html`, and `director.py` which switches OBS scenes from `/api/events`).
+
+### Daily stats
+
+When a farm day ends (sleep or pass-out) the mod writes `stats_NNN.json` next to the logs
+(`stats_NNN_p2.json` for the other AI seats; the camera seat writes nothing). It holds money at
+the start, bedtime and end of the day, income (the game's money earned, so shipping is included),
+the shipping bin by category, crops planted / harvested / died and how many were unwatered at
+bedtime, energy and health at bedtime, whether the day ended in bed or by passing out, tool calls
+total / failed (per tool, plus the most common failure messages), skill levels, total hearts, the
+deepest mine floor, tool upgrade levels and a few game counters. A day the mod joined late is marked
+`partial`. Unwatered crops do not know about sprinklers or tomorrow's rain.
+
+The files feed three things:
+
+- `batch_report.md`, written by `run_days.py` in the run folder next to `logs/`: one row per day of the batch, totals, averages, how the days
+  ended, failure hotspots, and a link to `lessons.md` when one is there. It is rewritten after every
+  day; `py runner/stats.py report runs --from 1 --to 7` rebuilds it from the files. Turns,
+  tokens and cost per day come from the session transcripts (`usage_NNN.json`).
+- A line `run_days.py` adds to the first prompt of each day with yesterday's numbers next to the average of the three
+  days before, e.g. `รายได้ 320g (เฉลี่ย 180g) · ล้มเหลว 4 ครั้ง (เฉลี่ย 9)`. It is left out on day 1 and
+  when yesterday has no stats. `py runner/stats.py morning runs --day 8` prints it.
+- `py runner/compare_runs.py runs_a runs_b --days 7 28 56 100` compares two runs (or two seats with
+  `--player-a` / `--player-b`) at checkpoint days: where each stood and what it had totalled by then.
+  There is no combined score on purpose.
 
 ## Build from source
 

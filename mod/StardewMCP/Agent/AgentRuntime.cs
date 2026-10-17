@@ -50,6 +50,9 @@ public class AgentRuntime
 
     public PlayerLog Log { get; }
 
+    /// <summary>This seat's numbers for the day in progress; written as stats_NNN.json when the day rolls over (#25).</summary>
+    public DayStats Stats { get; }
+
     /// <summary>Profession choices (skill, level) waiting for choose_profession, and the game day they were offered.</summary>
     public List<Microsoft.Xna.Framework.Point> PendingProfessions { get; } = new();
     public int PendingProfessionDay { get; set; }
@@ -82,6 +85,7 @@ public class AgentRuntime
         _monitor = monitor;
         Config = config;
         Log = log;
+        Stats = new DayStats(log);
         _actionLane = new Lane(this, pausable: true);
         _observeLane = new Lane(this, pausable: false);
     }
@@ -109,6 +113,7 @@ public class AgentRuntime
         Perception.Tick(this);
         Story.Tick(this);
         Romance.Tick(this);
+        Stats.Tick();
         _actionLane.Tick(_actions);
         _observeLane.Tick(_observations);
     }
@@ -202,6 +207,7 @@ public class AgentRuntime
             _lastHealth = Context.IsWorldReady ? Game1.player.health : 0;
             _watch = Stopwatch.StartNew();
             _stack.Clear();
+            _rt.Stats.OnCallStart(call.Tool.Name, call.Instant);
 
             if (!call.Instant)
                 _rt.Log.Add("action", call.Tool.Name, AgentTools.Reason(call.Args), AgentTools.ArgsForLog(call.Args));
@@ -311,6 +317,7 @@ public class AgentRuntime
             if (call.Tool.AppendStatus && Context.IsWorldReady)
                 text = text.TrimEnd() + "\n" + AgentTools.Footer();
 
+            _rt.Stats.OnCallEnd(call.Tool.Name, ctx.Ok, ctx.Result, _callStartDay);
             if (!call.Instant || !ctx.Ok)
                 _rt.Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds);
 

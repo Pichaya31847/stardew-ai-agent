@@ -112,6 +112,7 @@ mod/StardewMCP/
     DebugApi.cs        /api/debug/* and /api/debug/p{N}/* test hooks (warp, build_cabins, capture...), off by default
     Players.cs         The 4 split-screen seats (P1-P3 AI, P4 camera) and their per-screen state
     WorldClock.cs      Freezes the world while any connected AI thinks (host pause); thinking timeout
+    DayStats.cs        Per-seat daily stats (stats_NNN[_pN].json at day rollover, GET /api/stats)
     SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
     SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
 studio/
@@ -126,7 +127,9 @@ runner/
   tests/               pytest for the runner with a fake game, processes and clock: `pytest runner/tests`
   obs_recorder.py      Pauses OBS recording while the game is frozen
   memory.py            Lessons / plan / notes injected into the system prompt; batch-end consolidation
-  tests/               pytest tests for memory.py (no game needed)
+  stats.py             batch_report.md, usage_NNN.json, the Thai morning stats line (from the mod's stats files)
+  compare_runs.py      Two runs side by side at checkpoint days
+  tests/               pytest for memory.py, stats.py and compare_runs.py (no game needed)
   system_prompt.md     System prompt used by run_days.py
 ```
 

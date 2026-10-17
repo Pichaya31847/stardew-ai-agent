@@ -19,11 +19,15 @@ namespace StardewMCP.Agent;
 ///   GET  /replay     day-by-day replay of the logs
 ///   GET  /api/feed   overlay feed, /api/days, /api/day?n=, /api/state
 <<<<<<< HEAD
+<<<<<<< HEAD
 ///   GET  /api/memory each AI seat's lessons, plan and notes (what the journal tool wrote)
 ///   GET  /api/briefing?seat=p1  morning briefing of one AI seat (JSON; see Briefing.cs)
 =======
 ///   GET  /api/relationships  every AI farmer's friendships (the runner writes relationships.md from it)
 >>>>>>> origin/fix/issue-53
+=======
+///   GET  /api/stats  days with stats files; /api/stats?n=3 is day 3 of every AI seat (stats_NNN.json)
+>>>>>>> origin/fix/issue-25
 ///   POST /api/meta   runner metadata (model, session) shown on the overlay
 ///   POST /api/release_freeze  runner: stop freezing the world for a seat (body {"seat":"p1"|"all","on":true}) until its farmer
 ///                    passes out; ends by itself on the next farm day (#22)
@@ -155,6 +159,9 @@ public class AgentHttp
                     return;
                 case "/api/relationships":
                     await Json(res, await NpcStory.ReportAsync());
+                    return;
+                case "/api/stats":
+                    await Json(res, DayStats.Api(_log, req.QueryString["n"]));
                     return;
                 case "/api/days":
                     await Json(res, _log.Days());

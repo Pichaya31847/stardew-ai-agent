@@ -44,6 +44,8 @@ import briefing
 import game_watchdog
 import memory
 import pass_out
+import relationships
+import stats as run_stats
 import usage_limit
 
 HERE = Path(__file__).resolve().parent
@@ -306,6 +308,7 @@ def main():
     waiter = usage_limit.LimitWaiter.from_args(args, post=api_post)
     days_played = 0
     stopped_early = False
+    batch_days: list[int] = []
     while True:
         state = GUARD.ready(wait_ready)
         # After a pass-out the mod writes its record once the morning has settled; wait for that so the prompt can use it.
@@ -325,6 +328,7 @@ def main():
             template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
             log_dir, args.goal, recent_diaries(log_dir, day)
         )
+        morning = run_stats.morning_for_prompt(log_dir, day)
 
         def play_day(attempt: int) -> dict:
             # After a crash the watchdog calls this again: the day restarts from the morning with a fresh part 1.
@@ -333,6 +337,8 @@ def main():
                 if part == 1:
                     # The morning briefing replaces "start with status and look" (falls back to it if the mod has none).
                     prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir))
+                    if morning:
+                        prompt += "\n\n" + morning
                     prompt = memory.with_reminder(prompt, cur_state, log_dir)
                     # The previous day ended by passing out: say what happened and ask for that day's journal first.
                     prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
@@ -358,6 +364,8 @@ def main():
         if s.get("ready") and s["day"] > day:
             backup_save(out_dir, day)
             days_played += 1
+            batch_days.append(day)
+            run_stats.finish_day(out_dir, log_dir, day, batch_days)
         else:
             print(f"Day {day} still not finished after {args.max_parts} sessions and {args.pass_out_timeout}s of released "
                   "time — stopping for a human to check.")

@@ -478,8 +478,10 @@ public static partial class AgentTools
                     var walk = new CallContext();
                     yield return WalkAdjacent(t, walk);
                     if (!walk.Ok) continue;
+                    var symBefore = WorldText.Describe(loc, t.X, t.Y).sym;
                     P.CurrentToolIndex = scythe;
                     yield return Swing(t);
+                    Rt.Stats.HarvestTile(symBefore, WorldText.Describe(loc, t.X, t.Y).sym);
                 }
             }
         }
