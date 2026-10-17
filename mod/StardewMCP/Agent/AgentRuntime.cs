@@ -10,19 +10,6 @@ using StardewValley;
 
 namespace StardewMCP.Agent;
 
-/// <summary>State shared by one running tool call.</summary>
-public class CallContext
-{
-    public string Result = "";
-    public bool Ok = true;
-
-    public void Fail(string message)
-    {
-        Ok = false;
-        Result = message;
-    }
-}
-
 /// <summary>A tool call waiting for (or running on) the game thread.</summary>
 public class PendingCall
 {
@@ -348,7 +335,7 @@ public class AgentRuntime
                 text = text.TrimEnd() + "\n" + Observation.OneLine(AgentTools.Footer()); // one line, however many menus are open
             text = SessionBreaks.Annotate(_rt.Log, call, text); // planned session break notice (#30)
 
-            _rt.Stats.OnCallEnd(call.Tool.Name, ctx.Ok, ctx.Result, _callStartDay);
+            _rt.Stats.OnCallEnd(call.Tool.Name, ctx.Ok, ctx.Result, CallStartDay);
             if (!call.Instant || !ctx.Ok)
                 _rt.Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds);
 
