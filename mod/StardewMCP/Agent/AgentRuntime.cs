@@ -214,6 +214,13 @@ public class AgentRuntime
             _stack.Clear();
             _rt.Stats.OnCallStart(call.Tool.Name, call.Instant);
 
+            if (SessionBreaks.Refuse(_rt.Log, call, out var breakMessage)) // after a planned session break, no more actions (#30)
+            {
+                _ctx.Fail(breakMessage);
+                Finish();
+                return;
+            }
+
             if (!call.Instant)
                 _rt.Log.Add("action", call.Tool.Name, AgentTools.Reason(call.Args), AgentTools.ArgsForLog(call.Args));
 
@@ -333,7 +340,8 @@ public class AgentRuntime
             var mail = call.Tool.Mail ? Perception.TakeMail(_rt.Log.Player) : "";
             if (mail.Length > 0) text = text.TrimEnd() + "\n" + mail;
             if (call.Tool.AppendStatus && Context.IsWorldReady)
-                text = text.TrimEnd() + "\n" + AgentTools.Footer();
+                text = text.TrimEnd() + "\n" + Observation.OneLine(AgentTools.Footer()); // one line, however many menus are open
+            text = SessionBreaks.Annotate(_rt.Log, call, text); // planned session break notice (#30)
 
             _rt.Stats.OnCallEnd(call.Tool.Name, ctx.Ok, ctx.Result, _callStartDay);
             if (!call.Instant || !ctx.Ok)

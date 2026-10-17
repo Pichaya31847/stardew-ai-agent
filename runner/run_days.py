@@ -10,6 +10,8 @@ Each day:
   * runs `claude -p` with only the in-game MCP server (http://localhost:8770/mcp),
   * saves Claude's full stream-json transcript next to the game logs (proof of a real run),
   * continues the same day in a new session if Haiku stopped before sleeping,
+  * splits a long day into parts on purpose (planned session breaks from the mod, see sessions.py; they do
+    not count toward --max-parts) and logs the tokens of every part to <out>/usage.csv (see usage_log.py),
   * on a subscription usage limit waits for the reset and retries the same part (see usage_limit.py),
   * when the sessions of a day are used up, releases the world freeze (POST /api/release_freeze) so the clock runs
     to 2:00 AM and the farmer passes out; the next morning's first prompt says what happened and asks for the
@@ -31,7 +33,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import relationships
 import shutil
 import subprocess
 import sys
@@ -45,8 +46,10 @@ import game_watchdog
 import memory
 import pass_out
 import relationships
+import sessions
 import stats as run_stats
 import usage_limit
+import usage_log
 
 HERE = Path(__file__).resolve().parent
 API = "http://localhost:8770"
@@ -117,10 +120,10 @@ def last_actions(log_dir: Path, day: int, n: int = 25) -> str:
     return "\n".join(out[-n:])
 
 
-def continue_prompt(day: int, log_dir: Path) -> str:
-    prompt = (f"เล่นวันที่ {day} ต่อจากเดิม (session ก่อนหน้าหยุดก่อนเข้านอน) นี่คือสิ่งที่เพิ่งทำไป:\n"
-              f"{last_actions(log_dir, day)}\n\n{memory.continuation_context(log_dir, day)}\n\n"
-              "เช็ก status แล้วเล่นต่อจนถึงเวลานอน (เขียน journal ถ้ายังไม่ได้เขียน แล้วเข้านอนด้วย go_to_bed)")
+def continue_prompt(day: int, log_dir: Path, planned: bool = False) -> str:
+    sessions.add_context_provider(memory.continuation_context)
+    recent = last_actions(log_dir, day, 8 if planned else 25)
+    prompt = sessions.continuation_prompt(day, log_dir, planned, recent=recent)
     return prompt + pass_out.pending_reminder(game_state())
 
 
@@ -136,9 +139,10 @@ def save_folder() -> Path | None:
     return max(cands, key=lambda p: p.stat().st_mtime)  # the save just written
 
 
-def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> int:
+def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> sessions.PartResult:
     mcp_cfg = out_dir / "mcp.json"
-    mcp_cfg.write_text(json.dumps({"mcpServers": {"stardew": {"type": "http", "url": f"{API}/mcp"}}}), encoding="utf-8")
+    mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False))
+    mcp_cfg.write_text(json.dumps({"mcpServers": {"stardew": {"type": "http", "url": mcp_url}}}), encoding="utf-8")
     sys_file = out_dir / f"system_day_{day:03}.md"
     sys_file.write_text(system_prompt, encoding="utf-8")
 
@@ -166,6 +170,8 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     session_id = ""
     tool_calls = 0
     limit = usage_limit.LimitWatcher()
+    tracker = usage_log.UsageTracker()
+    game_start, t_start = game_state().get("time", ""), time.time()
     with transcript.open("w", encoding="utf-8") as tf:
         proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace", shell=False)
@@ -181,6 +187,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                 limit.feed_line(line)
                 continue
             limit.feed(ev)
+            tracker.feed(ev)
             if ev.get("type") == "system" and ev.get("subtype") == "init":
                 session_id = ev.get("session_id", "")
                 model = ev.get("model", args.model)
@@ -208,7 +215,12 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
         GUARD.detach()
     if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
         raise usage_limit.UsageLimitHit(limit.info, tool_calls)
-    return tool_calls
+    row = tracker.row(day, part, game_start, game_state().get("time", ""), time.time() - t_start)
+    usage_log.append_row(out_dir / "usage.csv", row)
+    print(f"  usage: {row['total_tokens']:,} tokens (in {row['input_tokens']:,} · out {row['output_tokens']:,} · "
+          f"cache read {row['cache_read_input_tokens']:,}), peak context {row['peak_context_tokens']:,}"
+          f"{' · planned session break' if tracker.break_seen else ''}")
+    return sessions.PartResult(tool_calls, tracker.break_seen)
 
 
 def claude_text_session(args, out_dir: Path, label: str) -> memory.Session:
@@ -282,7 +294,9 @@ def main():
     ap.add_argument("--model", default="claude-haiku-5-5")
     ap.add_argument("--goal", default=DEFAULT_GOAL)
     ap.add_argument("--max-turns", type=int, default=600)
-    ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if Haiku stops before sleeping")
+    ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if Haiku stops before sleeping (planned session breaks do not count)")
+    ap.add_argument("--max-breaks", type=int, default=sessions.DEFAULT_MAX_BREAKS, help="Planned session breaks per day before a part counts toward --max-parts")
+    ap.add_argument("--no-session-breaks", action="store_true", help="One session per day, as before (the baseline for comparing usage.csv)")
     ap.add_argument("--pass-out-timeout", type=int, default=1800,
                     help="Seconds to let game time run when a day's sessions are used up, waiting for the farmer to pass out")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
@@ -312,9 +326,10 @@ def main():
     while True:
         state = GUARD.ready(wait_ready)
         # After a pass-out the mod writes its record once the morning has settled; wait for that so the prompt can use it.
-        state = pass_out.wait_settled(game_state)
-        if not state.get("ready"):
-            state = GUARD.ready(wait_ready)
+        if game_state().get("ready"):
+            settled = pass_out.wait_settled(game_state, sleep=time.sleep)
+            if settled.get("ready"):
+                state = settled
         day = state["day"]
         if args.until_day and day > args.until_day:
             break
@@ -330,39 +345,53 @@ def main():
         )
         morning = run_stats.morning_for_prompt(log_dir, day)
 
+        def call_session(p: str, part: int, attempt: int):
+            if attempt == 1:
+                return run_session(args, out_dir, day, p, system_prompt, part)
+            try:
+                return run_session(args, out_dir, day, p, system_prompt, part, attempt)
+            except TypeError:
+                return run_session(args, out_dir, day, p, system_prompt, part)
+
         def play_day(attempt: int) -> dict:
             # After a crash the watchdog calls this again: the day restarts from the morning with a fresh part 1.
             cur_state = wait_ready() if attempt > 1 else state
-            for part in range(1, args.max_parts + 1):
+            parts, planned = sessions.PartCounter(args.max_parts, args.max_breaks), False
+            part = 0
+            while True:
+                part += 1
                 if part == 1:
                     # The morning briefing replaces "start with status and look" (falls back to it if the mod has none).
-                    prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir))
+                    prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir, sleep=time.sleep))
                     if morning:
                         prompt += "\n\n" + morning
                     prompt = memory.with_reminder(prompt, cur_state, log_dir)
                     # The previous day ended by passing out: say what happened and ask for that day's journal first.
                     prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
                 else:
-                    prompt = continue_prompt(day, log_dir)
+                    prompt = continue_prompt(day, log_dir, planned=planned)
                 # a usage-limit stop waits for the reset and retries this same part (it does not count toward --max-parts)
-                usage_limit.run_part(waiter, lambda p, n: run_session(args, out_dir, day, p, system_prompt, part, n),
-                                     prompt, lambda: continue_prompt(day, log_dir), day, part,
-                                     day_done=lambda: wait_ready()["day"] > day)
+                res = usage_limit.run_part(waiter, lambda p, n: call_session(p, part, n),
+                                           prompt, lambda: continue_prompt(day, log_dir, planned=False), day, part,
+                                           day_done=lambda: wait_ready()["day"] > day)
+                planned = res.planned_break if isinstance(res, sessions.PartResult) else False
                 GUARD.check()
                 time.sleep(3)
                 s = wait_ready()
                 if s["day"] > day:
-                    break
-                print(f"  day {day} not finished after part {part}; continuing")
-            return wait_ready()
+                    return s
+                print(f"  day {day} not finished after part {part}{' (planned session break)' if planned else ''}; continuing")
+                if not parts.after_part(planned):
+                    return s
 
         s = GUARD.run_day(day, play_day)
-        if s["day"] <= day:
+        if s["day"] <= day and game_state().get("ready"):
             # Every session of the day is used and the farmer is still up. The mod keeps the world frozen while no
             # action runs, so release it and let the clock reach 2:00 AM: the farmer passes out and a new day starts.
             s = pass_out.let_time_run_out(day, game_state, api_post, time.sleep, timeout=args.pass_out_timeout)
         if s.get("ready") and s["day"] > day:
             backup_save(out_dir, day)
+            print(usage_log.day_line(out_dir / "usage.csv", day))
             days_played += 1
             batch_days.append(day)
             run_stats.finish_day(out_dir, log_dir, day, batch_days)

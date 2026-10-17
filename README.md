@@ -48,7 +48,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 
 | Tool | What it does |
 |---|---|
-| `status`, `look`, `inventory` | Read the player, surroundings and items |
+| `status`, `look`, `inventory` | Read the player, surroundings and items. `look` shows a 17x17 window (radius 8) by default; `kinds` (e.g. `["crops","debris"]`) limits the object list and `diff=true` lists only the tiles that changed since the last look |
 | `think` | Post a thought (shown on the overlay, costs no game time) |
 | `walk_to`, `travel_to` | Pathfind to a tile, or to another location (a shop owner's or villager's name also works; a closed door says when it opens) |
 | `farm_summary` | Whole-map farm report: empty tilled soil, crops by type with days to harvest, unwatered, ready and dead crops, crops that won't mature this season, forage, debris, watering can and nearest water. Costs no game time |
@@ -120,6 +120,10 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `LockHostInput` | `true` | Split-screen: ignore the real keyboard/mouse on P1 once a save is loaded |
 | `CleanFrames` | `true` | Split-screen: frozen frames look live (no Paused banner, HUD kept), no cursors, gamepad hint or join messages |
 | `AutoZoom` | `true` | Split-screen: zoom each screen to about 20 tiles across |
+| `SessionBreakTimes` | `[1200,1800]` | Planned session breaks: from these game times a tool result carries `Session break:` and the AI is asked to continue in a new session (see below) |
+| `SessionBreakToolCalls` | `150` | Planned break after this many tool calls in one session (0 = off) |
+| `SessionBreakResultChars` | `120000` | Planned break after this many characters of tool results in one session, about 30k tokens (0 = off) |
+| `SessionBreaksForAll` | `false` | Planned breaks for every MCP client; by default only clients that connect to `/mcp?breaks=1` (what `run_days.py` does) |
 
 The SMAPI console command `mcp_freeze [on|off]` toggles time freezing at runtime.
 
@@ -163,6 +167,15 @@ stop a running `wait`, `walk_to`, `travel_to` or farm action, so a model never s
   resumes the same day; that part doesn't count toward `--max-parts`. Logic and options (`--limit-*`,
   `--max-limit-waits`) are in `runner/usage_limit.py`; check a saved transcript with
   `py runner/usage_limit.py runs/logs/claude_day_001_part1.jsonl`.
+- Long days are split into parts. At the break times (and after too many calls or too much result text)
+  the mod adds a `Session break:` line to a tool result, refuses further actions, and the AI writes its
+  plan with `think` and ends its turn. `run_days.py` then starts the next part with that plan, the
+  first `think` of the day and the last results. Planned breaks do not count toward `--max-parts`
+  (`--max-breaks`, default 8, stops a loop; `--no-session-breaks` turns them off). The mod only counts
+  characters, so the token limit is an estimate.
+- Every part appends one row to `runs/usage.csv` (input, output and cache tokens, turns, tool calls,
+  peak context). `py runner/usage_log.py summary` prints a table per day with the cache hit ratio,
+  `check` compares the file with the saved transcripts, `rebuild` recreates it from them.
 - `memory.py` is the memory logic behind that (placeholders, consolidation); its tests run without the
   game: `py -m pytest runner/tests`.
 - `relationships.py` (used by `run_days.py`) writes `relationships.md` next to the diaries each day from `/api/relationships`

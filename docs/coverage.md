@@ -155,6 +155,20 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 | Seeing what others do, being interrupted | no mechanic (the game draws the other farmers and nothing more) | mod rule (`Perception`): `look` and `status` list the other AI players in view with the tool they run, its reason and how long, next to their last `say` and plan board section. An @mention, whisper, gift, a player coming into view or entering your house, a theft (`Ownership.Theft`), rain starting and crows on the farm add an `Events:` block to the next tool result and stop a running `wait`, `walk_to`, `travel_to` or farm action (`AgentRuntime.Interrupt`). P4 neither sees nor is seen | 🟡 written, smoke `caught_slacking` not run yet; damage and monster interrupts wait for #6 | #40 |
 | Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action (`festival(start)` waits in the ready check); P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together` | #52, #38, #11 |
 
+### Context control (#30)
+
+What the AI reads and how long a session lasts. These are not game systems; the rows say where the
+text size comes from.
+
+| System | How it works | Covered by | Status | Issue |
+|---|---|---|---|---|
+| Map size | `WorldText.Describe` scan of a square window | `look` default radius 8 (17x17), legend limited to the symbols in view | 🟡 untested in game | #30 |
+| Object list filter | the "Things in view" list of the same scan | `look(kinds=[...])` | 🟡 untested in game | #30 |
+| What changed | per-seat snapshot of the last scan on that map | `look(diff=true)`; falls back to the full view when most of the window is new | 🟡 untested in game | #30 |
+| Result footer | `AgentTools.Footer()` (time, place, energy, money, menu, professions) | joined into one line in `AgentRuntime.Finish` | 🟡 untested in game | #30 |
+| Session break | none (the game has no such thing); `SessionBreaks.cs` adds a `Session break:` line at set times or after N calls / M characters, then refuses actions | opt-in with `/mcp?breaks=1`; `think`, observations and `go_to_bed` still work; `run_days.py` starts the next part with a handoff | 🟡 untested in game | #30 |
+| Token log | `claude -p` stream-json `result` event | `runner/usage_log.py` writes `runs/usage.csv`, one row per part | 🟡 tested on fake transcripts only | #30 |
+
 ## Choice policy
 
 What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselves.
