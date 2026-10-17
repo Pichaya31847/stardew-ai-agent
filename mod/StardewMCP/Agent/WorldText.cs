@@ -38,6 +38,8 @@ public static partial class WorldText
         sb.AppendLine($"Holding: {(held == null ? "nothing" : $"{held.DisplayName} x{held.Stack}")} (slot {p.CurrentToolIndex})");
         var fishing = AgentTools.FishingLine();
         if (fishing.Length > 0) sb.AppendLine(fishing);
+        var gear = AgentTools.StatusExtras(p);
+        if (gear.Length > 0) sb.AppendLine(gear);
         if (p.questLog.Count > 0)
         {
             var quests = p.questLog.Where(q => q != null && !q.completed.Value).Select(q => q.GetName()).Take(4).ToList();
@@ -114,7 +116,7 @@ public static partial class WorldText
             var quality = it is not Tool && it.Quality > 0 ? $", {AgentTools.QualityName(it.Quality)}" : "";
             sb.AppendLine($"  slot {i}: {it.DisplayName} x{it.Stack} [{(it is Tool ? "tool" : it.getCategoryName())}{quality}{extra}{AgentTools.RodNote(it)}]");
         }
-        return sb.ToString().TrimEnd();
+        return (sb.ToString().TrimEnd() + "\n" + AgentTools.InventoryExtras(p)).TrimEnd();
     }
 
     /// <summary>One-character symbol and optional label for a tile.</summary>

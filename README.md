@@ -69,6 +69,8 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `quests`, `accept_quest` | Quest journal with story, giver, progress and reward; today's Help Wanted request and who took it; Special Orders; `share` posts yours to the plan board; `accept_quest` takes the Help Wanted request |
 | `crack_geode`, `trash`, `watch_tv` | Clint cracks geodes (25g each); throw items away (valuables need `confirm`); watch a TV channel (weather, fortune, Queen of Sauce, tips) |
 | `shop_list`, `buy`, `sell`, `ship`, `eat` | Shopping, selling to an open shop for gold at once, shipping bin (pays overnight), food |
+| `equip` | Put on a ring, boots or hat from the inventory (the old one goes back), or attach bait/tackle to the fishing rod; `status` and `inventory` show what is worn and what is on the rod |
+| `special_orders` | The Special Orders board in Town: `list` the posted orders, `accept` one by index, `active` shows the accepted ones with progress |
 | `build`, `upgrade_house` | Robin the carpenter: `build(building=list)` shows costs, `build(building, x, y)` orders a Coop, Barn, Silo, Well or Shed on the Farm; `upgrade_house` buys the next house level. Paid from the caller's own money and items |
 | `buy_animal`, `animals` | Marnie's animals: `buy_animal(type=list)` and `buy_animal(type, building?, name?)`; `animals` lists yours and does `pet`, `collect` (eggs, milk, wool) and `feed` (hay troughs). Status warns when animals are not pet today |
 | `calendar` | Today and the next days: festivals, birthdays, the next festival, and the main shops' hours and closed days (no game time) |
