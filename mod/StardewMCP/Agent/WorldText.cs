@@ -44,7 +44,7 @@ public static class WorldText
         if (p.questLog.Count > 0)
         {
             var quests = p.questLog.Where(q => q != null && !q.completed.Value).Select(q => q.GetName()).Take(4).ToList();
-            if (quests.Count > 0) sb.AppendLine($"Active quests: {string.Join(" | ", quests)}");
+            if (quests.Count > 0) sb.AppendLine($"Active quests: {string.Join(" | ", quests)} (quests has the details)");
         }
         sb.Append(MenuState());
         return sb.ToString().TrimEnd();
@@ -105,7 +105,8 @@ public static class WorldText
             var it = p.Items[i];
             if (it == null) continue;
             var extra = it is SObject o && o.Edibility > -300 ? $", edible +{o.staminaRecoveredOnConsumption()} energy" : "";
-            sb.AppendLine($"  slot {i}: {it.DisplayName} x{it.Stack} [{(it is Tool ? "tool" : it.getCategoryName())}{extra}]");
+            var quality = it is not Tool && it.Quality > 0 ? $", {AgentTools.QualityName(it.Quality)}" : "";
+            sb.AppendLine($"  slot {i}: {it.DisplayName} x{it.Stack} [{(it is Tool ? "tool" : it.getCategoryName())}{quality}{extra}]");
         }
         return sb.ToString().TrimEnd();
     }
