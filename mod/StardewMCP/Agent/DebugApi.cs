@@ -238,14 +238,19 @@ public static class DebugApi
         yield break;
     }
 
-    /// <summary>Take the first item out of the open chest through the chest's own grab callback, as a click in the menu does.</summary>
+    /// <summary>
+    /// Take the first item out of the chest at (x, y) through the chest's own grab callback, as a click in its menu does.
+    /// (interact can't open a player chest: the game only opens one on a real right-click. The chest tool is #3.)
+    /// </summary>
     private static IEnumerator ChestTake(JsonElement a, CallContext c)
     {
-        if (Game1.activeClickableMenu is not ItemGrabMenu { context: StardewValley.Objects.Chest chest }) { c.Fail("No chest is open"); yield break; }
+        var tile = new Microsoft.Xna.Framework.Vector2(I(a, "x", 0), I(a, "y", 0));
+        if (!Game1.currentLocation.objects.TryGetValue(tile, out var obj) || obj is not StardewValley.Objects.Chest chest) { c.Fail($"No chest at ({tile.X},{tile.Y})"); yield break; }
         var item = chest.GetItemsForPlayer().FirstOrDefault(i => i != null);
         if (item == null) { c.Fail("The chest is empty"); yield break; }
         chest.grabItemFromChest(item, Game1.player);
         Game1.player.addItemToInventoryBool(item);
+        if (Game1.activeClickableMenu is ItemGrabMenu) Game1.exitActiveMenu();
         c.Result = $"Took {item.Stack} x {item.DisplayName} from the chest";
     }
 

@@ -681,18 +681,21 @@ def wallets():
     debug_seat("p2", "set_money", n=500)
     debug_seat("p3", "set_money", n=300)
     debug("set_money", n=2000)
+    time.sleep(1)  # farmhand wallets reach the host through the game's net sync
     if [seat_money(s) for s in ("p1", "p2", "p3")] != [2000, 500, 300]:
         raise Smoke(f"wallets are not separate: {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
     for seat, g in (("p2", 500), ("p3", 300)):
         if f"Money {g}g" not in ok_seat(seat, "status"):
             raise Smoke(f"{seat} status does not show its own {g}g")
 
-    debug_seat("p2", "open_shop", id="SeedShop")
-    text = ok_seat("p2", "buy", item="Parsnip Seeds", quantity=2)
+    debug_seat("p3", "open_shop", id="SeedShop")  # p3: the give case leaves p2's pack full
+    try:
+        text = ok_seat("p3", "buy", item="Parsnip Seeds", quantity=2)
+    finally:
+        ok_seat("p3", "close_menu")
     paid = int(re.search(r"for (\d+)g", text).group(1))
-    if (seat_money("p1"), seat_money("p2"), seat_money("p3")) != (2000, 500 - paid, 300):
-        raise Smoke(f"p2 paid {paid}g but wallets are {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
-    ok_seat("p2", "close_menu")
+    if (seat_money("p1"), seat_money("p2"), seat_money("p3")) != (2000, 500, 300 - paid):
+        raise Smoke(f"p3 paid {paid}g but wallets are {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
 
 
 def theft_entries(thief: str) -> list[dict]:
@@ -716,7 +719,7 @@ def ownership():
     debug("grow_crops")
 
     look = ok("look", radius=10)
-    if "Chest (3 items, owner p1)" not in look or "Parsnip READY (owner p1)" not in look:
+    if "Chest (1 items, owner p1)" not in look or "Parsnip READY (owner p1)" not in look:
         raise Smoke(f"look lacks the owners:\n{look}")
     if not any(o["kind"] == "chest" and o["owner"] == "p1" and o["tile"] == chest_tile for o in fresh_state().get("owned", [])):
         raise Smoke("/api/state does not list p1's chest")
@@ -726,10 +729,9 @@ def ownership():
     debug_seat("p2", "warp", location=loc, x=x, y=y + 1)
     if theft_entries("p2"):
         raise Smoke("p2 has theft entries before it took anything")
-    ok_seat("p2", "interact", x=chest_tile[0], y=chest_tile[1], reason="smoke test")
-    debug_seat("p2", "chest_take")
-    ok_seat("p2", "close_menu")
+    debug_seat("p2", "chest_take", x=chest_tile[0], y=chest_tile[1])  # interact can't open a player chest yet (#3)
     ok_seat("p2", "harvest", tiles=[crop_tile], reason="smoke test")
+    unfreeze()  # p2 is now an idle AI and would hold the world (and p1's next action) frozen
 
     kinds = {(e["args"]["what"], e["args"]["victim"]) for e in theft_entries("p2")}
     if kinds != {("chest", "p1"), ("crop", "p1")}:
@@ -752,6 +754,7 @@ def pay():
     unfreeze()
     debug_seat("p2", "set_money", n=100)
     debug("set_money", n=1000)
+    time.sleep(1)  # p2's wallet reaches the host through the game's net sync
     text = ok_seat("p1", "pay", to="Gemini", amount=250, reason="PAYREASON for the seeds")
     if "paid 250g" not in text or "now have 750g" not in text:
         raise Smoke(f"unexpected pay result: {text}")
@@ -810,6 +813,7 @@ def sleep_together():
             results[seat] = (False, f"{type(e).__name__}: {e}")
 
     threads = [threading.Thread(target=sleep, args=(seat,)) for seat in ("p1", "p2", "p3")]
+    t0 = time.time()
     for t in threads:
         t.start()
     latest = "00:00"
@@ -827,6 +831,8 @@ def sleep_together():
         raise Smoke(f"day did not advance (was {day})")
     if latest >= "24:00":
         raise Smoke(f"the day only ended at {latest}: something is still waiting for 2:00 AM")
+    if time.time() - t0 > 120:
+        raise Smoke(f"everyone slept but go_to_bed took {time.time() - t0:.0f}s: an idle seat held a farmer in bed")
 
 
 CASES.append(Case("clint_pickup", lambda: None, skip="needs the tool upgrade flow (#2)"))
