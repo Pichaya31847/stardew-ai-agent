@@ -40,6 +40,7 @@ public static class DebugApi
             Op("warp", Warp),
             Op("set_time", SetTime),
             Op("add_item", AddItem),
+            Op("clear_items", ClearItems),
             Op("set_money", SetMoney),
             Op("add_mail", AddMail),
             Op("set_skill", SetSkill),
@@ -51,6 +52,8 @@ public static class DebugApi
             Op("separate_wallets", SeparateWallets),
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
+            Op("place_chest", PlaceChest),
+            Op("grow_crops", GrowCrops),
             Op("capture", Capture, needsWorld: false),
             Op("chat_log", ChatLog),
             Op("disconnect", Disconnect),
@@ -80,6 +83,16 @@ public static class DebugApi
         if (t < 600 || t > 2600 || t % 10 != 0 || t % 100 >= 60) { c.Fail("time must be HHMM in 600..2600 (e.g. 900, 1830)"); yield break; }
         Game1.timeOfDay = t;
         c.Result = $"Time set to {WorldText.FormatTime(t)}";
+    }
+
+    /// <summary>Empty the pack except tools, so a case does not inherit the leftovers of earlier cases.</summary>
+    private static IEnumerator ClearItems(JsonElement a, CallContext c)
+    {
+        var items = Game1.player.Items;
+        for (int i = 0; i < items.Count; i++)
+            if (items[i] is not null and not StardewValley.Tool) items[i] = null;
+        c.Result = "Pack cleared (tools kept)";
+        yield break;
     }
 
     private static IEnumerator AddItem(JsonElement a, CallContext c)
@@ -262,6 +275,28 @@ public static class DebugApi
         }
         if (built.Count < want) { c.Fail($"Built {built.Count} of {want} cabins: {string.Join(" ", built)}"); yield break; }
         c.Result = $"Built {built.Count} cabins at {string.Join(" ", built)}";
+    }
+
+    /// <summary>Place a chest owned by this seat on the tile (x, y) of its current map, holding 3 Parsnips.</summary>
+    private static IEnumerator PlaceChest(JsonElement a, CallContext c)
+    {
+        var tile = new Microsoft.Xna.Framework.Vector2(I(a, "x", 0), I(a, "y", 0));
+        var chest = new StardewValley.Objects.Chest(true, tile);
+        chest.owner.Value = Game1.player.UniqueMultiplayerID;
+        chest.Items.Add(ItemRegistry.Create("(O)24", 3));
+        Game1.currentLocation.objects[tile] = chest;
+        c.Result = $"Chest placed at ({tile.X},{tile.Y}), owner {Players.Current.Id}";
+        yield break;
+    }
+
+    /// <summary>Ripen every crop on the current map.</summary>
+    private static IEnumerator GrowCrops(JsonElement a, CallContext c)
+    {
+        int n = 0;
+        foreach (var tf in Game1.currentLocation.terrainFeatures.Values)
+            if (tf is StardewValley.TerrainFeatures.HoeDirt { crop: not null } dirt) { dirt.crop.growCompletely(); n++; }
+        c.Result = $"{n} crops ripened";
+        yield break;
     }
 
     /// <summary>Forget that an AI is attached to this seat, so an idle seat stops holding the world frozen.</summary>

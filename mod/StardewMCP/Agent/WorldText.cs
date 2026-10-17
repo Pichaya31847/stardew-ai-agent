@@ -170,10 +170,11 @@ public static class WorldText
             if (obj is Chest chest)
             {
                 if (chest.giftbox.Value) return ('O', "Gift box (open it with interact)");
-                if (chest.playerChest.Value) return ('O', $"Chest ({chest.Items.Count(i => i != null)} items — interact, then menu take/put)");
+                if (chest.playerChest.Value)
+                    return ('O', $"Chest ({chest.Items.Count(i => i != null)} items{OwnerNote(Ownership.OwnerOf(chest), ", owner ")} — interact, then menu take/put)");
             }
             var held = obj.heldObject.Value != null ? $" (holding {obj.heldObject.Value.DisplayName}{(obj.readyForHarvest.Value ? ", READY" : "")})" : "";
-            return ('O', obj.DisplayName + held);
+            return ('O', obj.DisplayName + held + (obj.GetMachineData() != null ? OwnerNote(Ownership.OwnerOf(obj), " (owner ", ")") : ""));
         }
 
         foreach (var clump in loc.resourceClumps)
@@ -193,8 +194,9 @@ public static class WorldText
                     var crop = dirt.crop;
                     var cname = CropName(crop);
                     if (crop.dead.Value) return ('x', $"dead {cname}");
-                    if (dirt.readyForHarvest()) return ('!', $"{cname} READY");
-                    return dirt.isWatered() ? ('C', cname) : ('c', $"{cname} (dry)");
+                    var own = OwnerNote(Ownership.OwnerOf(dirt), " (owner ", ")");
+                    if (dirt.readyForHarvest()) return ('!', $"{cname} READY{own}");
+                    return dirt.isWatered() ? ('C', cname + own) : ('c', $"{cname} (dry){own}");
                 case Grass:
                     return ('g', null);
             }
@@ -222,6 +224,8 @@ public static class WorldText
         if (loc.doesTileHaveProperty(x, y, "Diggable", "Back") != null) return (',', null);
         return ('.', null);
     }
+
+    private static string OwnerNote(string? owner, string before, string after = "") => owner == null ? "" : before + owner + after;
 
     public static string ClumpName(int index) => index switch
     {

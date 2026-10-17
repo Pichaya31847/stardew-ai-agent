@@ -423,6 +423,7 @@ public class AgentHttp
                 : null,
             screens = GameRunner.instance.gameInstances.Count,
             plan = PlanBoard.Snapshot(),
+            owned = Ownership.OwnedObjects(),
             pendingJournalDay = hostPass.PendingDay,
             pendingJournalDays = hostPass.PendingDays.Count > 0 ? hostPass.PendingDays : null,
             passOut = hostPass.Record,

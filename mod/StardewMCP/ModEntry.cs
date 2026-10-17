@@ -33,6 +33,7 @@ public class ModEntry : Mod
         SplitScreen.Init(helper, Monitor, _config);
         SplitScreenPatches.Apply(ModManifest, _config);
         SocialTools.Apply(ModManifest);
+        Ownership.Apply(ModManifest);
         AgentTools.Apply(ModManifest);
         _http = new AgentHttp(_log, _config, Monitor, Path.Combine(helper.DirectoryPath, "assets"));
 
@@ -64,6 +65,7 @@ public class ModEntry : Mod
         if (Context.ScreenId != 0)
             return;
         SaveFolder.OnSaveLoaded();
+        EconomyTools.CheckWallets(Monitor, _config);
         Players.Host.Runtime.Log.Add("system", text: $"Save loaded: {Game1.player.Name} / {Game1.player.farmName} Farm");
     }
 
@@ -90,6 +92,8 @@ public class ModEntry : Mod
         if (seat.Screen == 0)
         {
             WorldClock.Tick();
+            if (e.IsMultipleOf(60))
+                Bedtime.Tick(_config);
             if (e.IsMultipleOf(15))
                 _http.RefreshState();
         }

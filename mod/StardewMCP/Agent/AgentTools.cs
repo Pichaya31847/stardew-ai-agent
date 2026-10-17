@@ -121,7 +121,7 @@ public static partial class AgentTools
 
     public static List<ToolDef> All()
     {
-        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(Core()));
+        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(Core()));
     }
 
     private static List<ToolDef> Core()
@@ -623,7 +623,7 @@ public static partial class AgentTools
             Utility.tryToPlaceItem(loc, item, t.X * 64 + 32, t.Y * 64 + 32);
             yield return Ticks(8);
             bool ok = (!hadCrop && dirt.crop != null) || dirt.fertilizer.Value != hadFert;
-            if (ok) planted++;
+            if (ok) { planted++; Ownership.ClaimCrop(dirt, Rt.Log.Player); }
             else lines.Add($"({t.X},{t.Y}) could not plant {item.DisplayName} (occupied, wrong season, or not plantable here)");
         }
         c.Result = $"Planted {planted}/{tiles.Count} tiles." + (lines.Count > 0 ? "\n" + string.Join("\n", lines) : "");
@@ -1144,6 +1144,9 @@ public static partial class AgentTools
         int dayBefore = Game1.Date.TotalDays;
         int moneyBefore = P.Money;
         Professions.ResolveDefaults(Rt, P, "not chosen before bed");
+        // A menu left open (a shop after a failed buy) would block the walk home and hold the others' sleep check.
+        if (Game1.activeClickableMenu != null)
+            yield return CloseMenu(default, new CallContext());
 
         if (Loc is not FarmHouse)
         {

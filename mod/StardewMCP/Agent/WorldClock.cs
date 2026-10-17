@@ -46,7 +46,7 @@ public static class WorldClock
         ThinkingSeats = thinking.Select(s => s.Id).ToArray();
 
         bool freeze = _config.FreezeTimeWhileThinking && Context.IsWorldReady && thinking.Length > 0 &&
-                      !Game1.newDay && !NightMenuOpen();
+                      !Game1.newDay && !NightMenuOpen() && !Players.Slots.Any(s => s.Runtime.WakingUp);
 
         if (split)
         {
@@ -85,7 +85,8 @@ public static class WorldClock
         return true;
     }
 
-    /// <summary>The overnight menus need the world running to finish.</summary>
+    /// <summary>The overnight menus need the world running to finish. So does waking up: AIs whose day is over sit
+    /// idle (thinking) in the morning and would otherwise keep a slower farmer in bed until the think timeout.</summary>
     private static bool NightMenuOpen() =>
         Players.Slots.Any(s => s.State is ScreenState { Menu: nameof(ShippingMenu) or nameof(LevelUpMenu) });
 

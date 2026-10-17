@@ -768,12 +768,12 @@ def ensure_seats() -> None:
             time.sleep(2)
         return False
 
-    if wait(25):
-        return
-    if state().get("screens", 1) <= 1:
-        debug("build_cabins", n=3)
-    if not wait(120):
-        raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
+    if not wait(25):
+        if state().get("screens", 1) <= 1:
+            debug("build_cabins", n=3)
+        if not wait(120):
+            raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
+    debug("separate_wallets")  # the filming save has separate wallets; the smoke copy of a shared one needs the switch
 
 
 def hear(seat: str, tool: str = "status") -> str:
@@ -926,6 +926,7 @@ def emote():
 @social
 def give():
     reset("Farm")
+    debug("clear_items")  # earlier cases leave p1's pack full
     debug("add_item", id="(O)24", qty=3)  # Parsnip
     loc, x, y = p1_tile()
     unfreeze()
@@ -948,16 +949,16 @@ def give():
                 return int(m.group(1))
         return 0
 
-    before2 = count("p2")
+    before1, before2 = count("p1"), count("p2")  # earlier cases may leave p1 holding Parsnips
     text = ok_seat("p1", "give", to="Gemini", item="Parsnip", count=2)
     t0 = time.time()
     while count("p2") != before2 + 2 and time.time() - t0 < 4:
         time.sleep(0.3)
-    if count("p2") != before2 + 2 or count("p1") != 1:
-        raise Smoke(f"expected p2 +2 and p1 left with 1 Parsnip, got p2 {count('p2')} (was {before2}), p1 {count('p1')}. {text}")
+    if count("p2") != before2 + 2 or count("p1") != before1 - 2:
+        raise Smoke(f"expected p2 +2 and p1 -2 Parsnip, got p2 {count('p2')} (was {before2}), p1 {count('p1')} (was {before1}). {text}")
     if not any("gave you 2 x Parsnip" in t for t in seen + [hear("p2")]):
         raise Smoke("p2 was not told about the gift")
-    if call_seat("p1", "give", {"to": "p2", "item": "Parsnip", "count": 5})[0]:
+    if call_seat("p1", "give", {"to": "p2", "item": "Parsnip", "count": before1})[0]:
         raise Smoke("give accepted more than p1 has")
     if call_seat("p1", "give", {"to": "p2", "item": "Axe"})[0]:
         raise Smoke("give accepted a tool")
@@ -972,6 +973,184 @@ def give():
     good, text = call_seat("p1", "give", {"to": "p2", "item": "Wood"})
     if good or "inventory is full" not in text:
         raise Smoke(f"give to a full pack should fail, got: {text.splitlines()[0]}")
+
+
+def seat_money(seat: str) -> int:
+    return next(p for p in fresh_state()["players"] if p["id"] == seat)["state"]["money"]
+
+
+@case("wallets")
+@social
+def wallets():
+    """Each seat spends and sees its own money: a purchase by p2 must not touch p1's wallet."""
+    if fresh_state().get("dayOfMonth", 0) % 7 == 3:
+        raise SkipCase("Pierre's is closed on Wednesdays; run the gate on another day to cover the shop")
+    reset("Farm")
+    unfreeze()
+    debug_seat("p2", "set_money", n=500)
+    debug_seat("p3", "set_money", n=300)
+    debug("set_money", n=2000)
+    time.sleep(1)  # farmhand wallets reach the host through the game's net sync
+    if [seat_money(s) for s in ("p1", "p2", "p3")] != [2000, 500, 300]:
+        raise Smoke(f"wallets are not separate: {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
+    for seat, g in (("p2", 500), ("p3", 300)):
+        if f"Money {g}g" not in ok_seat(seat, "status"):
+            raise Smoke(f"{seat} status does not show its own {g}g")
+    unfreeze()  # idle p2 would hold p3's purchase frozen
+
+    debug_seat("p3", "open_shop", id="SeedShop")  # p3: the give case leaves p2's pack full
+    try:
+        text = ok_seat("p3", "buy", item="Parsnip Seeds", quantity=2)
+    finally:
+        ok_seat("p3", "close_menu")
+    paid = int(re.search(r"for (\d+)g", text).group(1))
+    if (seat_money("p1"), seat_money("p2"), seat_money("p3")) != (2000, 500, 300 - paid):
+        raise Smoke(f"p3 paid {paid}g but wallets are {[seat_money(s) for s in ('p1', 'p2', 'p3')]}")
+
+
+def theft_entries(thief: str) -> list[dict]:
+    return [e for e in _request("/api/feed")["entries"] if e.get("kind") == "theft" and e.get("player") == thief]
+
+
+@case("ownership")
+@social
+def ownership():
+    """p1 owns a chest and a ripe crop; p2 takes from the chest and harvests the crop: two theft entries, owner shown."""
+    reset("Farm")
+    unfreeze()
+    runs = parse_tillable_runs(ok("look", radius=10), 3)
+    if not runs:
+        raise Smoke("no run of 3 tillable tiles near the farm entrance")
+    chest_tile, crop_tile = runs[0][0], runs[0][1]
+    debug("place_chest", x=chest_tile[0], y=chest_tile[1])
+    debug("add_item", id="(O)472", qty=1)  # Parsnip Seeds
+    ok("use_tool", tool="Hoe", tiles=[crop_tile], reason="smoke test")
+    ok("plant", item="Parsnip Seeds", tiles=[crop_tile], reason="smoke test")
+    debug("grow_crops")
+
+    look = ok("look", radius=10)
+    if "Chest (1 items, owner p1" not in look or "Parsnip READY (owner p1)" not in look:
+        raise Smoke(f"look lacks the owners:\n{look}")
+    if not any(o["kind"] == "chest" and o["owner"] == "p1" and o["tile"] == chest_tile for o in fresh_state().get("owned", [])):
+        raise Smoke("/api/state does not list p1's chest")
+
+    loc, x, y = p1_tile()
+    unfreeze()
+    debug_seat("p2", "warp", location=loc, x=x, y=y + 1)
+    if theft_entries("p2"):
+        raise Smoke("p2 has theft entries before it took anything")
+    ok_seat("p2", "interact", x=chest_tile[0], y=chest_tile[1], reason="smoke test")
+    try:
+        ok_seat("p2", "menu", action="take", item="Parsnip", reason="smoke test")
+    finally:
+        ok_seat("p2", "close_menu")
+    ok_seat("p2", "harvest", tiles=[crop_tile], reason="smoke test")
+    unfreeze()  # p2 is now an idle AI and would hold the world (and p1's next action) frozen
+
+    kinds = {(e["args"]["what"], e["args"]["victim"]) for e in theft_entries("p2")}
+    if kinds != {("chest", "p1"), ("crop", "p1")}:
+        raise Smoke(f"expected p2 to steal from p1's chest and crop, got {kinds}")
+
+    # the owner doing the same is not a theft
+    debug("add_item", id="(O)472", qty=1)
+    ok("use_tool", tool="Hoe", tiles=[crop_tile], reason="smoke test")
+    ok("plant", item="Parsnip Seeds", tiles=[crop_tile], reason="smoke test")
+    debug("grow_crops")
+    ok("harvest", tiles=[crop_tile], reason="smoke test")
+    if theft_entries("p1"):
+        raise Smoke("p1 harvesting its own crop was logged as theft")
+
+
+@case("pay")
+@social
+def pay():
+    reset("Farm")
+    unfreeze()
+    debug_seat("p2", "set_money", n=100)
+    debug("set_money", n=1000)
+    time.sleep(1)  # p2's wallet reaches the host through the game's net sync
+    text = ok_seat("p1", "pay", to="Gemini", amount=250, reason="PAYREASON for the seeds")
+    if "paid 250g" not in text or "now have 750g" not in text:
+        raise Smoke(f"unexpected pay result: {text}")
+    if (seat_money("p1"), seat_money("p2")) != (750, 350):
+        raise Smoke(f"wallets after pay: p1 {seat_money('p1')}, p2 {seat_money('p2')}")
+    heard = hear("p2")
+    if "(p1) paid you 250g" not in heard or "PAYREASON" not in heard or "now have 350g" not in heard:
+        raise Smoke(f"p2 was not told about the payment:\n{heard}")
+    entry = [e for e in _request("/api/feed")["entries"] if e.get("kind") == "pay" and e.get("player") == "p1"]
+    a = (entry[-1].get("args") or {}) if entry else {}
+    if (a.get("to"), a.get("amount"), a.get("from"), a.get("receiver")) != ("p2", 250, {"before": 1000, "after": 750}, {"before": 100, "after": 350}):
+        raise Smoke(f"viewers' feed has no correct pay entry: {entry[-1:] }")
+    for bad in ({"to": "p2", "amount": 751}, {"to": "p2", "amount": 0}, {"to": "p2", "amount": -5}, {"to": "p1", "amount": 5}, {"to": "nobody", "amount": 5}):
+        if call_seat("p1", "pay", bad)[0]:
+            raise Smoke(f"pay accepted {bad}")
+    if (seat_money("p1"), seat_money("p2")) != (750, 350):
+        raise Smoke("a rejected pay still moved money")
+
+
+@case("bedtime")
+@social
+def bedtime():
+    """At the configured bedtime an AI that is not in bed is told once that the others wait for it."""
+    reset("Farm")
+    unfreeze()
+    for seat in ("p1", "p2", "p3"):
+        ok_seat(seat, "status")  # connect, so the seat counts as an AI that is up
+    debug("set_time", time=2210)
+    t0 = time.time()
+    heard = ""
+    while "bedtime" not in heard and time.time() - t0 < 6:
+        time.sleep(1)
+        heard = hear("p2")
+    if "go_to_bed" not in heard:
+        raise Smoke(f"p2 got no bedtime warning:\n{heard}")
+    time.sleep(2.5)
+    if "bedtime" in hear("p2"):
+        raise Smoke("the bedtime warning was sent twice in one day")
+
+
+@case("sleep_together")
+@social
+def sleep_together():
+    """All three AIs go to bed at 20:00: the day must end by itself, not wait for the camera farmer's 2:00 AM pass-out."""
+    import threading
+    reset("Farm")
+    unfreeze()
+    for seat, x in (("p1", 63), ("p2", 65)):  # in front of the farmhouse: earlier cases leave chests that can box a farmer in
+        debug_seat(seat, "warp", location="Farm", x=x, y=15)
+    debug("set_time", time=2000)
+    day = fresh_state()["day"]
+    results: dict[str, tuple] = {}
+
+    def sleep(seat: str) -> None:
+        try:
+            diary = f"Smoke test diary of {seat}: the whole team went to bed together."
+            ok_seat(seat, "journal", diary=diary, lessons="Smoke lesson: sleep together.", plan="## Today\nSmoke plan: sleep.")
+            results[seat] = call_seat(seat, "go_to_bed", {"reason": "smoke test"})
+        except Exception as e:  # reported below
+            results[seat] = (False, f"{type(e).__name__}: {e}")
+
+    threads = [threading.Thread(target=sleep, args=(seat,)) for seat in ("p1", "p2", "p3")]
+    t0 = time.time()
+    for t in threads:
+        t.start()
+    latest = "00:00"
+    while any(t.is_alive() for t in threads):
+        s = state()
+        if s.get("ready") and s.get("day") == day:
+            latest = max(latest, s.get("time", ""))
+        time.sleep(0.5)
+    for t in threads:
+        t.join()
+    bad = {seat: r for seat, r in results.items() if not r[0]}
+    if bad or len(results) != 3:
+        raise Smoke(f"go_to_bed failed: {bad or results}")
+    if fresh_state().get("day") != day + 1:
+        raise Smoke(f"day did not advance (was {day})")
+    if latest >= "24:00":
+        raise Smoke(f"the day only ended at {latest}: something is still waiting for 2:00 AM")
+    if time.time() - t0 > 120:
+        raise Smoke(f"everyone slept but go_to_bed took {time.time() - t0:.0f}s: an idle seat held a farmer in bed")
 
 
 @case("send_money")
