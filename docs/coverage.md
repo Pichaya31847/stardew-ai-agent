@@ -17,8 +17,13 @@ Every system behind that handler is then covered without new code.
 | Action button | right-click | `interact(x, y, holding?)` | `Game1.pressActionButton`: the held item's use action or eating, else `tryToCheckAt` → `GameLocation.checkAction` | ✅ `holding` picks the item; handlers that wait for a fresh press (`didPlayerJustRightClick`: chests, shipping bin, fish ponds) see it |
 | Use button | left-click | `use_tool`, `plant`, `place` | `Farmer.BeginUsingTool`, `Utility.tryToPlaceItem` | 🟡 `place` puts items on free ground (smoke `place`, not yet run in game); `plant` only on tilled soil |
 | Dialogue answer | click an option | `respond(option)` | `DialogueBox` → `answerDialogueAction` or the question's callback | ✅ |
+<<<<<<< HEAD
 | Menu | click, type | `menu`; `shop_list`, `buy`, `close_menu` | the menu's own click and handler methods | 🟡 reader, fallback, `take`/`put`, `choose`, `amount`, `type`, `ok`/`cancel`; `buy`/`sell`/`craft` adapters to come |
 | Minigame | timing | `fish` (BobberBar only) | `BobberBar`, `IMinigame` | 🟡 fishing only (not yet run in game), other `IMinigame`s ❌ |
+=======
+| Menu | click, type | `menu`; `shop_list`, `buy`, `close_menu` | the menu's own click and handler methods | 🟡 reader, fallback, `take`/`put`, `choose`, `amount`, `type`, `ok`/`cancel`; `buy`/`craft` adapters to come; selling is the `sell` tool (#11) |
+| Minigame | timing | none | `BobberBar`, `IMinigame` | ❌ |
+>>>>>>> origin/fix/issue-11
 
 Rules:
 
@@ -74,7 +79,7 @@ Rules:
 | Eat | action holding food → "Eat?" | `eat` | ✅ | |
 | Sleep | bed → `Sleep_Yes` → ready check `sleep` | `journal`, then `go_to_bed` (refuses until today's journal is written) | ✅ one player (smoke `journal`); 🟡 untested with 4 seats | #38, #21 |
 | Pass out (2:00, health 0, exhaustion) | automatic; the day ends without a bed | `pass_out` record in `/api/state` and the log (cause, place, running action, money, items lost); `POST /api/release_freeze` lets the clock run out; next morning the runner asks for `journal(day=N)` first | 🟡 smoke `pass_out` (2:00 AM) written, not run yet; health 0 in the mines untested | #22 |
-| TV: weather, luck, recipes | action on the TV → question | `watch_tv(channel)` (macro over `interact` + `respond`: picks the channel, reads every page, reports the learned recipe); weather and luck overlap the calendar outlook (#11) | 🟡 PR for #14, not yet run in game (smoke `watch_tv`) | #14 |
+| TV: weather, luck, recipes | action on the TV → question | `watch_tv(channel)` (macro over `interact` + `respond`: picks the channel, reads every page, reports the learned recipe); weather and luck also come free in `status`, dates and shop hours in `calendar` | 🟡 PR for #14, not yet run in game (smoke `watch_tv`, `calendar`) | #14, #11 |
 | Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `look` labels the tile ("Backpack upgrade to 24 slots (2000g…)"), then `interact` + `respond` | 🟡 smoke `backpack` added, not yet run | #2 |
 | Totems, books | action button while holding the item (`performUseAction`) | `interact(holding)` without a tile | ✅ totems (smoke `totem`); 🟡 books untested | |
 | Animal care | pet (action), milk/shear (tool), hay (hopper) | `interact`, `use_tool` | 🟡 | #10 |
@@ -85,7 +90,7 @@ Rules:
 | System | How a human does it | Covered by | Status | Issue |
 |---|---|---|---|---|
 | Buy | shop counter → `ShopMenu` | `shop_list`, `buy` | ✅ (PR #45: `tryToPurchaseItem`, recipes, trade items) | #7 |
-| Sell to a shop | click an inventory item in `ShopMenu` | `menu sell` | ❌ | #11 |
+| Sell to a shop | click an inventory item in `ShopMenu` | `sell(item, quantity)`: clicks the inventory slot, the shop decides what it buys | 🟡 untested; smoke `sell_to_shop`; right-click selling one item is assumed | #11 |
 | Tool upgrades | `Blacksmith` → `Blacksmith_Upgrade` → `ShopMenu` | `buy` (trade items, PR #45) | 🟡 smoke `tool_upgrade` added, not yet run; the two-day wait and pickup are untested | #2 |
 | Geodes | `Blacksmith_Process` → `GeodeMenu` | `crack_geode` (macro: pays Clint 25g and draws `Utility.getTreasureFromGeode`; no `GeodeMenu` clicks, so the `menu` adapter is still missing) | 🟡 PR for #14, not yet run in game (smoke `crack_geode`) | #14 |
 | Crafting | crafting tab or `Craft` tile → `CraftingPage` | `craft` (macro over `CraftingRecipe`: list, make N) | 🟡 smoke `craft`, `craft_place_chest` written, not yet run in game; the page itself has no `menu` adapter | #3 |
@@ -124,7 +129,7 @@ Rules:
 | Mine elevator | `MineElevator` → `MineElevatorMenu` | `menu choose` | ✅ smoke `mine_elevator` | #2 |
 | Combat | weapon swings, aim | `fight`: best weapon, walk to the nearest monster, swing with `Farmer.BeginUsingTool`; `eat_below` eats through the `eat` tool's path (`Farmer.eatHeldObject`) | 🟡 untested, no smoke case yet | #5, #6 |
 | Mine survival | watch health, eat, climb out | runtime interrupt when a monster within 3 tiles hurts the farmer (every action except `fight`, `eat`, `leave_mine`); `fight` stops at 30% HP; `leave_mine` walks to the up ladder (tile 115) and uses it with `checkAction`, else `Game1.warpFarmer` to the Mine; the footer shows HP and warns from 11 PM | 🟡 untested, no smoke case yet | #6 |
-| Festivals | arrive on time → ready check `festivalStart` → actions, shops, games | travel + primitives + game drivers | ❌ | #11 |
+| Festivals | arrive on time → ready check `festivalStart` → actions, shops, games | `calendar` (dates, hours), `travel_to`, `festival(start/leave)`, `talk_to` reaches festival villagers and booths, `interact(holding)` for the Luau soup | 🟡 untested; Egg Hunt eggs and the Fair and ice-fishing games are not covered | #11 |
 | Night events: fairy, witch, meteorite, Qi plane | automatic | | 🟡 they play by themselves | |
 | Arcade, casino, darts, crane | `IMinigame`, `CalicoJack`, `Slots` | drivers (optional) | ❌ | |
 | Desert, Skull Cavern, Ginger Island, movie theater, Qi | travel, tile actions, menus | primitives | ❌ not checked | |
@@ -151,7 +156,7 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 | Marriage, dance, baby between players | `SendProposal(Marriage/Dance/Baby)` → `PendingProposalDialog` | `interact(holding)` + `menu choose` | ❌ | |
 | Owned plots and chests | no mechanic | mod rule (`Ownership`): chests and machines carry `Object.owner`, crops record their planter in `HoeDirt.modData`; taking from or harvesting another seat's claim logs a `theft` entry | ✅ smoke `ownership` | #52, #40 |
 | Seeing what others do, being interrupted | no mechanic (the game draws the other farmers and nothing more) | mod rule (`Perception`): `look` and `status` list the other AI players in view with the tool they run, its reason and how long, next to their last `say` and plan board section. An @mention, whisper, gift, a player coming into view or entering your house, a theft (`Ownership.Theft`), rain starting and crows on the farm add an `Events:` block to the next tool result and stop a running `wait`, `walk_to`, `travel_to` or farm action (`AgentRuntime.Interrupt`). P4 neither sees nor is seen | 🟡 written, smoke `caught_slacking` not run yet; damage and monster interrupts wait for #6 | #40 |
-| Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action; P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together` | #52, #38 |
+| Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action (`festival(start)` waits in the ready check); P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together` | #52, #38, #11 |
 
 ## Choice policy
 
