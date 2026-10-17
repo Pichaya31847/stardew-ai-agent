@@ -1034,9 +1034,9 @@ def ownership():
     if not any(o["kind"] == "chest" and o["owner"] == "p1" and o["tile"] == chest_tile for o in fresh_state().get("owned", [])):
         raise Smoke("/api/state does not list p1's chest")
 
-    loc, x, y = p1_tile()
     unfreeze()
-    debug_seat("p2", "warp", location=loc, x=x, y=y + 1)
+    # Land p2 on the run's third tile: the farm is overgrown after earlier cases, so walking from beside p1 may not reach the chest.
+    debug_seat("p2", "warp", location="Farm", x=runs[0][2][0], y=runs[0][2][1])
     if theft_entries("p2"):
         raise Smoke("p2 has theft entries before it took anything")
     ok_seat("p2", "interact", x=chest_tile[0], y=chest_tile[1], reason="smoke test")
