@@ -58,6 +58,9 @@ public class AgentRuntime
     public bool ActionRunning => _actionLane.Current is { Tool.Instant: false };
     public string? CurrentTool => _actionLane.Current?.Tool.Name;
 
+    /// <summary>go_to_bed is past the day change and waiting for this farmer to wake up (needs the world running).</summary>
+    public bool WakingUp => _actionLane.Current?.Tool.Name == "go_to_bed" && Context.IsWorldReady && Game1.Date.TotalDays > _actionLane.CallStartDay;
+
     public AgentRuntime(IModHelper helper, IMonitor monitor, ModConfig config, PlayerLog log)
     {
         Helper = helper;
@@ -145,7 +148,7 @@ public class AgentRuntime
         private CallContext? _ctx;
         private Stopwatch _watch = new();
         private int _ticksInCall;
-        private int _callStartDay;
+        public int CallStartDay { get; private set; }
 
         public PendingCall? Current { get; private set; }
 
@@ -169,7 +172,7 @@ public class AgentRuntime
             Current = call;
             _ctx = new CallContext();
             _ticksInCall = 0;
-            _callStartDay = Context.IsWorldReady ? Game1.Date.TotalDays : 0;
+            CallStartDay = Context.IsWorldReady ? Game1.Date.TotalDays : 0;
             _watch = Stopwatch.StartNew();
             _stack.Clear();
 
@@ -208,8 +211,8 @@ public class AgentRuntime
                 return;
             }
 
-            if (Current!.Tool.Name != "go_to_bed" && _callStartDay > 0 && Context.IsWorldReady &&
-                Game1.Date.TotalDays > _callStartDay && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay)
+            if (Current!.Tool.Name != "go_to_bed" && CallStartDay > 0 && Context.IsWorldReady &&
+                Game1.Date.TotalDays > CallStartDay && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay)
             {
                 _rt.Log.Add("system", text: $"Passed out / new day: farm day {AgentLog.FarmDay}");
                 _ctx!.Result = $"You passed out (2:00 AM or exhausted)! It is now farm day {AgentLog.FarmDay}. Stop here.";

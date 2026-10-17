@@ -1053,6 +1053,9 @@ public static class AgentTools
         int moneyBefore = P.Money;
         Rt.Log.WriteDiary(AgentLog.FarmDay, diary);
         Professions.ResolveDefaults(Rt, P, "not chosen before bed");
+        // A menu left open (a shop after a failed buy) would block the walk home and hold the others' sleep check.
+        if (Game1.activeClickableMenu != null)
+            yield return CloseMenu(default, new CallContext());
 
         if (Loc is not FarmHouse)
         {

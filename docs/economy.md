@@ -26,6 +26,9 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
   seat harvests a crop planted by another seat (`Crop.harvest`) or takes an item out of a chest another seat
   placed (`Chest.grabItemFromChest`, the callback the chest menu uses). The hooks are Harmony patches, so every
   path counts: `harvest`, `interact`, a scythe swing, and the future chest tool (#3) as long as it goes through the menu.
+- Gap for the chest tool (#3): `interact` cannot open a player chest, because the game requires
+  `didPlayerJustRightClick`. The debug op `chest_take(x, y)` takes items through the chest's own callback so
+  the theft hook can be tested; a real chest tool needs the same path.
 - Not recorded: opening someone's chest without taking anything, putting items into it, the starting plot as a
   fixed tile area. A plot is "whatever the seat planted"; a fixed area per seat would be a config of rectangles.
 
@@ -56,6 +59,11 @@ Implemented: `Bedtime.Tick` (host, once a second) narrows the "sleep" ready chec
 `Game1.netReady.SetLocalRequiredFarmers` (the movie theater uses the same call). The host-driven new-day
 sync still carries P4 along, as with the game's dedicated host. And from `BedtimeWarning` (22:00) an AI that is
 not in bed is told once per day that the others are waiting.
+
+5. Found while testing: after `go_to_bed` passes the day change, the seat is still "between actions" for
+   `WorldClock`, so the world froze until the 300 s think timeout and `sleep_together` took 321 s. Fixed with
+   `AgentRuntime.WakingUp` (the world is not frozen while any seat is waking up); it now takes about 21 s.
+   `go_to_bed` also closes any open menu first (a shop left open after a failed buy blocked the sleep).
 
 Design decisions left open (not done):
 
