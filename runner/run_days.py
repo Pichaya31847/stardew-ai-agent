@@ -24,6 +24,10 @@ After the last day of the batch, one short text-only session shortens lessons.md
 as lessons_before_batchN.md) and writes a digest for each finished week. Use --skip-consolidation to skip it.
 The mod's LogDir must be the same folder as <out>/logs, where this script reads diaries, lessons and plans.
 
+Run control (pause, stop after the day, stop now; Ctrl+C is graceful) is in runner/run_control.py.
+The save backup (the loaded save only, last N kept) is in runner/save_backup.py and
+runner/restore_day.py rolls a day back.
+
 Before the first day it runs runner/smoke.py (LLM-free tool checks on a copy of the save) and stops if
 any case fails. That needs "EnableDebugApi": true in the mod's config.json; pass --skip-smoke to skip.
 """
@@ -52,6 +56,10 @@ import usage_limit
 import usage_log
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import save_backup  # noqa: E402
+from run_control import RunControl  # noqa: E402
+
 API = "http://localhost:8770"
 CLAUDE_CMD = ["claude"]  # tests swap in a fake
 DEFAULT_OUT = HERE.parent / "runs"
@@ -72,6 +80,9 @@ def api_post(path: str, body: dict):
                                  headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+CTL = RunControl(api_get, api_post)
 
 
 def game_state() -> dict:
@@ -128,15 +139,12 @@ def continue_prompt(day: int, log_dir: Path, planned: bool = False) -> str:
 
 
 def save_folder() -> Path | None:
-    saves = Path(os.environ["APPDATA"]) / "StardewValley" / "Saves"
+    """The folder of the save the game has loaded (/api/state saveFolder). Never a smoke_* slot, never a guess."""
     try:
-        info = api_get("/api/state")
-    except Exception:
-        info = {}
-    cands = [p for p in saves.iterdir() if p.is_dir()]
-    if not cands:
+        return save_backup.pick_save_folder(game_state(), save_backup.default_saves_dir())
+    except save_backup.BackupError as e:
+        print(f"  WARNING: save NOT backed up: {e}")
         return None
-    return max(cands, key=lambda p: p.stat().st_mtime)  # the save just written
 
 
 def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> sessions.PartResult:
@@ -173,8 +181,14 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     tracker = usage_log.UsageTracker()
     game_start, t_start = game_state().get("time", ""), time.time()
     with transcript.open("w", encoding="utf-8") as tf:
-        proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf-8", errors="replace", shell=False)
+        try:
+            proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace", shell=False, **CTL.popen_kwargs())
+        except TypeError:  # test doubles without creationflags/start_new_session
+            proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace", shell=False)
+        if hasattr(proc, "poll"):
+            CTL.watch(proc)  # stop_now / Ctrl+C: ends the session once the running tool call has finished
         assert proc.stdout
         GUARD.attach(proc)
         for line in proc.stdout:
@@ -276,15 +290,23 @@ def batch_end_memory(args, out_dir: Path, log_dir: Path, current_day: int):
         print("  " + result.describe())
 
 
-def backup_save(out_dir: Path, day: int):
+def backup_save(out_dir: Path, day: int, keep: int = save_backup.DEFAULT_KEEP):
     src = save_folder()
     if not src:
         return
-    dst = out_dir / "saves" / f"day_{day:03}_{src.name}"
-    if dst.exists():
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
+    try:
+        dst = save_backup.backup_folder(src, out_dir, day, keep)
+    except save_backup.BackupError as e:
+        print(f"  WARNING: save NOT backed up: {e}")
+        return
     print(f"  save backed up → {dst}")
+
+
+def _do_backup(out_dir: Path, day: int, keep: int):
+    try:
+        backup_save(out_dir, day, keep)
+    except TypeError:
+        backup_save(out_dir, day)
 
 
 def main():
@@ -302,6 +324,8 @@ def main():
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
     ap.add_argument("--skip-consolidation", action="store_true", help="Do not shorten lessons.md and notes.md after the batch")
+    ap.add_argument("--keep-backups", type=int, default=save_backup.DEFAULT_KEEP,
+                    help="Keep the newest N save backups (default %(default)s, 0 = keep all)")
     usage_limit.add_args(ap)
     game_watchdog.add_args(ap)
     args = ap.parse_args()
@@ -320,10 +344,15 @@ def main():
             raise SystemExit("Smoke tests failed, not starting the batch. Fix the failing case above, or pass --skip-smoke.")
 
     waiter = usage_limit.LimitWaiter.from_args(args, post=api_post)
+    CTL.start()  # clears stale stop requests; Ctrl+C = stop after the day / after the call / abort
     days_played = 0
     stopped_early = False
     batch_days: list[int] = []
     while True:
+        if CTL.stop_between_days():
+            print(f"Stopped as requested after {days_played} day(s). Run again to continue.")
+            break
+        CTL.wait_while_paused()
         state = GUARD.ready(wait_ready)
         # After a pass-out the mod writes its record once the morning has settled; wait for that so the prompt can use it.
         if game_state().get("ready"):
@@ -374,6 +403,8 @@ def main():
                 res = usage_limit.run_part(waiter, lambda p, n: call_session(p, part, n),
                                            prompt, lambda: continue_prompt(day, log_dir, planned=False), day, part,
                                            day_done=lambda: wait_ready()["day"] > day)
+                if CTL.stop_now_requested():
+                    return {"ready": True, "day": game_state().get("day", day), "stop_now": True}
                 planned = res.planned_break if isinstance(res, sessions.PartResult) else False
                 GUARD.check()
                 time.sleep(3)
@@ -385,12 +416,20 @@ def main():
                     return s
 
         s = GUARD.run_day(day, play_day)
+        if s.get("stop_now"):
+            if s.get("day", day) > day:  # the last call was go_to_bed and the day did finish
+                _do_backup(out_dir, day, args.keep_backups)
+                print(f"stop_now: day {day} had finished.")
+            else:
+                print(f"stop_now: the session ended after its last tool call; day {day} is not finished.")
+            print("The game stays frozen until you resume (F8 or run_control.py resume). Run again to continue.")
+            return
         if s["day"] <= day and game_state().get("ready"):
             # Every session of the day is used and the farmer is still up. The mod keeps the world frozen while no
             # action runs, so release it and let the clock reach 2:00 AM: the farmer passes out and a new day starts.
             s = pass_out.let_time_run_out(day, game_state, api_post, time.sleep, timeout=args.pass_out_timeout)
         if s.get("ready") and s["day"] > day:
-            backup_save(out_dir, day)
+            _do_backup(out_dir, day, args.keep_backups)
             print(usage_log.day_line(out_dir / "usage.csv", day))
             days_played += 1
             batch_days.append(day)

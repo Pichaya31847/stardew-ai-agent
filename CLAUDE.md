@@ -115,6 +115,7 @@ mod/StardewMCP/
     DayStats.cs        Per-seat daily stats (stats_NNN[_pN].json at day rollover, GET /api/stats)
     SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
     SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
+    RunControl.cs      Pause / stop_after_day / stop_now (F8, POST /api/control), unknown-menu watch for go_to_bed
 studio/
   overlay.html         OBS browser-source overlay
   replay.html          Day-by-day replay of the logs
@@ -124,7 +125,9 @@ runner/
   smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
   run_days.py          One `claude -p` session per in-game day
   game_watchdog.py     Detects a game crash/hang, relaunches with AutoLoadSave, replays the day (max 2 retries)
-  tests/               pytest for the runner with a fake game, processes and clock: `pytest runner/tests`
+  run_control.py       Pause / stop flags for run_days.py (graceful Ctrl+C); CLI: run_control.py pause|resume|stop_after_day|stop_now
+  save_backup.py       Backs up the save named by /api/state saveFolder (never smoke_*), keeps the last N
+  restore_day.py       Rolls the farm back to the end of a day (for mod bugs), sets later files aside in abandoned/
   obs_recorder.py      Pauses OBS recording while the game is frozen
   memory.py            Lessons / plan / notes injected into the system prompt; batch-end consolidation
   stats.py             batch_report.md, usage_NNN.json, the Thai morning stats line (from the mod's stats files)

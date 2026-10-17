@@ -188,7 +188,7 @@ class Detector:
 
         # Signal 3: an action is running (the world is not frozen by thinking) but the clock does not move.
         action = running_action(state)
-        active = bool(state.get("ready")) and state.get("frozen") is False and action is not None
+        active = bool(state.get("ready")) and state.get("frozen") is False and not state.get("paused") and action is not None
         key = (state.get("day"), state.get("time"))
         if not active or key != self.key:
             self.key = key

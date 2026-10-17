@@ -36,7 +36,7 @@ class FakeGame:
             def do_GET(self):
                 if self.path == "/api/state":
                     with game.lock:
-                        self._send({"ready": True, "day": game.day})
+                        self._send({"ready": True, "day": game.day, "saveFolder": "Farm_1"})
                 else:
                     self.send_error(404)
 

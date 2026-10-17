@@ -88,7 +88,8 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 |---|---|
 | `http://localhost:8770/overlay` | OBS browser source (thoughts + actions) |
 | `http://localhost:8770/replay` | Day-by-day replay of the logs |
-| `http://localhost:8770/api/state` | Raw game state JSON. After a day that ended without `go_to_bed` (2:00 AM, health 0), `passOut` says why and `pendingJournalDay` is the day whose journal is still owed until `journal(day=N)` is written |
+| `http://localhost:8770/api/state` | Raw game state JSON (includes `saveFolder`, `paused`, `stopAfterDay`, `stopNow`). After a day that ended without `go_to_bed` (2:00 AM, health 0), `passOut` says why and `pendingJournalDay` is the day whose journal is still owed until `journal(day=N)` is written |
+| `http://localhost:8770/api/control` | Run control: `POST {"action": "pause" \| "resume" \| "stop_after_day" \| "stop_now" \| "clear_stop"}`; `GET` reads the flags |
 | `http://localhost:8770/api/memory` | Each AI seat's lessons, plan and notes (what `journal` wrote) |
 | `http://localhost:8770/api/relationships` | Every AI farmer's friendships (hearts, birthdays, gift tastes found out); `runner/run_days.py` turns it into `relationships.md` |
 | `POST http://localhost:8770/api/release_freeze` | Runner only: stop an idle seat from freezing the world (`{"seat": "p1"}`, or `"all"`; `"on": false` takes it back) so game time runs until the farmer passes out. Ends with the farm day |
@@ -124,6 +125,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `SessionBreakToolCalls` | `150` | Planned break after this many tool calls in one session (0 = off) |
 | `SessionBreakResultChars` | `120000` | Planned break after this many characters of tool results in one session, about 30k tokens (0 = off) |
 | `SessionBreaksForAll` | `false` | Planned breaks for every MCP client; by default only clients that connect to `/mcp?breaks=1` (what `run_days.py` does) |
+| `PauseKey` | `"F8"` | Key (an XNA `Keys` name) that toggles pause / resume while the game window has focus; empty = off |
 
 The SMAPI console command `mcp_freeze [on|off]` toggles time freezing at runtime.
 
@@ -254,6 +256,41 @@ The files feed three things:
 - `py runner/compare_runs.py runs_a runs_b --days 7 28 56 100` compares two runs (or two seats with
   `--player-a` / `--player-b`) at checkpoint days: where each stood and what it had totalled by then.
   There is no combined score on purpose.
+
+### Pause, stop, backups and restore
+
+Pause or stop a batch without killing `claude` in the middle of an action:
+
+| Want | Do | What happens |
+|---|---|---|
+| Pause | `F8` in the game window, or `py runner/run_control.py pause` | The running tool call finishes, then every new AI call waits and the whole world is frozen (`frozen` is true, so `obs_recorder.py` cuts the time). The overlay shows "หยุดชั่วคราว". `F8` or `run_control.py resume` continues |
+| Stop after today | `py runner/run_control.py stop_after_day`, or Ctrl+C once in the runner | The day ends with `go_to_bed`, the save is backed up, and the runner exits before the next day |
+| Stop now | `py runner/run_control.py stop_now`, or Ctrl+C twice | The running tool call finishes, new calls are refused, the `claude` session ends and the runner exits. The game stays frozen until `resume`. Run `run_days.py` again to continue the day |
+| Abort | Ctrl+C a third time | Ends `claude` at once |
+
+`run_days.py` starts `claude` in its own process group, so Ctrl+C in the runner's terminal no longer reaches it.
+A call that waits longer than 9 minutes during a pause is answered with an error (MCP clients time out
+at 10 minutes), so the AI simply calls again and no stale call runs after `resume`.
+A watchdog (#24) must read `paused` in `/api/state` before it treats a standing clock as a hang.
+
+**Backups.** After every finished day `run_days.py` copies the save named by `saveFolder` in `/api/state`
+(the save the game really has loaded) to `runs/saves/day_NNN_<save>`. A `smoke_*` copy is never backed up,
+and nothing is backed up if `saveFolder` is missing (no guessing by modification time). The newest
+`--keep-backups N` backups are kept (default 10, `0` keeps all). The Saves folder is `STARDEW_SAVES_DIR`, else the OS
+default (`%APPDATA%\StardewValley\Saves` on Windows, `~/.config/StardewValley/Saves` elsewhere).
+The copy is not synchronised with the game's own save, so a backup taken while the game is still writing
+the night's save could be incomplete; the runner only backs up after `go_to_bed` has returned.
+
+**Restore.** `py runner/restore_day.py --day 6` (game closed) puts the backup of day 6 back and sets everything the
+run wrote for later days aside in `runs/abandoned/restore_day006_<time>/` (the replaced save, later backups, logs,
+diaries, journals and transcripts; nothing is deleted). `--day 6` means the farm as it was when day 6 ended,
+the morning of day 7; `--dry-run` shows the plan. Use it to repair a **mod** bug (a stuck cutscene, a crashed night).
+It is not an undo button for the AI's own choices: those are part of the challenge.
+
+If an unknown menu stays open for more than 10 seconds while `go_to_bed` waits for the new day (the shipping screen,
+level-ups, the save screen and the ready check are expected), the mod logs its type and closes it with
+`exitThisMenu` instead of letting the call run into its 5 minute timeout.
+>>>>>>> origin/fix/issue-32
 
 ## Build from source
 

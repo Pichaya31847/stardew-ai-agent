@@ -97,4 +97,7 @@ public class ModConfig
 
     /// <summary>Session breaks apply to every MCP client, not just those that connect with <c>?breaks=1</c>.</summary>
     public bool SessionBreaksForAll { get; set; } = false;
+
+    /// <summary>Key (an XNA <c>Keys</c> name, e.g. "F8") that toggles pause / resume while the game window has focus. Empty = no hotkey.</summary>
+    public string PauseKey { get; set; } = "F8";
 }

@@ -72,7 +72,7 @@ Rules:
 | Chests, fridge | action → `ItemGrabMenu` | `interact`, then `menu take/put`; `chest` does it in one call (by name and quality, several items, "everything") | ✅ chests (smoke `chest`); 🟡 `chest` (smoke `chest_tool`) and fridge untested; owners and theft: #52 | #3 |
 | Ship | shipping bin → `ItemGrabMenu` (`Farm.shipItem`) | `ship` | ✅ next morning's briefing lists what was sold per item (smoke `briefing`) | #29 |
 | Eat | action holding food → "Eat?" | `eat` | ✅ | |
-| Sleep | bed → `Sleep_Yes` → ready check `sleep` | `journal`, then `go_to_bed` (refuses until today's journal is written) | ✅ one player (smoke `journal`); 🟡 untested with 4 seats | #38, #21 |
+| Sleep | bed → `Sleep_Yes` → ready check `sleep` | `journal`, then `go_to_bed` (refuses until today's journal is written) | ✅ one player (smoke `journal`); 🟡 untested with 4 seats; an unknown menu open for 10 s is closed (#32) | #38, #21, #32 |
 | Pass out (2:00, health 0, exhaustion) | automatic; the day ends without a bed | `pass_out` record in `/api/state` and the log (cause, place, running action, money, items lost); `POST /api/release_freeze` lets the clock run out; next morning the runner asks for `journal(day=N)` first | 🟡 smoke `pass_out` (2:00 AM) written, not run yet; health 0 in the mines untested | #22 |
 | TV: weather, luck, recipes | action on the TV → question | `watch_tv(channel)` (macro over `interact` + `respond`: picks the channel, reads every page, reports the learned recipe); weather and luck also come free in `status`, dates and shop hours in `calendar` | 🟡 PR for #14, not yet run in game (smoke `watch_tv`, `calendar`) | #14, #11 |
 | Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `look` labels the tile ("Backpack upgrade to 24 slots (2000g…)"), then `interact` + `respond` | 🟡 smoke `backpack` added, not yet run | #2 |
@@ -184,6 +184,7 @@ What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselv
 | `PendingProposalDialog` | the AI accepts or declines with `answer_proposal`; nothing answers for it | keep |
 | `ReadyCheckDialog` | not handled | AI seats wait; P4 accepts automatically |
 | Any other menu | "Menu open: X"; `menu` lists its labelled buttons (`click`, `ok`, `cancel`) | keep |
+| Unknown menu during `go_to_bed`'s wait for the new day (not `ShippingMenu`, `LevelUpMenu`, `SaveGameMenu`, `ReadyCheckDialog`) | waited 5 min, then the call failed | after 10 s: log its type, `exitThisMenu` (#32) |
 
 ## Build order
 

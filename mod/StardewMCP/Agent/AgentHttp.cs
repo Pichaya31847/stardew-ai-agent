@@ -25,6 +25,7 @@ namespace StardewMCP.Agent;
 ///   POST /api/meta   runner metadata (model, session) shown on the overlay
 ///   POST /api/release_freeze  runner: stop freezing the world for a seat (body {"seat":"p1"|"all","on":true}) until its farmer
 ///                    passes out; ends by itself on the next farm day (#22)
+///   GET/POST /api/control   run control: pause, resume, stop_after_day, stop_now, clear_stop
 ///   POST /api/debug/{op}, /api/debug/p{N}/{op}   smoke-test hooks (EnableDebugApi only)
 /// </summary>
 public class AgentHttp
@@ -156,6 +157,16 @@ public class AgentHttp
                     return;
                 case "/api/stats":
                     await Json(res, DayStats.Api(_log, req.QueryString["n"]));
+                    return;
+                case "/api/control":
+                    // pause | resume | stop_after_day | stop_now | clear_stop (GET reads the flags)
+                    var controlBody = "";
+                    if (req.HttpMethod == "POST")
+                        using (var cr = new StreamReader(req.InputStream, Encoding.UTF8))
+                            controlBody = await cr.ReadToEndAsync();
+                    var control = RunControl.Handle(req.HttpMethod, controlBody);
+                    res.StatusCode = control.Ok ? 200 : 400;
+                    await Json(res, control.Body);
                     return;
                 case "/api/days":
                     await Json(res, _log.Days());
@@ -439,6 +450,10 @@ public class AgentHttp
                 ? new { speaker = box.characterDialogue?.speaker?.displayName, question = box.isQuestion }
                 : null,
             screens = GameRunner.instance.gameInstances.Count,
+            // Run control (RunControl.cs). A watchdog must not read a paused game as hung.
+            paused = RunControl.Paused,
+            stopAfterDay = RunControl.StopAfterDay,
+            stopNow = RunControl.StopNow,
             plan = PlanBoard.Snapshot(),
             owned = Ownership.OwnedObjects(),
             pendingJournalDay = hostPass.PendingDay,
