@@ -114,6 +114,8 @@ public static partial class AgentTools
         if (prof.Length > 0) sb.Append('\n').Append(prof);
         var mail = Briefing.MailHint();
         if (mail.Length > 0) sb.Append('\n').Append(mail);
+        var ranch = RanchText.FooterNote();
+        if (ranch.Length > 0) sb.Append('\n').Append(ranch);
         return sb.ToString();
     }
 
@@ -121,7 +123,7 @@ public static partial class AgentTools
 
     public static List<ToolDef> All()
     {
-        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(KnowledgeTools.All()).Concat(VillagerTools()).Concat(RomanceTools()).Concat(NamingTools()).Concat(Core()).Concat(CraftingToolDefs()).Concat(QolToolDefs()).Concat(CalendarToolDefs()).Concat(CommunityTools()).Concat(JojaTools()));
+        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(KnowledgeTools.All()).Concat(VillagerTools()).Concat(RomanceTools()).Concat(NamingTools()).Concat(Core()).Concat(CraftingToolDefs()).Concat(QolToolDefs()).Concat(CalendarToolDefs()).Concat(CommunityTools()).Concat(JojaTools()).Concat(BuildingToolDefs()).Concat(AnimalToolDefs()));
     }
 
     private static List<ToolDef> Core()

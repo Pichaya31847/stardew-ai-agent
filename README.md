@@ -69,6 +69,8 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `quests`, `accept_quest` | Quest journal with story, giver, progress and reward; today's Help Wanted request and who took it; Special Orders; `share` posts yours to the plan board; `accept_quest` takes the Help Wanted request |
 | `crack_geode`, `trash`, `watch_tv` | Clint cracks geodes (25g each); throw items away (valuables need `confirm`); watch a TV channel (weather, fortune, Queen of Sauce, tips) |
 | `shop_list`, `buy`, `sell`, `ship`, `eat` | Shopping, selling to an open shop for gold at once, shipping bin (pays overnight), food |
+| `build`, `upgrade_house` | Robin the carpenter: `build(building=list)` shows costs, `build(building, x, y)` orders a Coop, Barn, Silo, Well or Shed on the Farm; `upgrade_house` buys the next house level. Paid from the caller's own money and items |
+| `buy_animal`, `animals` | Marnie's animals: `buy_animal(type=list)` and `buy_animal(type, building?, name?)`; `animals` lists yours and does `pet`, `collect` (eggs, milk, wool) and `feed` (hay troughs). Status warns when animals are not pet today |
 | `calendar` | Today and the next days: festivals, birthdays, the next festival, and the main shops' hours and closed days (no game time) |
 | `festival` | On a festival day: `start` talks to Lewis and answers yes (waits for the other players), `leave` walks out; `talk_to` also reaches festival villagers and booths |
 | `fish` | Walk to the best shore for the rod, cast `tries` times, play the BobberBar minigame and pick up treasure. Costs energy and game time per cast; one result line per cast. Needs a fishing rod (Willy, at the Beach) |
@@ -290,7 +292,6 @@ It is not an undo button for the AI's own choices: those are part of the challen
 If an unknown menu stays open for more than 10 seconds while `go_to_bed` waits for the new day (the shipping screen,
 level-ups, the save screen and the ready check are expected), the mod logs its type and closes it with
 `exitThisMenu` instead of letting the call run into its 5 minute timeout.
->>>>>>> origin/fix/issue-32
 
 ## Build from source
 

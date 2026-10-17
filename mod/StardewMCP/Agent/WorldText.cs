@@ -51,6 +51,8 @@ public static class WorldText
         }
         var inView = Perception.InViewText(Perception.ViewRadius);
         if (inView.Length > 0) sb.AppendLine(inView);
+        var ranch = RanchText.Status();
+        if (ranch.Length > 0) sb.AppendLine(ranch);
         sb.Append(MenuState());
         return sb.ToString().TrimEnd();
     }
@@ -136,6 +138,8 @@ public static class WorldText
             if (npc is StardewValley.Monsters.Monster mon) return ('M', $"{mon.Name} (HP {mon.Health})");
             if (npc.IsVillager) return ('N', npc.displayName);
         }
+
+        if (RanchText.AnimalAt(loc, pt) is { } animal) return (animal.sym, animal.label);
 
         if (loc is StardewValley.Locations.MineShaft mine)
         {
@@ -314,6 +318,8 @@ public static class WorldText
 
         var inView = Perception.InViewText(radius);
         if (inView.Length > 0) sb.AppendLine(inView);
+        var ranchSection = RanchText.LookSection(loc);
+        if (ranchSection.Length > 0) sb.AppendLine(ranchSection);
 
         var exits = loc.warps.Select(wp => $"{wp.TargetName}").Concat(loc.doors.Values.Select(d => d)).Distinct().ToList();
         if (exits.Count > 0)

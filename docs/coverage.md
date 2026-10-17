@@ -77,7 +77,7 @@ Rules:
 | TV: weather, luck, recipes | action on the TV → question | `watch_tv(channel)` (macro over `interact` + `respond`: picks the channel, reads every page, reports the learned recipe); weather and luck also come free in `status`, dates and shop hours in `calendar` | 🟡 PR for #14, not yet run in game (smoke `watch_tv`, `calendar`) | #14, #11 |
 | Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `look` labels the tile ("Backpack upgrade to 24 slots (2000g…)"), then `interact` + `respond` | 🟡 smoke `backpack` added, not yet run | #2 |
 | Totems, books | action button while holding the item (`performUseAction`) | `interact(holding)` without a tile | ✅ totems (smoke `totem`); 🟡 books untested | |
-| Animal care | pet (action), milk/shear (tool), hay (hopper) | `interact`, `use_tool` | 🟡 | #10 |
+| Animal care | pet (action), milk/shear (tool), hay (hopper) | `animals` (pet / collect / feed: `FarmAnimal.pet`, the Milk Pail or Shears swing, the hopper tile); `interact` and `use_tool` also work | 🟡 untested in game (PR for #10) | #10 |
 | Horse | stable, name, mount (action) | `interact` | 🟡 riding untested | #10 |
 
 ### Shops, crafting, upgrades
@@ -90,8 +90,8 @@ Rules:
 | Geodes | `Blacksmith_Process` → `GeodeMenu` | `crack_geode` (macro: pays Clint 25g and draws `Utility.getTreasureFromGeode`; no `GeodeMenu` clicks, so the `menu` adapter is still missing) | 🟡 PR for #14, not yet run in game (smoke `crack_geode`) | #14 |
 | Crafting | crafting tab or `Craft` tile → `CraftingPage` | `craft` (macro over `CraftingRecipe`: list, make N) | 🟡 smoke `craft`, `craft_place_chest` written, not yet run in game; the page itself has no `menu` adapter | #3 |
 | Cooking | `kitchen` tile → `CraftingPage` (cooking) | `cook` (macro over `CraftingRecipe(key, true)`: pack plus fridge ingredients; the page itself has no `menu` adapter) | 🟡 PR for #14, not yet run in game (smoke `cook`) | #14 |
-| Buildings, house upgrade, renovation | `Carpenter` → `carpenter_*` → `CarpenterMenu`, `RenovateMenu` | menu adapter | ❌ | #10 |
-| Buy animals | `AnimalShop` → `Marnie_Purchase` → `PurchaseAnimalsMenu` → `NamingMenu` | menu adapter | ❌ | #10 |
+| Buildings, house upgrade, renovation | `Carpenter` → `carpenter_*` → `CarpenterMenu`, `RenovateMenu` | `build`, `upgrade_house`: `Farm.buildStructure` and the `upgrade_Yes` answer, costs from `Game1.buildingData` | 🟡 untested in game (PR for #10); upgrading a built coop or barn (Big Coop...) and renovation are missing | #10 |
+| Buy animals | `AnimalShop` → `Marnie_Purchase` → `PurchaseAnimalsMenu` → `NamingMenu` | `buy_animal`: creates the `FarmAnimal`, `AnimalHouse.adoptAnimal`; prices from `Game1.farmAnimalData` | 🟡 untested in game (PR for #10); the random brown chicken or cow colour is not handled | #10 |
 | Rings, boots, hats, clothes | equipment slots in `InventoryPage` | menu adapter | ❌ | #27 |
 | Tailoring, dye, forge | `Tailoring`, `DyePot`, `Forge` tiles | menu adapter | ❌ | |
 | Trash cans | `Garbage` tile | `interact` (searching the can in town) | 🟡 untested | #14 |
