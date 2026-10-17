@@ -10,6 +10,7 @@ Each day:
   * runs `claude -p` with only the in-game MCP server (http://localhost:8770/mcp),
   * saves Claude's full stream-json transcript next to the game logs (proof of a real run),
   * continues the same day in a new session if Haiku stopped before sleeping,
+  * on a subscription usage limit waits for the reset and retries the same part (see usage_limit.py),
   * when the sessions of a day are used up, releases the world freeze (POST /api/release_freeze) so the clock runs
     to 2:00 AM and the farmer passes out; the next morning's first prompt says what happened and asks for the
     missed day's journal first (pass_out.py, #22),
@@ -39,9 +40,11 @@ from pathlib import Path
 import briefing
 import memory
 import pass_out
+import usage_limit
 
 HERE = Path(__file__).resolve().parent
 API = "http://localhost:8770"
+CLAUDE_CMD = ["claude"]  # tests swap in a fake
 DEFAULT_OUT = HERE.parent / "runs"
 DEFAULT_GOAL = (
     "Build the best farm you can in 100 days. You choose the strategy: what to grow, how to earn money, "
@@ -104,6 +107,13 @@ def last_actions(log_dir: Path, day: int, n: int = 25) -> str:
     return "\n".join(out[-n:])
 
 
+def continue_prompt(day: int, log_dir: Path) -> str:
+    prompt = (f"เล่นวันที่ {day} ต่อจากเดิม (session ก่อนหน้าหยุดก่อนเข้านอน) นี่คือสิ่งที่เพิ่งทำไป:\n"
+              f"{last_actions(log_dir, day)}\n\n{memory.continuation_context(log_dir, day)}\n\n"
+              "เช็ก status แล้วเล่นต่อจนถึงเวลานอน (เขียน journal ถ้ายังไม่ได้เขียน แล้วเข้านอนด้วย go_to_bed)")
+    return prompt + pass_out.pending_reminder(game_state())
+
+
 def save_folder() -> Path | None:
     saves = Path(os.environ["APPDATA"]) / "StardewValley" / "Saves"
     try:
@@ -116,18 +126,19 @@ def save_folder() -> Path | None:
     return max(cands, key=lambda p: p.stat().st_mtime)  # the save just written
 
 
-def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int) -> int:
+def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> int:
     mcp_cfg = out_dir / "mcp.json"
     mcp_cfg.write_text(json.dumps({"mcpServers": {"stardew": {"type": "http", "url": f"{API}/mcp"}}}), encoding="utf-8")
     sys_file = out_dir / f"system_day_{day:03}.md"
     sys_file.write_text(system_prompt, encoding="utf-8")
 
-    transcript = out_dir / "logs" / f"claude_day_{day:03}_part{part}.jsonl"
+    # a retry of the same part after a usage-limit wait must not overwrite the first attempt's transcript
+    transcript = out_dir / "logs" / (f"claude_day_{day:03}_part{part}" + (f"_retry{attempt - 1}" if attempt > 1 else "") + ".jsonl")
     workdir = out_dir / "workdir"
     workdir.mkdir(exist_ok=True)
 
     cmd = [
-        "claude", "-p", prompt,
+        *CLAUDE_CMD, "-p", prompt,
         "--model", args.model,
         "--system-prompt-file", str(sys_file),
         "--mcp-config", str(mcp_cfg), "--strict-mcp-config",
@@ -144,6 +155,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     print(f"[{datetime.now():%H:%M:%S}] day {day} part {part}: starting {args.model}")
     session_id = ""
     tool_calls = 0
+    limit = usage_limit.LimitWatcher()
     with transcript.open("w", encoding="utf-8") as tf:
         proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace", shell=False)
@@ -155,7 +167,9 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                 ev = json.loads(line)
             except json.JSONDecodeError:
                 print("  " + line.rstrip())
+                limit.feed_line(line)
                 continue
+            limit.feed(ev)
             if ev.get("type") == "system" and ev.get("subtype") == "init":
                 session_id = ev.get("session_id", "")
                 model = ev.get("model", args.model)
@@ -176,9 +190,11 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                         print(f"  #{tool_calls} {name} {short[:90]}")
             elif ev.get("type") == "result":
                 print(f"  result: {ev.get('subtype')} turns={ev.get('num_turns')} cost=${ev.get('total_cost_usd', 0):.3f}")
-                if ev.get("is_error") and tool_calls == 0:
+                if ev.get("is_error") and tool_calls == 0 and not limit.info:
                     raise SystemExit(f"Claude error, stopping: {ev.get('result')}")
         proc.wait()
+    if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
+        raise usage_limit.UsageLimitHit(limit.info, tool_calls)
     return tool_calls
 
 
@@ -259,6 +275,7 @@ def main():
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
     ap.add_argument("--skip-consolidation", action="store_true", help="Do not shorten lessons.md and notes.md after the batch")
+    usage_limit.add_args(ap)
     args = ap.parse_args()
 
     out_dir = Path(args.out)
@@ -272,6 +289,7 @@ def main():
         if subprocess.run([sys.executable, str(HERE / "smoke.py")]).returncode != 0:
             raise SystemExit("Smoke tests failed, not starting the batch. Fix the failing case above, or pass --skip-smoke.")
 
+    waiter = usage_limit.LimitWaiter.from_args(args, post=api_post)
     days_played = 0
     stopped_early = False
     while True:
@@ -295,11 +313,11 @@ def main():
                 # The previous day ended by passing out: say what happened and ask for that day's journal first.
                 prompt = pass_out.with_morning_notice(prompt, state, lambda d: last_actions(log_dir, d))
             else:
-                prompt = (f"เล่นวันที่ {day} ต่อจากเดิม (session ก่อนหน้าหยุดก่อนเข้านอน) นี่คือสิ่งที่เพิ่งทำไป:\n"
-                          f"{last_actions(log_dir, day)}\n\n{memory.continuation_context(log_dir, day)}\n\n"
-                          "เช็ก status แล้วเล่นต่อจนถึงเวลานอน (เขียน journal ถ้ายังไม่ได้เขียน แล้วเข้านอนด้วย go_to_bed)")
-                prompt += pass_out.pending_reminder(game_state())
-            run_session(args, out_dir, day, prompt, system_prompt, part)
+                prompt = continue_prompt(day, log_dir)
+            # a usage-limit stop waits for the reset and retries this same part (it does not count toward --max-parts)
+            usage_limit.run_part(waiter, lambda p, n: run_session(args, out_dir, day, p, system_prompt, part, n),
+                                 prompt, lambda: continue_prompt(day, log_dir), day, part,
+                                 day_done=lambda: wait_ready()["day"] > day)
             time.sleep(3)
             s = wait_ready()
             if s["day"] > day:

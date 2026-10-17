@@ -123,6 +123,11 @@ The first time the game starts its local co-op server, Windows Firewall may ask 
   mod's `LogDir` to that folder. After the last day of a batch, one short text-only session shortens
   `lessons.md` and `notes.md` (the old lists stay as `lessons_before_batchN.md`) and writes a digest
   of each finished week (`--skip-consolidation` skips it), so run in batches of about a week.
+  If the subscription's usage limit ends a session, the runner waits for the reset (or retries every
+  30 minutes when the time can't be read), shows "รอ usage limit รีเซ็ต (ถึง 03:00)" on the overlay and
+  resumes the same day; that part doesn't count toward `--max-parts`. Logic and options (`--limit-*`,
+  `--max-limit-waits`) are in `runner/usage_limit.py`; check a saved transcript with
+  `py runner/usage_limit.py runs/logs/claude_day_001_part1.jsonl`.
 - `memory.py` is the memory logic behind that (placeholders, consolidation); its tests run without the
   game: `py -m pytest runner/tests`.
 - `smoke.py` runs LLM-free checks of the tools (farm loop, shop, shipping, sleep) on a copy of your
