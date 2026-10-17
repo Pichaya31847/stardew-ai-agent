@@ -62,6 +62,8 @@ public class AgentRuntime
 
     /// <summary>go_to_bed is past the day change and waiting for this farmer to wake up (needs the world running).</summary>
     public bool WakingUp => _actionLane.Current?.Tool.Name == "go_to_bed" && Context.IsWorldReady && Game1.Date.TotalDays > _actionLane.CallStartDay;
+    /// <summary>The "reason" the running action was given (what the viewers see), or null when no action runs. Used by the pass-out record.</summary>
+    public string? CurrentReason => _actionLane.Current is { Instant: false } c ? AgentTools.Reason(c.Args) : null;
 
     public AgentRuntime(IModHelper helper, IMonitor monitor, ModConfig config, PlayerLog log)
     {
@@ -89,6 +91,7 @@ public class AgentRuntime
     {
         _globalTicks++;
         AutoHandleOverlays();
+        PassOut.Tick(this);
         SocialTools.Tick(Log.Player);
         _actionLane.Tick(_actions);
         _observeLane.Tick(_observations);
