@@ -39,6 +39,10 @@ public class AgentHttp
     // Snapshot of game state for the overlay, refreshed on the game thread.
     public volatile string StateJson = "{}";
 
+    // Counts snapshots. The HTTP thread keeps answering with the last snapshot even when the game loop is
+    // blocked, so runner/game_watchdog.py reads this "heartbeat" to tell a live game from a hung one.
+    private long _beat;
+
     public AgentHttp(AgentLog log, ModConfig config, IMonitor monitor, string assetDir)
     {
         _log = log;
@@ -396,7 +400,7 @@ public class AgentHttp
 
         if (!Context.IsWorldReady)
         {
-            StateJson = JsonSerializer.Serialize(new { ready = false, frozen = WorldClock.Frozen, players }, AgentLog.Json);
+            StateJson = JsonSerializer.Serialize(new { ready = false, heartbeat = ++_beat, frozen = WorldClock.Frozen, players }, AgentLog.Json);
             return;
         }
         var p = Game1.player;
@@ -404,6 +408,7 @@ public class AgentHttp
         StateJson = JsonSerializer.Serialize(new
         {
             ready = true,
+            heartbeat = ++_beat,
             saveFolder = SaveFolder.Name,
             day = AgentLog.FarmDay,
             season = Game1.currentSeason,
@@ -417,6 +422,9 @@ public class AgentHttp
             maxEnergy = p.MaxStamina,
             frozen = WorldClock.Frozen,
             thinking = WorldClock.ThinkingSeats,
+            // The clock does not run in cutscenes and festivals; the watchdog must not read that as a hang.
+            eventUp = Game1.eventUp,
+            festival = Game1.CurrentEvent != null && Game1.CurrentEvent.isFestival,
             action = Players.Host.Runtime.CurrentTool,
             dialogue = Game1.activeClickableMenu is StardewValley.Menus.DialogueBox box
                 ? new { speaker = box.characterDialogue?.speaker?.displayName, question = box.isQuestion }

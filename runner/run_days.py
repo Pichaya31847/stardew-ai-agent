@@ -14,7 +14,9 @@ Each day:
   * when the sessions of a day are used up, releases the world freeze (POST /api/release_freeze) so the clock runs
     to 2:00 AM and the farmer passes out; the next morning's first prompt says what happened and asks for the
     missed day's journal first (pass_out.py, #22),
-  * backs up the save folder after the day ends.
+  * backs up the save folder after the day ends,
+  * watches the game (runner/game_watchdog.py): if it crashes or hangs, relaunches it, auto-loads the save
+    and replays the day from the morning (see --game-cmd; --no-watchdog turns this off).
 
 After the last day of the batch, one short text-only session shortens lessons.md and notes.md (the old lists stay
 as lessons_before_batchN.md) and writes a digest for each finished week. Use --skip-consolidation to skip it.
@@ -38,6 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 import briefing
+import game_watchdog
 import memory
 import pass_out
 import usage_limit
@@ -46,6 +49,7 @@ HERE = Path(__file__).resolve().parent
 API = "http://localhost:8770"
 CLAUDE_CMD = ["claude"]  # tests swap in a fake
 DEFAULT_OUT = HERE.parent / "runs"
+GUARD = game_watchdog.NullWatchdog()  # replaced in main() unless --no-watchdog
 DEFAULT_GOAL = (
     "Build the best farm you can in 100 days. You choose the strategy: what to grow, how to earn money, "
     "which villagers to befriend and what to upgrade."
@@ -77,7 +81,10 @@ def wait_ready(timeout: int = 600) -> dict:
         s = game_state()
         if s.get("ready"):
             return s
+        GUARD.check()
         time.sleep(3)
+    if GUARD.armed:
+        raise game_watchdog.GameFault("not_ready", f"the world was not ready for {timeout}s")
     raise SystemExit("Game is not ready (start Stardew via SMAPI and load the save).")
 
 
@@ -160,6 +167,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
         proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace", shell=False)
         assert proc.stdout
+        GUARD.attach(proc)
         for line in proc.stdout:
             tf.write(line)
             tf.flush()
@@ -191,8 +199,10 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
             elif ev.get("type") == "result":
                 print(f"  result: {ev.get('subtype')} turns={ev.get('num_turns')} cost=${ev.get('total_cost_usd', 0):.3f}")
                 if ev.get("is_error") and tool_calls == 0 and not limit.info:
+                    GUARD.explain_failure()  # a dead game makes Claude fail at once: recover instead of stopping
                     raise SystemExit(f"Claude error, stopping: {ev.get('result')}")
         proc.wait()
+        GUARD.detach()
     if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
         raise usage_limit.UsageLimitHit(limit.info, tool_calls)
     return tool_calls
@@ -276,12 +286,15 @@ def main():
     ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
     ap.add_argument("--skip-consolidation", action="store_true", help="Do not shorten lessons.md and notes.md after the batch")
     usage_limit.add_args(ap)
+    game_watchdog.add_args(ap)
     args = ap.parse_args()
 
     out_dir = Path(args.out)
     log_dir = out_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
+    global GUARD
+    GUARD = game_watchdog.from_args(args, log_dir, api_get, API)
 
     if not args.skip_smoke:
         wait_ready()
@@ -293,11 +306,11 @@ def main():
     days_played = 0
     stopped_early = False
     while True:
-        state = wait_ready()
+        state = GUARD.ready(wait_ready)
         # After a pass-out the mod writes its record once the morning has settled; wait for that so the prompt can use it.
         state = pass_out.wait_settled(game_state)
         if not state.get("ready"):
-            state = wait_ready()
+            state = GUARD.ready(wait_ready)
         day = state["day"]
         if args.until_day and day > args.until_day:
             break
@@ -305,26 +318,32 @@ def main():
             break
 
         system_prompt = memory.inject(template, log_dir, args.goal, recent_diaries(log_dir, day))
-        for part in range(1, args.max_parts + 1):
-            if part == 1:
-                # The morning briefing replaces "start with status and look" (falls back to it if the mod has none).
-                prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir))
-                prompt = memory.with_reminder(prompt, state, log_dir)
-                # The previous day ended by passing out: say what happened and ask for that day's journal first.
-                prompt = pass_out.with_morning_notice(prompt, state, lambda d: last_actions(log_dir, d))
-            else:
-                prompt = continue_prompt(day, log_dir)
-            # a usage-limit stop waits for the reset and retries this same part (it does not count toward --max-parts)
-            usage_limit.run_part(waiter, lambda p, n: run_session(args, out_dir, day, p, system_prompt, part, n),
-                                 prompt, lambda: continue_prompt(day, log_dir), day, part,
-                                 day_done=lambda: wait_ready()["day"] > day)
-            time.sleep(3)
-            s = wait_ready()
-            if s["day"] > day:
-                break
-            print(f"  day {day} not finished after part {part}; continuing")
 
-        s = wait_ready()
+        def play_day(attempt: int) -> dict:
+            # After a crash the watchdog calls this again: the day restarts from the morning with a fresh part 1.
+            cur_state = wait_ready() if attempt > 1 else state
+            for part in range(1, args.max_parts + 1):
+                if part == 1:
+                    # The morning briefing replaces "start with status and look" (falls back to it if the mod has none).
+                    prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir))
+                    prompt = memory.with_reminder(prompt, cur_state, log_dir)
+                    # The previous day ended by passing out: say what happened and ask for that day's journal first.
+                    prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
+                else:
+                    prompt = continue_prompt(day, log_dir)
+                # a usage-limit stop waits for the reset and retries this same part (it does not count toward --max-parts)
+                usage_limit.run_part(waiter, lambda p, n: run_session(args, out_dir, day, p, system_prompt, part, n),
+                                     prompt, lambda: continue_prompt(day, log_dir), day, part,
+                                     day_done=lambda: wait_ready()["day"] > day)
+                GUARD.check()
+                time.sleep(3)
+                s = wait_ready()
+                if s["day"] > day:
+                    break
+                print(f"  day {day} not finished after part {part}; continuing")
+            return wait_ready()
+
+        s = GUARD.run_day(day, play_day)
         if s["day"] <= day:
             # Every session of the day is used and the farmer is still up. The mod keeps the world frozen while no
             # action runs, so release it and let the clock reach 2:00 AM: the farmer passes out and a new day starts.

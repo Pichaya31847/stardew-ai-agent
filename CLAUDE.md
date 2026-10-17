@@ -119,6 +119,8 @@ studio/
 runner/
   smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
   run_days.py          One `claude -p` session per in-game day
+  game_watchdog.py     Detects a game crash/hang, relaunches with AutoLoadSave, replays the day (max 2 retries)
+  tests/               pytest for the runner with a fake game, processes and clock: `pytest runner/tests`
   obs_recorder.py      Pauses OBS recording while the game is frozen
   memory.py            Lessons / plan / notes injected into the system prompt; batch-end consolidation
   tests/               pytest tests for memory.py (no game needed)
