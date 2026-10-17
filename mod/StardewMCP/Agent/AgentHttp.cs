@@ -18,6 +18,7 @@ namespace StardewMCP.Agent;
 ///   GET  /overlay    OBS browser-source overlay (Thai thoughts + actions)
 ///   GET  /replay     day-by-day replay of the logs
 ///   GET  /api/feed   overlay feed, /api/days, /api/day?n=, /api/state
+///   GET  /api/memory each AI seat's lessons, plan and notes (what the journal tool wrote)
 ///   GET  /api/briefing?seat=p1  morning briefing of one AI seat (JSON; see Briefing.cs)
 ///   POST /api/meta   runner metadata (model, session) shown on the overlay
 ///   POST /api/debug/{op}, /api/debug/p{N}/{op}   smoke-test hooks (EnableDebugApi only)
@@ -159,6 +160,9 @@ public class AgentHttp
                         diaries,
                         entries = log.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => JsonDocument.Parse(l).RootElement)
                     });
+                    return;
+                case "/api/memory":
+                    await Json(res, Players.Slots.Where(s => s.Role == SeatRole.Ai).ToDictionary(s => s.Id, s => _log.ReadMemory(s.Id)));
                     return;
                 case "/api/meta" when req.HttpMethod == "POST":
                     using (var r = new StreamReader(req.InputStream, Encoding.UTF8))

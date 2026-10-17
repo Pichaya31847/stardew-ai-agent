@@ -68,7 +68,7 @@ Rules:
 | Chests, fridge | action → `ItemGrabMenu` | `interact`, then `menu take/put` | ✅ chests (smoke `chest`); 🟡 fridge untested (needs the kitchen) | #3 |
 | Ship | shipping bin → `ItemGrabMenu` (`Farm.shipItem`) | `ship` | ✅ next morning's briefing lists what was sold per item (smoke `briefing`) | #29 |
 | Eat | action holding food → "Eat?" | `eat` | ✅ | |
-| Sleep | bed → `Sleep_Yes` → ready check `sleep` | `go_to_bed` | ✅ one player; 🟡 untested with 4 seats | #38 |
+| Sleep | bed → `Sleep_Yes` → ready check `sleep` | `journal`, then `go_to_bed` (refuses until today's journal is written) | ✅ one player (smoke `journal`); 🟡 untested with 4 seats | #38, #21 |
 | Pass out (2:00, no energy) | automatic | | 🟡 | #22 |
 | TV: weather, luck, recipes | action on the TV → question | `interact` + `respond` | 🟡 untested | #14 |
 | Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `interact` + `respond` | 🟡 untested | #2 (plan is wrong) |
