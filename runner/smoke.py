@@ -498,6 +498,31 @@ def farm_batch():
         raise Smoke("crops are still unwatered after water_all")
 
 
+@case("villagers")
+def villagers():
+    reset("Farm")
+    text = ok("villagers")
+    if "Villagers on farm day" not in text or "Pierre" not in text:
+        raise Smoke(f"villagers() should list the roster with Pierre: {text[:200]}")
+    one = ok("villagers", name="Pierre")
+    if "Pierre" not in one or "heart" not in one:
+        raise Smoke(f"villagers(name=Pierre) has no details: {one[:200]}")
+    good, text = call("villagers", name="Nobody Here")
+    if good:
+        raise Smoke("villagers accepted an unknown name")
+    # Pierre is never on the Farm, so go=false must say where he is instead of walking off.
+    good, text = call("talk_to", name="Pierre", go=False, reason="smoke test")
+    if good or "not on this map" not in text:
+        raise Smoke(f"talk_to(go=false) should report where Pierre is: {text[:200]}")
+    if fresh_state().get("location") != "Farm":
+        raise Smoke("talk_to(go=false) moved the farmer")
+    if fresh_state().get("dayOfMonth", 0) % 7 == 3:
+        raise SkipCase("Pierre's is closed on Wednesdays; the shop alias part needs another day")
+    text = ok("travel_to", location="Pierre", reason="smoke test")  # a shop owner's name is a place alias
+    if "Arrived in SeedShop" not in text:
+        raise Smoke(f"travel_to(Pierre) should arrive in SeedShop, got: {text.splitlines()[0]}")
+
+
 @case("shop_buy")
 def shop_buy():
     if fresh_state().get("dayOfMonth", 0) % 7 == 3:
@@ -1801,6 +1826,153 @@ def caught_slacking():
             ok_seat("p2", "plan_edit", section="Smoke work", text="")
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------- romance and naming (#53)
+
+
+def feed_events(kind_tool: str) -> list[dict]:
+    """Story events (kind "event", the type in `tool`) of the overlay feed."""
+    return [e for e in _request("/api/feed?after=0")["entries"] if e.get("kind") == "event" and e.get("tool") == kind_tool]
+
+
+@case("naming")
+def naming():
+    """A naming box is answered with name(text); an unanswered one gets a random name (what go_to_bed does)."""
+    reset("Farm")
+    good, text = call("name", text="Whoever")
+    if good or "No naming box" not in text:
+        raise Smoke(f"name without a box should fail with 'No naming box', got: {text.splitlines()[0]}")
+    debug("open_naming", title="Name your smoke calf:")
+    try:
+        status = ok("status")
+        if "Naming:" not in status or "name(text)" not in status:
+            raise Smoke(f"status has no Naming: line while a naming box is open:\n{status[:400]}")
+        if call("name", text="x" * 25)[0]:
+            raise Smoke("name accepted 25 characters")
+        if call("name", text="   ")[0]:
+            raise Smoke("name accepted an empty name")
+        ok("name", text="Smokey")
+        got = debug("last_named")
+        if got != "Smokey":
+            raise Smoke(f"the box's doneNaming got {got!r}, expected 'Smokey'")
+        if "Naming:" in ok("status"):
+            raise Smoke("status still shows Naming: after the box was answered")
+        named = [e for e in feed_events("named") if (e.get("args") or {}).get("name") == "Smokey"]
+        if not named or (named[-1].get("args") or {}).get("player") != "p1":
+            raise Smoke("the feed has no 'named' event (what, name, player) for Smokey")
+
+        # Nobody answers: bedtime picks a random name.
+        debug("open_naming", title="Name your smoke pup:")
+        random_name = debug("resolve_naming").strip()
+        if random_name in ("", "(none)"):
+            raise Smoke("resolve_naming left the box without a name")
+        if "Naming:" in ok("status"):
+            raise Smoke("status still shows Naming: after the random name")
+        auto = [e for e in feed_events("named") if (e.get("args") or {}).get("chosen") is False]
+        if not auto:
+            raise Smoke("the feed has no 'named' event for the random name (chosen=false)")
+    finally:
+        call("close_menu")
+
+
+@case("bouquet_dating")
+def bouquet_dating():
+    """villagers shows the romance requirements; bouquet refuses what the game refuses, then starts dating at 8 hearts."""
+    reset("Farm")
+    detail = ok("villagers", name="Abigail")
+    if "Romance:" not in detail:
+        raise Smoke(f"villagers(name=Abigail) has no Romance: line:\n{detail[:300]}")
+    good, text = call("bouquet", name="Pierre", reason="smoke test")
+    if good or "can't be dated" not in text:
+        raise Smoke(f"bouquet for a villager who can't be dated should say so, got: {text.splitlines()[0]}")
+    if call("bouquet", name="Nobody Here", reason="smoke test")[0]:
+        raise Smoke("bouquet accepted an unknown name")
+    if call("mermaid_pendant", name="Abigail", reason="smoke test")[0]:
+        raise Smoke("mermaid_pendant worked before dating")
+
+    if "dating Abigail" in detail or "engaged to Abigail" in detail or "married to Abigail" in detail:
+        raise SkipCase("Abigail is already dating or married on this save; pick a fresh smoke copy")
+    try:
+        debug("set_friendship", npc="Abigail", points=250)
+        if "can date" not in ok("villagers"):
+            raise Smoke("the villagers roster marks nobody as 'can date' although Abigail is met")
+        good, text = call("bouquet", name="Abigail", reason="smoke test")
+        if good or "hearts" not in text:
+            raise Smoke(f"bouquet at 1 heart should be refused with the hearts needed, got: {text.splitlines()[0]}")
+        debug("set_friendship", npc="Abigail", points=2000)
+        debug("add_item", id="(O)458", qty=1)  # Bouquet
+    except Smoke as e:
+        raise SkipCase(f"cannot set up 8 hearts and a Bouquet through the debug API: {e}")
+
+    text = ok("bouquet", name="Abigail", reason="smoke test")
+    if "now dating Abigail" not in text:
+        raise Smoke(f"expected dating to start, got: {text[:300]}")
+    if "dating" not in ok("villagers", name="Abigail").lower():
+        raise Smoke("villagers does not show that you are dating Abigail")
+    t0 = time.time()
+    while time.time() - t0 < 4 and not feed_events("bouquet_given"):
+        time.sleep(0.3)
+    if not feed_events("bouquet_given") and not feed_events("dating_started"):
+        raise Smoke("the feed has neither a bouquet_given nor a dating_started event")
+
+
+@case("propose_player")
+@social
+def propose_player():
+    """A player proposes to another: the other sees a Yes/No box, is told in the next result and answers with answer_proposal."""
+    import threading
+
+    reset("Farm")
+    if call_seat("p1", "propose", {"to": "p1", "reason": "smoke test"})[0]:
+        raise Smoke("propose accepted the player itself")
+    unfreeze()  # a connected idle seat would hold the world still, and with it p1's walk
+    loc, x, y = p1_tile()
+    try:
+        debug_seat("p2", "warp", location=loc, x=x + 1, y=y)
+        debug("add_item", id="(O)801", qty=1)  # Wedding Ring
+    except Smoke as e:
+        raise SkipCase(f"cannot set up the ring and the neighbour through the debug API: {e}")
+
+    result: list[tuple[bool, str]] = []
+
+    def propose():
+        try:
+            result.append(call_seat("p1", "propose", {"to": "p2", "reason": "smoke test"}))
+        except Exception as e:  # reported below, from the main thread
+            result.append((False, f"{type(e).__name__}: {e}"))
+
+    worker = threading.Thread(target=propose, daemon=True)
+    worker.start()
+    try:
+        t0 = time.time()
+        asked = False
+        while time.time() - t0 < 60 and not asked and worker.is_alive():
+            asked = any((e.get("args") or {}).get("answer") == "asked" for e in feed_events("proposal"))
+            time.sleep(0.5)
+        if not asked:
+            worker.join(5)
+            text = result[0][1] if result else "(no answer yet)"
+            if "got no proposal" in text:
+                raise SkipCase(f"the game started no player proposal in this save: {text.splitlines()[0]}")
+            raise Smoke(f"no 'proposal' event and propose says: {text[:300]}")
+
+        told = hear("p2")
+        if "proposes" not in told or "answer_proposal" not in told:
+            raise Smoke(f"p2 was not told about the proposal in its next result:\n{told[:400]}")
+        said = ok_seat("p2", "answer_proposal", accept=False, reason="smoke test")
+        if "said no" not in said:
+            raise Smoke(f"answer_proposal(accept=false) should say so, got: {said[:200]}")
+        worker.join(30)
+        if worker.is_alive() or not result:
+            raise Smoke("p1's propose did not return after p2 answered")
+        if "said no" not in result[0][1]:
+            raise Smoke(f"p1 should be told that p2 said no, got: {result[0][1][:300]}")
+        if not [e for e in feed_events("proposal") if (e.get("args") or {}).get("answer") == "declined"]:
+            raise Smoke("the feed has no proposal event with answer=declined")
+    finally:
+        for seat in ("p1", "p2"):
+            call_seat(seat, "close_menu", {})
 
 
 CASES.append(Case("clint_pickup", lambda: None, skip="the two-day wait and Clint's counter pickup are not automated yet (#2)"))

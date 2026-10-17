@@ -56,8 +56,11 @@ public class AgentRuntime
     public ModConfig Config { get; }
     public IModHelper Helper { get; }
 
-    /// <summary>True while an action that lets game time pass is running.</summary>
-    public bool ActionRunning => _actionLane.Current is { Instant: false };
+    /// <summary>Heart events this seat plays instead of skipping them, and friendship milestones (NpcStory.cs).</summary>
+    public StoryWatcher Story { get; } = new();
+
+    /// <summary>True while an action that lets game time pass is running (or a heart event plays by itself).</summary>
+    public bool ActionRunning => _actionLane.Current is { Instant: false } || Story.Playing;
     public string? CurrentTool => _actionLane.Current?.Tool.Name;
     /// <summary>The call in the action lane (check <see cref="PendingCall.Instant"/>), or null. <see cref="Perception"/> reads it.</summary>
     public PendingCall? CurrentCall => _actionLane.Current;
@@ -104,6 +107,8 @@ public class AgentRuntime
         AgentTools.FishingTick(this); // plays an open fishing minigame while this seat runs the fish tool
         SocialTools.Tick(Log.Player);
         Perception.Tick(this);
+        Story.Tick(this);
+        Romance.Tick(this);
         _actionLane.Tick(_actions);
         _observeLane.Tick(_observations);
     }
@@ -127,10 +132,8 @@ public class AgentRuntime
                         lm.okButtonClicked();
                     break;
                 case StardewValley.Menus.NamingMenu nm:
-                    var name = string.IsNullOrWhiteSpace(nm.textBox?.Text) ? StardewValley.Dialogue.randomName() : nm.textBox.Text;
-                    Log.Add("system", text: $"Auto-named \"{name}\" in NamingMenu");
-                    nm.doneNaming?.Invoke(name);
-                    if (Game1.activeClickableMenu == nm) Game1.exitActiveMenu();
+                    // Not named here any more (#53): the AI chooses with name(text); NamingTools.cs has the fallbacks.
+                    Naming.Observe(this, nm);
                     break;
             }
         }
@@ -138,7 +141,11 @@ public class AgentRuntime
         if (Game1.eventUp && Game1.CurrentEvent != null && !Game1.CurrentEvent.isFestival)
         {
             _eventTicks++;
-            if (_eventTicks == 90)
+            if (Story.OnEvent(this))
+            {
+                // A heart event the StoryWatcher plays (opt-in PlayHeartEvents): not skipped, not auto-answered.
+            }
+            else if (_eventTicks == 90)
             {
                 Log.Add("system", text: $"Skipping cutscene ({Game1.CurrentEvent.id})");
                 Game1.CurrentEvent.skipEvent();
@@ -152,6 +159,7 @@ public class AgentRuntime
         else
         {
             _eventTicks = 0;
+            Story.OnNoEvent(this);
         }
     }
 

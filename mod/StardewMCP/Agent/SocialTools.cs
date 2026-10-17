@@ -195,6 +195,13 @@ public static class SocialTools
         while (q.Count > MaxInbox) q.TryDequeue(out _);
     }
 
+    /// <summary>Put a line in another seat's inbox (it rides on that seat's next tool result), e.g. a marriage proposal (#53).</summary>
+    internal static void Notify(string player, string line)
+    {
+        var slot = Players.ById(player);
+        if (slot != null) Deliver(slot, line);
+    }
+
     /// <summary>Messages for this seat since its last tool result, as a compact block ("" when none).</summary>
     public static string TakeMail(string player)
     {

@@ -13,17 +13,12 @@ Every system behind that handler is then covered without new code.
 
 | Input | Human | AI tool | Game entry point | Status |
 |---|---|---|---|---|
-| Move | WASD | `walk_to`, `travel_to` | pathfinder, warps, doors | ✅ |
+| Move | WASD | `walk_to`, `travel_to` | pathfinder, warps, doors | ✅ `travel_to` also takes shop owners and villagers (#9) |
 | Action button | right-click | `interact(x, y, holding?)` | `Game1.pressActionButton`: the held item's use action or eating, else `tryToCheckAt` → `GameLocation.checkAction` | ✅ `holding` picks the item; handlers that wait for a fresh press (`didPlayerJustRightClick`: chests, shipping bin, fish ponds) see it |
 | Use button | left-click | `use_tool`, `plant`, `place` | `Farmer.BeginUsingTool`, `Utility.tryToPlaceItem` | 🟡 `place` puts items on free ground (smoke `place`, not yet run in game); `plant` only on tilled soil |
 | Dialogue answer | click an option | `respond(option)` | `DialogueBox` → `answerDialogueAction` or the question's callback | ✅ |
-<<<<<<< HEAD
-| Menu | click, type | `menu`; `shop_list`, `buy`, `close_menu` | the menu's own click and handler methods | 🟡 reader, fallback, `take`/`put`, `choose`, `amount`, `type`, `ok`/`cancel`; `buy`/`sell`/`craft` adapters to come |
-| Minigame | timing | `fish` (BobberBar only) | `BobberBar`, `IMinigame` | 🟡 fishing only (not yet run in game), other `IMinigame`s ❌ |
-=======
 | Menu | click, type | `menu`; `shop_list`, `buy`, `close_menu` | the menu's own click and handler methods | 🟡 reader, fallback, `take`/`put`, `choose`, `amount`, `type`, `ok`/`cancel`; `buy`/`craft` adapters to come; selling is the `sell` tool (#11) |
-| Minigame | timing | none | `BobberBar`, `IMinigame` | ❌ |
->>>>>>> origin/fix/issue-11
+| Minigame | timing | `fish` (BobberBar only) | `BobberBar`, `IMinigame` | 🟡 fishing only (not yet run in game), other `IMinigame`s ❌ |
 
 Rules:
 
@@ -106,12 +101,13 @@ Rules:
 
 | System | How a human does it | Covered by | Status | Issue |
 |---|---|---|---|---|
-| Talk | action on an NPC | `talk_to` | ✅ | #9 |
-| Gifts | action holding the gift | `talk_to(gift_item)` | ✅ | #9 |
-| Heart events | cutscenes with questions | skipped, then option 0 | ❌ the AI makes no choice | #9 |
-| Dating, marriage | give a bouquet, later a Mermaid Pendant | `talk_to(gift_item)` | 🟡 untested | |
-| Children | night question, then `NamingMenu` | choice policy | ❌ name is random | |
-| Naming pets, animals, horse | `NamingMenu` | `menu type` | 🟡 `menu type` works, but the choice policy names first at random | |
+| Know the villagers | social page | `villagers` (location, hearts, counters, birthdays, tastes found out) | 🟡 untested in game | #9 |
+| Talk | action on an NPC | `talk_to` (finds the villager, travels across maps, reports points before/after) | 🟡 untested in game | #9 |
+| Gifts | action holding the gift | `talk_to(gift_item)`: reaction and taste are learned; `interact(holding)` gifts are not recorded | 🟡 untested in game | #9 |
+| Heart events | cutscenes with questions | `PlayHeartEvents` (off): story events play, stop at questions for `respond`; other events are skipped | 🟡 opt-in, untested; in split-screen the event only moves while no other AI is thinking | #9 |
+| Dating, marriage | give a bouquet (8 hearts), later a Mermaid Pendant (10 hearts, upgraded house) | `bouquet`, `mermaid_pendant` (the game's gift path through `talk_to`; requirements shown in `villagers`); the wedding is the game's own, watched and logged | 🟡 untested in game | #53 |
+| Children | night question (`DialogueBox`), then `NamingMenu` | `go_to_bed` hands the question back; `respond` answers it, `name` names the child | 🟡 untested in game; the AI is not forced to want a child | #53 |
+| Naming pets, animals, horse | `NamingMenu` | `name(text)`; status shows "Naming: ..."; an unanswered box gets a random name at bedtime or at 1:00 AM | 🟡 untested in game | #53 |
 | Mail | mailbox → `LetterViewerMenu` | `interact` + `close_menu` | ✅ attachments are claimed; the morning briefing and the footer (`📬 N letters`) say when mail is waiting (smoke `briefing`); 🟡 `close_menu` also accepts the letter's quest (`AcceptQuest`), untested | #29, #2 |
 | Help Wanted, quest log | `Billboard` tile, `QuestLog` | `quests` (journal, board, who took it, Special Orders read-only, `share` to the plan board), `accept_quest` (macro: walks to the board, presses Accept); events `quest_accepted`/`quest_completed`/`quest_failed`/`quest_taken_by_other` go to the player log feed | 🟡 PR for #14, not yet run in game (smoke `quests`, `accept_quest`); turning in a quest: `talk_to` with the item | #14 |
 | Special Orders | `SpecialOrders` tile → `SpecialOrdersBoard` | menu adapter; `quests` lists the open ones (read-only) | ❌ board, 🟡 listing | #27 |
@@ -153,7 +149,8 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 | Send money | ledger → `SendMoney` → recipient → `DigitEntryMenu`; chat shows "X sent Y" | `interact` + `respond` + `menu amount` | ✅ smoke `send_money` (split-screen) | |
 | Loans, debts | no mechanic | a promise on the plan board, paid with Send money | story | #39, #48 |
 | Give an item to a player | action holding the item → `SendProposal(Gift)`: one item, the receiver may decline | `give` (PR #50 moves the stack directly, no decline) | ✅ different path | #39 |
-| Marriage, dance, baby between players | `SendProposal(Marriage/Dance/Baby)` → `PendingProposalDialog` | `interact(holding)` + `menu choose` | ❌ | |
+| Marriage between players | `SendProposal(Marriage)` → `PendingProposalDialog` | `propose(to)` and `answer_proposal(accept)`; the other player is told in their next tool result | 🟡 untested in game | #53 |
+| Dance, baby between players | `SendProposal(Dance/Baby)` → `PendingProposalDialog` | `interact(holding)` + `menu choose` | ❌ | |
 | Owned plots and chests | no mechanic | mod rule (`Ownership`): chests and machines carry `Object.owner`, crops record their planter in `HoeDirt.modData`; taking from or harvesting another seat's claim logs a `theft` entry | ✅ smoke `ownership` | #52, #40 |
 | Seeing what others do, being interrupted | no mechanic (the game draws the other farmers and nothing more) | mod rule (`Perception`): `look` and `status` list the other AI players in view with the tool they run, its reason and how long, next to their last `say` and plan board section. An @mention, whisper, gift, a player coming into view or entering your house, a theft (`Ownership.Theft`), rain starting and crows on the farm add an `Events:` block to the next tool result and stop a running `wait`, `walk_to`, `travel_to` or farm action (`AgentRuntime.Interrupt`). P4 neither sees nor is seen | 🟡 written, smoke `caught_slacking` not run yet; damage and monster interrupts wait for #6 | #40 |
 | Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action (`festival(start)` waits in the ready check); P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together` | #52, #38, #11 |
@@ -168,9 +165,9 @@ What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselv
 | `LevelUpMenu` profession | picks the left one | the AI chooses (#8, PR #47) |
 | Letter with a quest | `close_menu` accepts the quest | the AI chooses |
 | `ItemGrabMenu` that is not a chest (fishing treasure, gift, fish pond output) | `close_menu` first takes what fits and names what is left | keep; `menu take` picks single items |
-| `NamingMenu` | random name | the AI types a name |
-| Question in a cutscene | skips the event, then answers option 0 | the AI answers with `respond` |
-| `PendingProposalDialog` | not handled | the AI accepts or declines |
+| `NamingMenu` | the AI answers with `name(text)`; a box nobody answers gets a random name at bedtime, at 1:00 AM, with no AI on the seat, or after the thinking timeout plus a minute | keep |
+| Question in a cutscene | skips the event, then answers option 0; with `PlayHeartEvents`, heart events wait for `respond` (option 0 after the think timeout) | the AI answers with `respond` for every event |
+| `PendingProposalDialog` | the AI accepts or declines with `answer_proposal`; nothing answers for it | keep |
 | `ReadyCheckDialog` | not handled | AI seats wait; P4 accepts automatically |
 | Any other menu | "Menu open: X"; `menu` lists its labelled buttons (`click`, `ok`, `cancel`) | keep |
 

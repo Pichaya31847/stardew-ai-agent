@@ -6,7 +6,7 @@ Usage (from a normal terminal where `claude` is logged in, with the game running
     py runner/run_days.py --until-day 100 --goal "..."
 
 Each day:
-  * builds the system prompt (rules + goal + the AI's lessons, plan and notes + recent diaries; see memory.py),
+  * builds the system prompt (rules + goal + the AI's lessons, plan and notes + recent diaries + relationships.md written from game data; see memory.py and relationships.py),
   * runs `claude -p` with only the in-game MCP server (http://localhost:8770/mcp),
   * saves Claude's full stream-json transcript next to the game logs (proof of a real run),
   * continues the same day in a new session if Haiku stopped before sleeping,
@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import relationships
 import shutil
 import subprocess
 import sys
@@ -317,7 +318,13 @@ def main():
         if not args.until_day and days_played >= args.days:
             break
 
-        system_prompt = memory.inject(template, log_dir, args.goal, recent_diaries(log_dir, day))
+        # relationships.md is written from game data (not by the AI) once per day, right before the prompt is built.
+        # Placeholders filled by memory.inject: "{GOAL}", "{LESSONS}", "{PLAN}", "{NOTES}", "{MEMORY}"
+        relationships.update(log_dir, lambda: api_get("/api/relationships"))
+        system_prompt = memory.inject(
+            template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
+            log_dir, args.goal, recent_diaries(log_dir, day)
+        )
 
         def play_day(attempt: int) -> dict:
             # After a crash the watchdog calls this again: the day restarts from the morning with a fresh part 1.

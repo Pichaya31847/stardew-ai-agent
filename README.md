@@ -50,14 +50,19 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 |---|---|
 | `status`, `look`, `inventory` | Read the player, surroundings and items |
 | `think` | Post a thought (shown on the overlay, costs no game time) |
-| `walk_to`, `travel_to` | Pathfind to a tile, or to another location |
+| `walk_to`, `travel_to` | Pathfind to a tile, or to another location (a shop owner's or villager's name also works; a closed door says when it opens) |
 | `farm_summary` | Whole-map farm report: empty tilled soil, crops by type with days to harvest, unwatered, ready and dead crops, crops that won't mature this season, forage, debris, watering can and nearest water. Costs no game time |
 | `water_all`, `harvest_all` | Water every dry crop (refills at the nearest water, stops on low energy) and collect every ready crop and forage item. Both stop with a reason (low energy, menu, late hour, full inventory) and say what is left |
 | `clear_area`, `till_area` | Clear a rectangle (up to 100 tiles) with the right tool, and till it with the Hoe; large stumps and boulders are skipped and reported. `plant` also takes `area: [x, y, w, h]` (or no tiles at all = every empty tilled tile on the map) |
 | `use_tool`, `plant`, `harvest` | Farm work on a target tile |
 | `fight` | Fight the monsters near you: equips the best weapon, walks to the nearest one and swings for a few seconds; stops when all clear, health is at 30% of max (at least 15) or a menu opens; `eat_below` (HP %) eats the best healing food on the way |
 | `leave_mine` | Get out of the Mines from any floor: climbs the up ladders, or warps to the Mine entrance when health is low, it is 11 PM or the ladder cannot be reached. In the mines the footer shows HP, and any other long action is cut short with `Interrupted:` when a monster within 3 tiles hurts you |
-| `interact`, `talk_to`, `respond`, `close_menu` | Objects, villagers, dialogue and menus; `interact` can hold an item first (load a machine, use a totem); `close_menu` accepts a letter's quest and takes treasure or gift items that fit |
+| `interact`, `respond`, `close_menu` | Objects, dialogue and menus; `interact` can hold an item first (load a machine, use a totem); `close_menu` accepts a letter's quest and takes treasure or gift items that fit |
+| `villagers` | Everyone: where they are, hearts, talked/gifts today and this week, birthdays; with a name also the gift tastes found out so far |
+| `talk_to` | Find a villager (travels across maps unless `go=false`), talk, optionally give a gift; reports points before/after and their reaction |
+| `bouquet`, `mermaid_pendant` | Ask a villager to date you (8 hearts), later propose (10 hearts, upgraded house); `villagers(name)` shows what is still missing |
+| `propose`, `answer_proposal` | Propose marriage to another player (split-screen); the other player answers the Yes/No box with `answer_proposal` |
+| `name` | Name the new pet, farm animal, horse or child the open naming box asks for (a box nobody answers gets a random name at bedtime) |
 | `menu` | Read any open menu, then use it: take/put (chests), choose (mine elevator), amount (send money), type (names), ok/cancel, or click a listed button |
 | `craft`, `place`, `chest` | Craft from the recipes you know (`craft()` lists them), put items, machines and chests on the ground, store or take items in a chest or the fridge in one call (by name and quality, several items, "everything") |
 | `cook` | Cook the dishes you know in the farmhouse kitchen from your pack and the fridge (`cook()` lists them) |
@@ -81,6 +86,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `http://localhost:8770/replay` | Day-by-day replay of the logs |
 | `http://localhost:8770/api/state` | Raw game state JSON. After a day that ended without `go_to_bed` (2:00 AM, health 0), `passOut` says why and `pendingJournalDay` is the day whose journal is still owed until `journal(day=N)` is written |
 | `http://localhost:8770/api/memory` | Each AI seat's lessons, plan and notes (what `journal` wrote) |
+| `http://localhost:8770/api/relationships` | Every AI farmer's friendships (hearts, birthdays, gift tastes found out); `runner/run_days.py` turns it into `relationships.md` |
 | `POST http://localhost:8770/api/release_freeze` | Runner only: stop an idle seat from freezing the world (`{"seat": "p1"}`, or `"all"`; `"on": false` takes it back) so game time runs until the farmer passes out. Ends with the farm day |
 | `http://localhost:8770/api/briefing?seat=p1` | Morning briefing of one AI seat: overnight results, shipping by item, mail, weather, farm (the runner puts it in the first prompt of a day) |
 
@@ -101,6 +107,8 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `SplitScreen` | `false` | Three AIs + a camera screen in split-screen co-op (see below) |
 | `FarmhandNames` | `["Gemini","GPT","Camera"]` | Farmhand names for P2, P3, P4; an existing farmhand with that name is reused |
 | `ThinkTimeoutSeconds` | `300` | Split-screen: an AI silent for longer stops holding the world frozen (0 = never) |
+| `PlayHeartEvents` | `false` | Let heart events (story cutscenes) play and stop at their questions for `respond`, instead of skipping them. Experimental, see `docs/coverage.md` |
+| `RevealGiftTastes` | `false` | `villagers(name)` shows the game's real gift tastes. Off: a farmer only knows the tastes they found out by gifting |
 | `LockHostInput` | `true` | Split-screen: ignore the real keyboard/mouse on P1 once a save is loaded |
 | `CleanFrames` | `true` | Split-screen: frozen frames look live (no Paused banner, HUD kept), no cursors, gamepad hint or join messages |
 | `AutoZoom` | `true` | Split-screen: zoom each screen to about 20 tiles across |
@@ -149,6 +157,8 @@ stop a running `wait`, `walk_to`, `travel_to` or farm action, so a model never s
   `py runner/usage_limit.py runs/logs/claude_day_001_part1.jsonl`.
 - `memory.py` is the memory logic behind that (placeholders, consolidation); its tests run without the
   game: `py -m pytest runner/tests`.
+- `relationships.py` (used by `run_days.py`) writes `relationships.md` next to the diaries each day from `/api/relationships`
+  and puts it in the system prompt as `{RELATIONSHIPS}`. It is generated from game data, never written by the AI.
 - `smoke.py` runs LLM-free checks of the tools (farm loop, shop, shipping, sleep) on a copy of your
   save, then reloads your save. `run_days.py` runs it before every batch and stops if a case fails.
   It needs `"EnableDebugApi": true` in `config.json`; see `py runner/smoke.py --list`. The debug
