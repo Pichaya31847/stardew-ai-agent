@@ -101,6 +101,7 @@ public class AgentRuntime
         AutoHandleOverlays();
         PassOut.Tick(this);
         QuestEvents.Tick(this);
+        AgentTools.FishingTick(this); // plays an open fishing minigame while this seat runs the fish tool
         SocialTools.Tick(Log.Player);
         Perception.Tick(this);
         _actionLane.Tick(_actions);
