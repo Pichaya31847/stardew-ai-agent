@@ -48,6 +48,12 @@ public static class PlanBoard
             return Sections.Values.Where(e => e.Author == author).OrderByDescending(e => e.Id).FirstOrDefault();
     }
 
+    public static PlanEdit? Get(string section)
+    {
+        lock (Lock)
+            return Sections.TryGetValue(section, out var e) ? e : null;
+    }
+
     public static object Snapshot()
     {
         lock (Lock)
@@ -232,6 +238,19 @@ public static class SocialTools
             }
             Perception.Notify(Players.ById(player)!, "gift", $"{g.from} gave you {label}");
         }
+    }
+
+    /// <summary>
+    /// A notice from the game to everybody (for example the Joja membership, #26): the in-game chat box and every other AI's inbox.
+    /// Unlike <see cref="Say"/> it shows no bubble and is not logged here; the caller logs the event itself.
+    /// </summary>
+    public static void Announce(string text)
+    {
+        text = Clip(Clean(text), MaxChat);
+        var me = Game1.player;
+        Game1.Multiplayer.sendChatMessage(LocalizedContentManager.CurrentLanguageCode, text, Multiplayer.AllPlayers);
+        Game1.chatBox?.receiveChatMessage(me.UniqueMultiplayerID, 0, LocalizedContentManager.CurrentLanguageCode, text);
+        foreach (var s in OtherAis()) Deliver(s, $"[{WorldText.FormatTime(Game1.timeOfDay)}] {text}");
     }
 
     // ------------------------------------------------------------------ tools

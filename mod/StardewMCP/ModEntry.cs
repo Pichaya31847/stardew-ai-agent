@@ -46,7 +46,11 @@ public class ModEntry : Mod
             PassOut.OnReturnedToTitle();
         };
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
-        helper.Events.GameLoop.DayStarted += (_, _) => Briefing.OnDayStarted();
+        helper.Events.GameLoop.DayStarted += (_, _) =>
+        {
+            Briefing.OnDayStarted();
+            JojaRoute.OnDayStarted();
+        };
 
         helper.ConsoleCommands.Add(
             "mcp_freeze",

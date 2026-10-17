@@ -103,6 +103,8 @@ mod/StardewMCP/
     MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters (part of AgentTools)
     SocialTools.cs     say / whisper / emote / give / plan board; per-seat inbox appended to the next tool result
     Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat events (mention, whisper, gift, theft, arrival, weather) that interrupt a running action
+    CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound (reflection for unchecked game members) are shared with Joja (#26)
+    JojaTools.cs       joja: membership (confirm guard) / projects / buy_project, the route decision record and the standing plan board section
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
     JournalTools.cs    journal(diary, lessons, plan, notes, day): the AI's memory across days; go_to_bed needs today's
