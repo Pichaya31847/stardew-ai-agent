@@ -143,6 +143,7 @@ public class AgentHttp
                     await Json(res, new
                     {
                         state = JsonDocument.Parse(StateJson).RootElement,
+                        thoughtLanguage = ThoughtLanguageName,
                         meta = _log.Meta,
                         entries = _log.FeedAfter(after)
                     });
@@ -337,6 +338,10 @@ public class AgentHttp
         await Text(res, await System.IO.File.ReadAllTextAsync(path, Encoding.UTF8), "text/html");
     }
 
+    /// <summary>ThoughtLanguage from config.json (blank = "Thai"); the overlay, replay and runner follow it.</summary>
+    private string ThoughtLanguageName =>
+        string.IsNullOrWhiteSpace(_config.ThoughtLanguage) ? "Thai" : _config.ThoughtLanguage.Trim();
+
     /// <summary>Refresh the overlay state snapshot (call on the host screen's tick, ~4x/sec).</summary>
     public void RefreshState()
     {
@@ -375,6 +380,7 @@ public class AgentHttp
             ready = true,
             heartbeat = ++_beat,
             saveFolder = SaveFolder.Name,
+            thoughtLanguage = ThoughtLanguageName,
             day = AgentLog.FarmDay,
             season = Game1.currentSeason,
             dayOfMonth = Game1.dayOfMonth,

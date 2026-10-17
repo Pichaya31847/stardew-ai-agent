@@ -47,6 +47,7 @@ from pathlib import Path
 
 import briefing
 import game_watchdog
+import language
 import memory
 import pass_out
 import relationships
@@ -326,6 +327,7 @@ def main():
     ap.add_argument("--until-day", type=int, default=0, help="Stop after this farm day number")
     ap.add_argument("--model", default="claude-haiku-5-5")
     ap.add_argument("--goal", default=DEFAULT_GOAL)
+    ap.add_argument("--language", default=None, help="Language of the AI's thoughts, reasons and diary (default: the mod's ThoughtLanguage, else Thai)")
     ap.add_argument("--max-turns", type=int, default=600)
     ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if Haiku stops before sleeping (planned session breaks do not count)")
     ap.add_argument("--max-breaks", type=int, default=sessions.DEFAULT_MAX_BREAKS, help="Planned session breaks per day before a part counts toward --max-parts")
@@ -356,6 +358,11 @@ def main():
 
     waiter = usage_limit.LimitWaiter.from_args(args, post=api_post)
     CTL.start()  # clears stale stop requests; Ctrl+C = stop after the day / after the call / abort
+    ready_state = game_state()
+    lang = language.resolve(args.language, ready_state)
+    print(language.describe(lang, ready_state))
+    template = language.fill_prompt(template, lang)
+
     days_played = 0
     stopped_early = False
     batch_days: list[int] = []

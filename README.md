@@ -131,8 +131,12 @@ Every tool reply keeps its plain text and adds a machine-readable part (MCP `str
 | `AutoLoadSave` | `""` | Save folder to load automatically from the title screen |
 | `FarmBatchMinEnergy` | `10` | `water_all`, `harvest_all`, `clear_area`, `till_area` and `plant` area mode stop when energy drops below this (0 = only stop at 0) |
 | `EnableDebugApi` | `false` | Serve `/api/debug/*` test hooks for `runner/smoke.py`; leave off for normal play |
+<<<<<<< HEAD
 | `FishingAssist` | `"perfect"` | How the `fish` tool plays the fishing minigame: `"perfect"` keeps the fish inside the bar (the safe fallback); `"natural"` presses the mouse button like a player would, so it can lose fish |
 | `ThoughtLanguage` | `"Thai"` | Language the AI is asked to use for on-screen text (`think`, action reasons, journal), e.g. `"English"` |
+=======
+| `ThoughtLanguage` | `"Thai"` | Language of the AI's on-screen text (`think`, action reasons, diary); the overlay, replay and `runner/` prompts follow it (see below) |
+>>>>>>> origin/fix/issue-34
 | `SplitScreen` | `false` | Three AIs + a camera screen in split-screen co-op (see below) |
 | `FarmhandNames` | `["Gemini","GPT","Camera"]` | Farmhand names for P2, P3, P4; an existing farmhand with that name is reused |
 | `ThinkTimeoutSeconds` | `300` | Split-screen: an AI silent for longer stops holding the world frozen (0 = never) |
@@ -174,8 +178,12 @@ An @name or @pN in `say`, a whisper, a gift, a player coming into view or enteri
 your chest or plot, rain starting, or crows on the farm are added to your next tool result as `Events:` and
 stop a running `wait`, `walk_to`, `travel_to` or farm action, so a model never sleeps through them.
 
-`ThoughtLanguage` only changes what the MCP tools ask the AI to write. The overlay's own labels and
-`runner/system_prompt.md` are still written for Thai viewers, so edit those too if you switch language.
+`ThoughtLanguage` sets one language for everything viewers read. The MCP tools ask the AI to write in it, the
+overlay and replay pick their labels from it (`thoughtLanguage` in `/api/feed`, and in `/api/state` once a save is
+loaded; `?lang=English` on either page overrides it), and `runner/run_days.py` fills it into the system prompt and
+the daily prompts (`--language` overrides it). `"Thai"` and `"English"` have full UI tables; any other language
+(e.g. `"Japanese"`) gets thoughts in that language with an English UI. To add a table, copy the `en` block in the
+`i18n` section of `studio/overlay.html` and `studio/replay.html`, and add texts to `runner/language.py`.
 
 ## Unattended runs and recording
 
@@ -183,7 +191,7 @@ stop a running `wait`, `walk_to`, `travel_to` or farm action, so a model never s
 
 - `run_days.py` runs one Claude Code session per in-game day, keeps the AI's memory between days
   (its lessons, plan, facts and recent diaries go into the next day's system prompt) and backs up the
-  save. Example: `py runner/run_days.py --days 3`. It reads those files from `<out>/logs`, so set the
+  save. Example: `py runner/run_days.py --days 3` (add `--language English` to override ThoughtLanguage). It reads those files from `<out>/logs`, so set the
   mod's `LogDir` to that folder. After the last day of a batch, one short text-only session shortens
   `lessons.md` and `notes.md` (the old lists stay as `lessons_before_batchN.md`) and writes a digest
   of each finished week (`--skip-consolidation` skips it), so run in batches of about a week.
