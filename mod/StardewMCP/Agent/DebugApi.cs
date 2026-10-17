@@ -40,6 +40,7 @@ public static class DebugApi
             Op("warp", Warp),
             Op("set_time", SetTime),
             Op("add_item", AddItem),
+            Op("clear_items", ClearItems),
             Op("set_money", SetMoney),
             Op("add_mail", AddMail),
             Op("set_skill", SetSkill),
@@ -82,6 +83,16 @@ public static class DebugApi
         if (t < 600 || t > 2600 || t % 10 != 0 || t % 100 >= 60) { c.Fail("time must be HHMM in 600..2600 (e.g. 900, 1830)"); yield break; }
         Game1.timeOfDay = t;
         c.Result = $"Time set to {WorldText.FormatTime(t)}";
+    }
+
+    /// <summary>Empty the pack except tools, so a case does not inherit the leftovers of earlier cases.</summary>
+    private static IEnumerator ClearItems(JsonElement a, CallContext c)
+    {
+        var items = Game1.player.Items;
+        for (int i = 0; i < items.Count; i++)
+            if (items[i] is not null and not StardewValley.Tool) items[i] = null;
+        c.Result = "Pack cleared (tools kept)";
+        yield break;
     }
 
     private static IEnumerator AddItem(JsonElement a, CallContext c)

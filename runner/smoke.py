@@ -856,6 +856,7 @@ def emote():
 @social
 def give():
     reset("Farm")
+    debug("clear_items")  # earlier cases leave p1's pack full
     debug("add_item", id="(O)24", qty=3)  # Parsnip
     loc, x, y = p1_tile()
     unfreeze()
@@ -1053,7 +1054,9 @@ def sleep_together():
 
     def sleep(seat: str) -> None:
         try:
-            results[seat] = call_seat(seat, "go_to_bed", {"diary": f"Smoke test diary of {seat}: the whole team went to bed together.", "reason": "smoke test"})
+            diary = f"Smoke test diary of {seat}: the whole team went to bed together."
+            ok_seat(seat, "journal", diary=diary, lessons="Smoke lesson: sleep together.", plan="## Today\nSmoke plan: sleep.")
+            results[seat] = call_seat(seat, "go_to_bed", {"reason": "smoke test"})
         except Exception as e:  # reported below
             results[seat] = (False, f"{type(e).__name__}: {e}")
 
