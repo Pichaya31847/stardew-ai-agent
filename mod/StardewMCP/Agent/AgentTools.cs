@@ -181,6 +181,7 @@ public static partial class AgentTools
                 }, "tool", "tiles", "reason"),
                 Run = UseTool
             },
+            CombatTool(),
             new()
             {
                 Name = "plant",
