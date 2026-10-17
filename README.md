@@ -80,6 +80,9 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `wait`, `go_to_bed` | Let time pass, end the day (`go_to_bed` refuses until today's `journal` is written) |
 | `journal` | The AI's memory across days, costs no game time: a diary for the viewers, lessons (appended), a plan with Season / Week / Today sections (replaced section by section) and optional facts. Written to `diary_NNN.md`, `lessons.md`, `plan.md`, `notes.md` in the log folder; `day` catches up a missed day |
 | `say`, `whisper`, `emote`, `give` | Multi-player (split-screen): chat to everyone, tell one player privately, show an emote, hand an item to a nearby player. All cost no game time |
+| `wear`, `wardrobe` | Put on a hat, shirt or pants from the inventory; see what you wear and carry (rings and boots are `equip`, #27) |
+| `search_trash` | Dig through a trash can; a watching villager costs friendship and a `trash_dive` event with `seen_by` is logged |
+| `mount`, `dismount` | Ride the horse (needs a Stable); also night events show up as an `Overnight:` line after `go_to_bed` |
 | `plan_read`, `plan_edit` | Shared plan board with an edit history (author and time) |
 | `bundles` | Community Center bundles room by room: what each needs, what is donated (and by whom), the reward, and which of your items fit. Costs no game time |
 | `donate_bundle` | Donate an inventory item (or gold, for the Vault) to the first Community Center bundle that needs it, through the game's own bundle page |

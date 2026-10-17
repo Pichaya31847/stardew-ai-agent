@@ -121,6 +121,7 @@ public class AgentRuntime
         Story.Tick(this);
         Romance.Tick(this);
         Stats.Tick();
+        NightEvents.Tick(this);
         _actionLane.Tick(_actions);
         _observeLane.Tick(_observations);
     }

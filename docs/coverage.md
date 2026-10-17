@@ -78,7 +78,7 @@ Rules:
 | Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `look` labels the tile ("Backpack upgrade to 24 slots (2000g…)"), then `interact` + `respond` | 🟡 smoke `backpack` added, not yet run | #2 |
 | Totems, books | action button while holding the item (`performUseAction`) | `interact(holding)` without a tile | ✅ totems (smoke `totem`); 🟡 books untested | |
 | Animal care | pet (action), milk/shear (tool), hay (hopper) | `animals` (pet / collect / feed: `FarmAnimal.pet`, the Milk Pail or Shears swing, the hopper tile); `interact` and `use_tool` also work | 🟡 untested in game (PR for #10) | #10 |
-| Horse | stable, name, mount (action) | `interact` | 🟡 riding untested | #10 |
+| Horse | stable, name, mount (action) | `interact`, `mount`, `dismount` (horse `checkAction`) | 🟡 riding untested; smoke `mount` self-skips without a horse | #10, #54 |
 
 ### Shops, crafting, upgrades
 
@@ -94,9 +94,9 @@ Rules:
 | Buy animals | `AnimalShop` → `Marnie_Purchase` → `PurchaseAnimalsMenu` → `NamingMenu` | `buy_animal`: creates the `FarmAnimal`, `AnimalHouse.adoptAnimal`; prices from `Game1.farmAnimalData` | 🟡 untested in game (PR for #10); the random brown chicken or cow colour is not handled | #10 |
 | Rings, boots, hats | equipment slots in `InventoryPage` | `equip` (`Farmer.Equip`, else the slot field plus `onEquip`/`onUnequip`); `status` and `inventory` show them | 🟡 untested | #27 |
 | Bait, tackle | drop onto the rod in `InventoryPage` | `equip` (the rod's own `attach`); `inventory` shows what is on the rod | 🟡 untested | #27 |
-| Clothes (shirts, pants) | equipment slots in `InventoryPage` | menu adapter | ❌ | |
+| Clothes (hats, shirts, pants) | equipment slots in `InventoryPage` | `wear`, `wardrobe` | 🟡 untested; smoke `wear` | #54 |
 | Tailoring, dye, forge | `Tailoring`, `DyePot`, `Forge` tiles | menu adapter | ❌ | |
-| Trash cans | `Garbage` tile | `interact` (searching the can in town) | 🟡 untested | #14 |
+| Trash cans | `Garbage` tile | `search_trash` (presses the tile; `trash_dive` event with `seen_by`) | 🟡 smoke `search_trash` | #14, #54 |
 | Trash an item | inventory trash can → `Utility.trashItem` | `trash(item, quantity, confirm)` (never tools; valuables need `confirm`) | 🟡 PR for #14, not yet run in game (smoke `trash`) | #14 |
 
 ### People
@@ -128,7 +128,7 @@ Rules:
 | Combat | weapon swings, aim | `fight`: best weapon, walk to the nearest monster, swing with `Farmer.BeginUsingTool`; `eat_below` eats through the `eat` tool's path (`Farmer.eatHeldObject`) | 🟡 untested, no smoke case yet | #5, #6 |
 | Mine survival | watch health, eat, climb out | runtime interrupt when a monster within 3 tiles hurts the farmer (every action except `fight`, `eat`, `leave_mine`); `fight` stops at 30% HP; `leave_mine` walks to the up ladder (tile 115) and uses it with `checkAction`, else `Game1.warpFarmer` to the Mine; the footer shows HP and warns from 11 PM | 🟡 untested, no smoke case yet | #6 |
 | Festivals | arrive on time → ready check `festivalStart` → actions, shops, games | `calendar` (dates, hours), `travel_to`, `festival(start/leave)`, `talk_to` reaches festival villagers and booths, `interact(holding)` for the Luau soup | 🟡 untested; Egg Hunt eggs and the Fair and ice-fishing games are not covered | #11 |
-| Night events: fairy, witch, meteorite, Qi plane | automatic | | 🟡 they play by themselves | |
+| Night events: fairy, witch, meteorite, Qi plane | automatic (`Game1.farmEvent`) | `NightEvents` reports them as an `Overnight:` line and a `night_event` log entry | 🟡 random, no smoke case | #54 |
 | Arcade, casino, darts, crane | `IMinigame`, `CalicoJack`, `Slots` | drivers (optional) | ❌ | |
 | Desert, Skull Cavern, Ginger Island, movie theater, Qi | travel, tile actions, menus | primitives | ❌ not checked | |
 
