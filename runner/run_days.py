@@ -54,6 +54,7 @@ import sessions
 import stats as run_stats
 import usage_limit
 import usage_log
+from tool_results import format_day_summary, load_day_summary, tag_for_entry
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -127,6 +128,9 @@ def last_actions(log_dir: Path, day: int, n: int = 25) -> str:
             continue
         if e.get("kind") in ("think", "action", "result"):
             text = (e.get("text") or "").replace("\n", " ")[:200]
+            tag = tag_for_entry(e) if e.get("kind") == "result" else ""  # [partial · low_energy] etc., as the model saw it
+            if tag:
+                text = f"{tag} {text}"
             out.append(f"{e.get('gameTime')} {e['kind']} {e.get('tool') or ''}: {text}")
     return "\n".join(out[-n:])
 
@@ -136,6 +140,13 @@ def continue_prompt(day: int, log_dir: Path, planned: bool = False) -> str:
     recent = last_actions(log_dir, day, 8 if planned else 25)
     prompt = sessions.continuation_prompt(day, log_dir, planned, recent=recent)
     return prompt + pass_out.pending_reminder(game_state())
+
+
+def report_failures(log_dir: Path, day: int) -> None:
+    """Print the day's failure reasons per tool (day_XXX_summary.json, written by the mod when the day ends)."""
+    summary = load_day_summary(log_dir, day)
+    if summary:
+        print("  " + format_day_summary(summary).replace("\n", "\n  "))
 
 
 def save_folder() -> Path | None:
@@ -430,6 +441,7 @@ def main():
             s = pass_out.let_time_run_out(day, game_state, api_post, time.sleep, timeout=args.pass_out_timeout)
         if s.get("ready") and s["day"] > day:
             _do_backup(out_dir, day, args.keep_backups)
+            report_failures(log_dir, day)
             print(usage_log.day_line(out_dir / "usage.csv", day))
             days_played += 1
             batch_days.append(day)

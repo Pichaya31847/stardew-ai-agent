@@ -7,8 +7,8 @@ namespace StardewMCP.Agent;
 // Moved here unchanged from AgentTools.cs and AgentRuntime.cs: they use no game types, so the unit
 // tests (mod/StardewMCP.Tests) compile this file to build fake tools for the MCP contract tests.
 
-/// <summary>State shared by one running tool call.</summary>
-public class CallContext
+/// <summary>State shared by one running tool call. Reason, Partial and Data are in ToolResult.cs.</summary>
+public partial class CallContext
 {
     public string Result = "";
     public bool Ok = true;

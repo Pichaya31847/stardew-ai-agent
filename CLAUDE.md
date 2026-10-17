@@ -108,6 +108,7 @@ mod/StardewMCP/
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
     JournalTools.cs    journal(diary, lessons, plan, notes, day): the AI's memory across days; go_to_bed needs today's
+    ToolResult.cs      Reason codes, partial flag and counts of tool results; MCP reply tag + structuredContent; day_XXX_summary.json
     ModConfig.cs       config.json settings
     DebugApi.cs        /api/debug/* and /api/debug/p{N}/* test hooks (warp, build_cabins, capture...), off by default
     Players.cs         The 4 split-screen seats (P1-P3 AI, P4 camera) and their per-screen state
@@ -128,6 +129,7 @@ runner/
   run_control.py       Pause / stop flags for run_days.py (graceful Ctrl+C); CLI: run_control.py pause|resume|stop_after_day|stop_now
   save_backup.py       Backs up the save named by /api/state saveFolder (never smoke_*), keeps the last N
   restore_day.py       Rolls the farm back to the end of a day (for mod bugs), sets later files aside in abandoned/
+  tool_results.py      Reason codes and result tags (Python side of ToolResult.cs); day summary printing
   obs_recorder.py      Pauses OBS recording while the game is frozen
   memory.py            Lessons / plan / notes injected into the system prompt; batch-end consolidation
   stats.py             batch_report.md, usage_NNN.json, the Thai morning stats line (from the mod's stats files)

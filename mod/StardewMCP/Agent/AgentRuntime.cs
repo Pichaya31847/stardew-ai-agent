@@ -21,6 +21,8 @@ public class PendingCall
     public bool FromAgent;
     public DateTime Queued = DateTime.UtcNow;
     public TaskCompletionSource<(bool ok, string text)> Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>Reason code, partial flag and counts of the finished call; set just before <see cref="Done"/> completes.</summary>
+    public ToolOutcome? Outcome;
 }
 
 /// <summary>
@@ -89,13 +91,21 @@ public class AgentRuntime
     /// Queue a call. With <paramref name="observation"/>, tools marked <see cref="ToolDef.Instant"/>
     /// go to the observation lane; everything else, including debug ops, waits its turn in the action lane.
     /// </summary>
-    public Task<(bool ok, string text)> Enqueue(ToolDef tool, JsonElement args, bool observation = false)
+    public Task<(bool ok, string text)> Enqueue(ToolDef tool, JsonElement args, bool observation = false) =>
+        EnqueueCall(tool, args, observation).Done.Task;
+
+    /// <summary>Like <see cref="Enqueue"/>, but returns the call so the caller can read its <see cref="PendingCall.Outcome"/> after <see cref="PendingCall.Done"/>.</summary>
+    public PendingCall EnqueueCall(ToolDef tool, JsonElement args, bool observation = false)
     {
-        if (observation && RunControl.StopNow)
-            return Task.FromResult<(bool ok, string text)>((false, RunControl.StopMessage));
         var call = new PendingCall { Tool = tool, Args = args, Instant = tool.Instant || tool.InstantFor?.Invoke(args) == true, FromAgent = observation };
+        if (observation && RunControl.StopNow)
+        {
+            call.Outcome = new ToolOutcome(false, Reasons.Interrupted, false, null);
+            call.Done.TrySetResult((false, RunControl.StopMessage));
+            return call;
+        }
         (observation && call.Instant ? _observations : _actions).Enqueue(call);
-        return call.Done.Task;
+        return call;
     }
 
     /// <summary>Called every tick of this seat's screen (UpdateTicked).</summary>
@@ -220,7 +230,7 @@ public class AgentRuntime
             {
                 if (call.Tool.NeedsWorld && !Context.IsWorldReady)
                 {
-                    _ctx.Fail("The game world is not loaded (title screen or loading). Wait and try again.");
+                    _ctx.Fail(Reasons.NotReady, "The game world is not loaded (title screen or loading). Wait and try again.");
                     Finish();
                     return;
                 }
@@ -237,7 +247,7 @@ public class AgentRuntime
             }
             catch (Exception ex)
             {
-                _ctx.Fail($"Error: {ex.Message}");
+                _ctx.Fail(Reasons.Error, $"Error: {ex.Message}");
                 Finish();
             }
         }
@@ -252,7 +262,7 @@ public class AgentRuntime
             _ticksInCall++;
             if (_ticksInCall > 60 * 60 * 6)
             {
-                _ctx!.Fail("Action timed out after 6 minutes of real time.");
+                _ctx!.Fail(Reasons.Timeout, "Action timed out after 6 minutes of real time.");
                 Finish();
                 return;
             }
@@ -262,6 +272,8 @@ public class AgentRuntime
             {
                 _rt.Log.Add("system", text: $"Passed out / new day: farm day {AgentLog.FarmDay}");
                 _ctx!.Result = $"You passed out (2:00 AM or exhausted)! It is now farm day {AgentLog.FarmDay}. Stop here.";
+                _ctx.Reason = Reasons.Interrupted;
+                _ctx.Partial = true;
                 Finish();
                 return;
             }
@@ -296,7 +308,7 @@ public class AgentRuntime
             catch (Exception ex)
             {
                 _rt._monitor.Log($"Tool {Current?.Tool.Name} crashed: {ex}", LogLevel.Error);
-                _ctx!.Fail($"Error: {ex.Message}");
+                _ctx!.Fail(Reasons.Error, $"Error: {ex.Message}");
             }
             Finish();
         }
@@ -336,9 +348,11 @@ public class AgentRuntime
             text = SessionBreaks.Annotate(_rt.Log, call, text); // planned session break notice (#30)
 
             _rt.Stats.OnCallEnd(call.Tool.Name, ctx.Ok, ctx.Result, CallStartDay);
+            var outcome = ToolOutcome.From(ctx);
             if (!call.Instant || !ctx.Ok)
-                _rt.Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds);
+                _rt.Log.Add("result", call.Tool.Name, ctx.Result, ok: ctx.Ok, ms: _watch.ElapsedMilliseconds, outcome: outcome);
 
+            call.Outcome = outcome;
             call.Done.TrySetResult((ctx.Ok, text));
         }
     }

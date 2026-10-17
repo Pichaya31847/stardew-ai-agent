@@ -18,6 +18,17 @@ public interface IMcpSeat
 
     /// <summary>Run a tool for this seat; instant observations may answer during the seat's own action.</summary>
     Task<(bool ok, string text)> CallTool(ToolDef tool, JsonElement args);
+
+    /// <summary>Run a tool and format the MCP result object (including structuredContent when supported).</summary>
+    async Task<object> CallToolReply(ToolDef tool, JsonElement args)
+    {
+        var (ok, text) = await CallTool(tool, args);
+        return new { content = new[] { new { type = "text", text } }, isError = !ok };
+    }
+
+    /// <summary>Format an MCP tool error when a call cannot reach a tool.</summary>
+    object ErrorReply(string reason, string text) =>
+        new { content = new[] { new { type = "text", text } }, isError = true };
 }
 
 /// <summary>What to answer one POST with: HTTP status, JSON body (null = empty body) and the Mcp-Session-Id header (null = none).</summary>
@@ -95,11 +106,10 @@ public class McpDispatcher
                 var name = p.GetProperty("name").GetString() ?? "";
                 var args = p.TryGetProperty("arguments", out var a) ? a.Clone() : JsonDocument.Parse("{}").RootElement;
                 if (!_tools.TryGetValue(name, out var tool))
-                    return Ok(id, new { content = new[] { new { type = "text", text = $"Unknown tool {name}" } }, isError = true });
+                    return Ok(id, seat.ErrorReply("not_found", $"Unknown tool {name}"));
                 if (!seat.Active)
-                    return Ok(id, new { content = new[] { new { type = "text", text = $"Player {seat.Id} is not in the game yet (title screen, loading or still joining). Wait and try again." } }, isError = true });
-                var (ok, text) = await seat.CallTool(tool, args);
-                return Ok(id, new { content = new[] { new { type = "text", text } }, isError = !ok });
+                    return Ok(id, seat.ErrorReply("not_ready", $"Player {seat.Id} is not in the game yet (title screen, loading or still joining). Wait and try again."));
+                return Ok(id, await seat.CallToolReply(tool, args));
             default:
                 return new { jsonrpc = "2.0", id, error = new { code = -32601, message = $"Method not found: {method}" } };
         }
