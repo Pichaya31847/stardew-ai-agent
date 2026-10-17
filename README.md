@@ -64,13 +64,10 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `quests`, `accept_quest` | Quest journal with story, giver, progress and reward; today's Help Wanted request and who took it; Special Orders; `share` posts yours to the plan board; `accept_quest` takes the Help Wanted request |
 | `crack_geode`, `trash`, `watch_tv` | Clint cracks geodes (25g each); throw items away (valuables need `confirm`); watch a TV channel (weather, fortune, Queen of Sauce, tips) |
 | `shop_list`, `buy`, `ship`, `eat` | Shopping, shipping bin, food |
-<<<<<<< HEAD
+| `fish` | Walk to the best shore for the rod, cast `tries` times, play the BobberBar minigame and pick up treasure. Costs energy and game time per cast; one result line per cast. Needs a fishing rod (Willy, at the Beach) |
+| `crops`, `item_info` | Game knowledge read from the game's own data, no game time: `crops` is a season planner (growth and regrow days, last day to plant, harvests that fit, seed and sell prices, gold per tile per day, marks the seeds you carry); `item_info` gives an object's sell prices by quality, what it restores, shops that sell it and recipes that use it |
 | `wait`, `go_to_bed` | Let time pass, end the day (`go_to_bed` refuses until today's `journal` is written) |
 | `journal` | The AI's memory across days, costs no game time: a diary for the viewers, lessons (appended), a plan with Season / Week / Today sections (replaced section by section) and optional facts. Written to `diary_NNN.md`, `lessons.md`, `plan.md`, `notes.md` in the log folder; `day` catches up a missed day |
-=======
-| `fish` | Walk to the best shore for the rod, cast `tries` times, play the BobberBar minigame and pick up treasure. Costs energy and game time per cast; one result line per cast. Needs a fishing rod (Willy, at the Beach) |
-| `wait`, `go_to_bed` | Let time pass, end the day |
->>>>>>> origin/fix/issue-4
 | `say`, `whisper`, `emote`, `give` | Multi-player (split-screen): chat to everyone, tell one player privately, show an emote, hand an item to a nearby player. All cost no game time |
 | `plan_read`, `plan_edit` | Shared plan board with an edit history (author and time) |
 
