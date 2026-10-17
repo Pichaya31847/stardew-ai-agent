@@ -46,6 +46,8 @@ public static class WorldText
             var quests = p.questLog.Where(q => q != null && !q.completed.Value).Select(q => q.GetName()).Take(4).ToList();
             if (quests.Count > 0) sb.AppendLine($"Active quests: {string.Join(" | ", quests)} (quests has the details)");
         }
+        var inView = Perception.InViewText(Perception.ViewRadius);
+        if (inView.Length > 0) sb.AppendLine(inView);
         sb.Append(MenuState());
         return sb.ToString().TrimEnd();
     }
@@ -292,6 +294,9 @@ public static class WorldText
             var shown = string.Join(" ", pts.Take(10).Select(t => $"({t.x},{t.y})"));
             sb.AppendLine($"  {kv.Key} x{pts.Count}: {shown}{(pts.Count > 10 ? " ..." : "")}");
         }
+
+        var inView = Perception.InViewText(radius);
+        if (inView.Length > 0) sb.AppendLine(inView);
 
         var exits = loc.warps.Select(wp => $"{wp.TargetName}").Concat(loc.doors.Values.Select(d => d)).Distinct().ToList();
         if (exits.Count > 0)

@@ -59,6 +59,7 @@ public static class DebugApi
             Op("chat_log", ChatLog),
             Op("disconnect", Disconnect),
             Op("hang", Hang, needsWorld: false),
+            Op("perception", PerceptionOp),
         }.ToDictionary(t => t.Name);
     }
 
@@ -319,6 +320,19 @@ public static class DebugApi
     {
         _hangSeconds = Math.Clamp(I(a, "seconds", 300), 1, 1800);
         c.Result = $"Blocking the game loop for {_hangSeconds}s from the next tick";
+        yield break;
+    }
+
+    /// <summary>
+    /// Perception switches for the smoke runner: <c>interrupts</c> 0/1 stops/allows events from interrupting running actions
+    /// (the runner turns them off so cases that walk past other seats are not cut short), <c>clear</c> 1 drops every seat's pending events.
+    /// </summary>
+    private static IEnumerator PerceptionOp(JsonElement a, CallContext c)
+    {
+        Perception.SyncSave(); // so a save change that has not been noticed yet cannot undo this call
+        if (Has(a, "interrupts")) Perception.Interrupts = I(a, "interrupts", 1) != 0;
+        if (Has(a, "clear") && I(a, "clear", 0) != 0) Perception.Clear();
+        c.Result = $"Perception interrupts are {(Perception.Interrupts ? "on" : "off")}";
         yield break;
     }
 

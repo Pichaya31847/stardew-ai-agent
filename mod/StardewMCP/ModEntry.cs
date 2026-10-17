@@ -30,6 +30,7 @@ public class ModEntry : Mod
         Players.Init(helper, Monitor, _config, _log);
         WorldClock.Init(_config);
         PassOut.Init(_log);
+        Perception.Init();
         SplitScreen.Init(helper, Monitor, _config);
         SplitScreenPatches.Apply(ModManifest, _config);
         SocialTools.Apply(ModManifest);

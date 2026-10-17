@@ -139,8 +139,9 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 | Loans, debts | no mechanic | a promise on the plan board, paid with Send money | story | #39, #48 |
 | Give an item to a player | action holding the item → `SendProposal(Gift)`: one item, the receiver may decline | `give` (PR #50 moves the stack directly, no decline) | ✅ different path | #39 |
 | Marriage, dance, baby between players | `SendProposal(Marriage/Dance/Baby)` → `PendingProposalDialog` | `interact(holding)` + `menu choose` | ❌ | |
-| Owned plots and chests | no mechanic | mod rule: a cabin and its chests belong to its owner; plots on the plan board | ❌ | #40 |
-| Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action; P4 must accept automatically | ❌ untested | #38 |
+| Owned plots and chests | no mechanic | mod rule (`Ownership`): chests and machines carry `Object.owner`, crops record their planter in `HoeDirt.modData`; taking from or harvesting another seat's claim logs a `theft` entry | ✅ smoke `ownership` | #52, #40 |
+| Seeing what others do, being interrupted | no mechanic (the game draws the other farmers and nothing more) | mod rule (`Perception`): `look` and `status` list the other AI players in view with the tool they run, its reason and how long, next to their last `say` and plan board section. An @mention, whisper, gift, a player coming into view or entering your house, a theft (`Ownership.Theft`), rain starting and crows on the farm add an `Events:` block to the next tool result and stop a running `wait`, `walk_to`, `travel_to` or farm action (`AgentRuntime.Interrupt`). P4 neither sees nor is seen | 🟡 written, smoke `caught_slacking` not run yet; damage and monster interrupts wait for #6 | #40 |
+| Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action; P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together` | #52, #38 |
 
 ## Choice policy
 
