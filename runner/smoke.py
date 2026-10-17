@@ -298,6 +298,12 @@ def fresh_state() -> dict:
     return state()
 
 
+def journal_and_sleep(diary: str) -> str:
+    """#21: go_to_bed refuses until today's journal is written, so every case that sleeps writes one first."""
+    ok("journal", diary=diary, lessons="Smoke lesson: water the crops before bed.", plan="## Today\nSmoke plan: water the parsnips.")
+    return ok("go_to_bed", reason="smoke test")
+
+
 # ---------------------------------------------------------------------- cases
 
 
@@ -376,7 +382,7 @@ def farm_loop():
     ok("use_tool", tool="Watering Can", tiles=tiles, reason="smoke test")
 
     day = fresh_state().get("day")
-    ok("go_to_bed", diary="Smoke test diary: tilled, planted and watered three parsnips.", reason="smoke test")
+    journal_and_sleep("Smoke test diary: tilled, planted and watered three parsnips.")
     now = fresh_state().get("day")
     if now != day + 1:
         raise Smoke(f"day did not advance (was {day}, now {now})")
@@ -388,12 +394,91 @@ def ship_and_sleep():
     debug("add_item", id="(O)24", qty=3)  # Parsnip
     ok("ship", item="Parsnip", quantity=3, reason="smoke test")
     day = fresh_state().get("day")
-    text = ok("go_to_bed", diary="Smoke test diary: shipped three parsnips and went to sleep.", reason="smoke test")
+    text = journal_and_sleep("Smoke test diary: shipped three parsnips and went to sleep.")
     m = re.search(r"shipping income (-?\d+)g", text)
     if not m or int(m.group(1)) <= 0:
         raise Smoke(f"expected positive shipping income, got: {text.splitlines()[0]}")
     if fresh_state().get("day") != day + 1:
         raise Smoke("day did not advance")
+
+
+def memory_of(seat: str = "p1") -> dict:
+    """What the journal tool wrote for a seat: {"lessons", "plan", "notes"} (GET /api/memory)."""
+    return _request("/api/memory", timeout=10)[seat]
+
+
+def lesson_lines(text: str, day: int, *, of_day: bool) -> list[str]:
+    """Lines of lessons.md that belong to `day` (of_day=True) or to any other day."""
+    return [ln for ln in text.splitlines() if ln.strip() and ln.startswith(f"- Day {day}: ") == of_day]
+
+
+@case("journal")
+def journal():
+    """#21: go_to_bed needs today's journal; lessons are appended, the plan is replaced section by section."""
+    reset("Farm")
+    day = fresh_state().get("day")
+    good, text = call("go_to_bed", reason="smoke test")
+    if good or "journal" not in text:
+        raise Smoke(f"go_to_bed without a journal should fail and name the journal tool, got: {text.splitlines()[0]}")
+    if fresh_state().get("day") != day:
+        raise Smoke("go_to_bed without a journal still ended the day")
+
+    diary = "Smoke test diary: checked that the journal is needed before sleeping."
+    for bad in ({"diary": "short", "lessons": "x", "plan": "y"},
+                {"diary": diary, "lessons": "  ", "plan": "y"},
+                {"diary": diary, "lessons": "x", "plan": ""},
+                {"diary": diary, "lessons": "x", "plan": "y", "day": day + 1},
+                {"diary": diary, "lessons": "x", "plan": "y", "day": 0}):
+        if call("journal", **bad)[0]:
+            raise Smoke(f"journal accepted {bad}")
+    if call("go_to_bed", reason="smoke test")[0]:
+        raise Smoke("a rejected journal still unlocked go_to_bed")
+
+    fact = f"SMOKE-NOTE-{int(time.time())} Pierre closes at 17:00"  # new every run: notes.md keeps facts from earlier runs
+    other_lessons = lesson_lines(memory_of()["lessons"], day, of_day=False)
+    text = ok("journal", diary=diary,
+              lessons="- Smoke lesson A: water first.\n2. Smoke lesson B: sell before 17:00.",
+              plan="## Season\nSMOKE-SEASON goal\n## Today\nSMOKE-TODAY-1",
+              notes=f"shops: {fact}")
+    if f"farm day {day}" not in text or "go_to_bed" not in text:
+        raise Smoke(f"unexpected journal result: {text.splitlines()[0]}")
+    mem = memory_of()
+    mine = lesson_lines(mem["lessons"], day, of_day=True)
+    if mine != [f"- Day {day}: Smoke lesson A: water first.", f"- Day {day}: Smoke lesson B: sell before 17:00."]:
+        raise Smoke(f"lessons.md should hold today's two lessons as '- Day N: ...' lines, today's lines are: {mine}")
+    if lesson_lines(mem["lessons"], day, of_day=False) != other_lessons:
+        raise Smoke("journal changed the lessons of other days")
+    if "SMOKE-SEASON goal" not in mem["plan"] or "SMOKE-TODAY-1" not in mem["plan"]:
+        raise Smoke(f"plan.md lacks the Season and Today sections:\n{mem['plan']}")
+    if f"[shops, day {day}] {fact}" not in mem["notes"]:
+        raise Smoke(f"notes.md lacks the fact:\n{mem['notes']}")
+
+    # Writing again the same day replaces that day's lessons, replaces the sections it names, keeps the others, adds no duplicate fact.
+    ok("journal", diary=diary, lessons="Smoke lesson C: one is enough.", plan="## Today\nSMOKE-TODAY-2",
+       notes=f"shops: {fact}")
+    mem = memory_of()
+    if lesson_lines(mem["lessons"], day, of_day=True) != [f"- Day {day}: Smoke lesson C: one is enough."]:
+        raise Smoke("a second journal the same day should replace that day's lessons, not add to them")
+    if "SMOKE-TODAY-2" not in mem["plan"] or "SMOKE-TODAY-1" in mem["plan"] or "SMOKE-SEASON goal" not in mem["plan"]:
+        raise Smoke(f"plan.md should have the new Today and the old Season:\n{mem['plan']}")
+    if mem["notes"].count(fact) != 1:
+        raise Smoke(f"the same fact was noted twice:\n{mem['notes']}")
+
+    ok("go_to_bed", reason="smoke test")
+    if fresh_state().get("day") != day + 1:
+        raise Smoke("day did not advance after journal + go_to_bed")
+    good, text = call("go_to_bed", reason="smoke test")
+    if good or "journal" not in text:
+        raise Smoke("yesterday's journal must not unlock today's go_to_bed")
+
+    # Catching up a missed day (#22): allowed for a past day, and it does not unlock today.
+    text = ok("journal", diary=diary, lessons="Smoke lesson D: caught up late.", plan="## Today\nSMOKE-TODAY-3", day=day)
+    if f"farm day {day}" not in text or "still to be written" not in text:
+        raise Smoke(f"a catch-up journal should say today's is still missing: {text}")
+    if f"- Day {day}: Smoke lesson D: caught up late." not in memory_of()["lessons"]:
+        raise Smoke("the catch-up lesson is not filed under the missed day")
+    if call("go_to_bed", reason="smoke test")[0]:
+        raise Smoke("a catch-up journal for an old day unlocked today's go_to_bed")
 
 
 @case("briefing")
@@ -404,7 +489,7 @@ def morning_briefing():
     debug("add_mail", id="smoke_letter")
     if "📬" not in ok("inventory"):
         raise Smoke("the footer does not show the mailbox hint while a letter is waiting")
-    ok("go_to_bed", diary="Smoke test diary: shipped five parsnips and left a letter in the mailbox.", reason="smoke test")
+    journal_and_sleep("Smoke test diary: shipped five parsnips and left a letter in the mailbox.")
     data = {}
     for _ in range(30):  # the report is built about 1.5 s after the morning starts
         data = _request("/api/briefing?seat=p1", timeout=10)
@@ -461,7 +546,7 @@ def choose_profession():
         raise SkipCase("this save already has professions; run the gate on an earlier save")
     debug("set_skill", skill="farming", level=5)
     debug("set_skill", skill="fishing", level=5)
-    ok("go_to_bed", diary="Smoke test diary: reached farming and fishing level 5 today.", reason="smoke test")
+    journal_and_sleep("Smoke test diary: reached farming and fishing level 5 today.")
 
     status = ok("status")
     for skill in ("Farming 5", "Fishing 5"):
@@ -474,7 +559,7 @@ def choose_profession():
     if good:
         raise Smoke("choose_profession accepted a skill with no pending choice")
 
-    ok("go_to_bed", diary="Smoke test diary: chose Tiller and left the fishing choice to the default.", reason="smoke test")
+    journal_and_sleep("Smoke test diary: chose Tiller and left the fishing choice to the default.")
     status = ok("status")
     m = re.search(r"^Professions: (.+)$", status, re.M)
     if not m or "Tiller" not in m.group(1) or "Fisher" not in m.group(1):
@@ -736,6 +821,24 @@ def plan_board():
         ok_seat("p1", "plan_edit", section=section, text="")
     if "p2 waters at noon" in ok_seat("p1", "plan_read", history=0):
         raise Smoke("cleared section is still on the board")
+
+
+@case("journal_seats")
+@social
+def journal_seats():
+    """#21: each seat has its own journal and lessons files; p1's journal does not unlock p2's go_to_bed."""
+    reset("Farm")
+    diary = "Smoke test diary: the seats keep separate journals."
+    ok_seat("p1", "journal", diary=diary, lessons="SMOKE-P1-LESSON", plan="## Today\nSMOKE-P1-PLAN")
+    good, text = call_seat("p2", "go_to_bed", {"reason": "smoke test"})
+    if good or "journal" not in text:
+        raise Smoke(f"p2 slept on p1's journal, or the failure does not name the journal: {text.splitlines()[0]}")
+    ok_seat("p2", "journal", diary=diary, lessons="SMOKE-P2-LESSON", plan="## Today\nSMOKE-P2-PLAN")
+    p1, p2 = memory_of("p1"), memory_of("p2")
+    if "SMOKE-P2" in p1["lessons"] + p1["plan"] or "SMOKE-P1" in p2["lessons"] + p2["plan"]:
+        raise Smoke(f"journals of p1 and p2 mixed:\np1 {p1}\np2 {p2}")
+    if "SMOKE-P1-LESSON" not in p1["lessons"] or "SMOKE-P2-LESSON" not in p2["lessons"]:
+        raise Smoke("a seat's lesson is missing from its own lessons file")
 
 
 @case("emote")

@@ -121,7 +121,7 @@ public static partial class AgentTools
 
     public static List<ToolDef> All()
     {
-        return new List<ToolDef>(SocialTools.All().Concat(EconomyTools.All()).Concat(Core()));
+        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(Core()));
     }
 
     private static List<ToolDef> Core()
@@ -288,8 +288,8 @@ public static partial class AgentTools
             new()
             {
                 Name = "go_to_bed",
-                Description = $"End the day: walk home to your bed and sleep. Write your diary for today IN {Lang.ToUpperInvariant()} first (what you did, what went well/badly, plan for tomorrow). Crops grow and shipped items are sold overnight.",
-                Schema = Obj(new { diary = Str($"Today's diary in {Lang}, 3-8 sentences, written as yourself (Claude Haiku) farming"), reason = Str(ReasonDesc) }, "diary", "reason"),
+                Description = "End the day: walk home to your bed and sleep. Write today's journal first (the journal tool: diary, lessons and plan); go_to_bed refuses until it is written. Crops grow and shipped items are sold overnight.",
+                Schema = Obj(new { reason = Str(ReasonDesc) }, "reason"),
                 Run = GoToBed
             }
         };
@@ -1135,12 +1135,14 @@ public static partial class AgentTools
 
     private static IEnumerator GoToBed(JsonElement a, CallContext c)
     {
-        var diary = S(a, "diary").Trim();
-        if (diary.Length < 20) { c.Fail($"Write a real diary entry in {Lang} first (diary parameter)."); yield break; }
+        if (!Rt.Log.HasJournal(AgentLog.FarmDay))
+        {
+            c.Fail($"Write today's journal first: call journal with your diary, lessons and plan (it costs no game time), then call go_to_bed again. Farm day {AgentLog.FarmDay} has no journal yet.");
+            yield break;
+        }
 
         int dayBefore = Game1.Date.TotalDays;
         int moneyBefore = P.Money;
-        Rt.Log.WriteDiary(AgentLog.FarmDay, diary);
         Professions.ResolveDefaults(Rt, P, "not chosen before bed");
         // A menu left open (a shop after a failed buy) would block the walk home and hold the others' sleep check.
         if (Game1.activeClickableMenu != null)
