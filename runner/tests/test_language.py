@@ -36,7 +36,7 @@ def test_template_has_no_hardcoded_thai_and_only_known_placeholders():
 
 def test_thai_system_prompt_keeps_the_old_wording():
     text = filled("Thai")
-    assert text.startswith("You are **Claude Haiku 5.5**, playing Stardew Valley by yourself in a 100-day challenge. Thai YouTube viewers watch")
+    assert text.startswith("You are **{MODEL_NAME}**, playing Stardew Valley by yourself in a 100-day challenge. Thai YouTube viewers watch")
     assert "# Thai output (viewers read this)" in text
     assert "must be **in Thai**, natural and a little playful, first person (\"ผม\")." in text
     assert 'e.g. "ถางหญ้ารอบบ้านเพื่อเปิดพื้นที่ปลูกผัก".' in text

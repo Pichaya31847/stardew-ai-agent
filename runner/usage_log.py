@@ -74,6 +74,44 @@ class UsageTracker:
         self._messages: dict[str, dict] = {}  # assistant message id -> its latest usage
 
     def feed(self, ev: dict) -> None:
+        event = ev.get("event")
+        if event == "init":
+            self.session_id = ev.get("conversation_id") or self.session_id
+            init_data = ev.get("init") or {}
+            self.model = init_data.get("model") or self.model
+            return
+        elif event == "step_update":
+            su = ev.get("step_update") or {}
+            self.session_id = su.get("conversation_id") or self.session_id
+            st = su.get("step_type")
+            if st == "tool" and su.get("state") == "ACTIVE":
+                key = f"step-{su.get('step_index', self.tool_calls)}"
+                if key not in self._tool_ids:
+                    self._tool_ids.add(key)
+                    self.tool_calls += 1
+            elif st == "agent_response":
+                usage = su.get("usage")
+                if isinstance(usage, dict):
+                    self.peak_context = max(self.peak_context, _context_of(usage))
+                    self._messages[f"step-{su.get('step_index', len(self._messages))}"] = usage
+                text = su.get("text_delta") or ""
+                if "Session break:" in text:
+                    self.break_seen = True
+            return
+        elif event == "result":
+            res = ev.get("result") or {}
+            self.session_id = res.get("conversation_id") or self.session_id
+            is_err = res.get("status") != "SUCCESS"
+            self.result = {
+                "subtype": "success" if not is_err else "error",
+                "is_error": is_err,
+                "session_id": self.session_id,
+                "num_turns": res.get("num_turns"),
+                "duration_ms": int((res.get("duration_seconds") or 0) * 1000),
+                "usage": res.get("usage") or {},
+            }
+            return
+
         kind = ev.get("type")
         if kind == "system" and ev.get("subtype") == "init":
             self.session_id = ev.get("session_id") or self.session_id
@@ -232,12 +270,12 @@ def summary(rows: list[dict]) -> str:
 
 # ---------------------------------------------------------------------- transcripts <-> csv
 
-_TRANSCRIPT = re.compile(r"claude_day_(\d+)_part(\d+)\.jsonl$")
+_TRANSCRIPT = re.compile(r"(?:claude|agy)_day_(\d+)_part(\d+)\.jsonl$")
 
 
 def transcripts(log_dir: Path) -> dict[tuple[int, int], Path]:
     found = {}
-    for p in Path(log_dir).glob("claude_day_*_part*.jsonl"):
+    for p in Path(log_dir).glob("*_day_*_part*.jsonl"):
         m = _TRANSCRIPT.search(p.name)
         if m:
             found[(int(m.group(1)), int(m.group(2)))] = p

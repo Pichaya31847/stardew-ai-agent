@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Haiku Replay</title>
+<title>Stardew Replay</title>
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root { --bg: #f7f1e3; --card: #fffaf0; --ink: #2b2118; --muted: #7a6a55; --edge: #e2d3b4; --accent: #c7782b; --ok: #3f8f2e; --bad: #c0392b; --think: #8a5a00; }
@@ -60,7 +60,7 @@ const API = (new URLSearchParams(location.search).get("api") || (location.port =
 const LANG_NAMES = { thai: "th", english: "en" };
 const I18N = {
   en: {
-    title: "Claude Haiku plays Stardew — Replay",
+    title: "AI plays Stardew — Replay",
     fThink: "Thoughts", fAct: "Actions", fRes: "Results", fSys: "System",
     pickDay: "Pick a day on the left",
     noDiary: "(no diary for this day yet)",
@@ -69,7 +69,7 @@ const I18N = {
     rowThink: "💭 think",
   },
   th: {
-    title: "Claude Haiku เล่น Stardew — Replay",
+    title: "AI เล่น Stardew — Replay",
     fThink: "ความคิด", fAct: "การกระทำ", fRes: "ผลลัพธ์", fSys: "ระบบ",
     pickDay: "เลือกวันทางซ้าย",
     noDiary: "(ยังไม่มีไดอารี่วันนี้)",
@@ -99,7 +99,16 @@ function setLang(name) {
 // /api/feed always carries thoughtLanguage (even before a save is loaded); an `after` past the end keeps the reply tiny
 async function initLang() {
   let name = null;
-  if (!LANG_PARAM) try { name = (await (await fetch(`${API}/api/feed?after=9007199254740991`)).json()).thoughtLanguage; } catch (e) { /* default */ }
+  try {
+    const feed = await (await fetch(`${API}/api/feed?after=9007199254740991`)).json();
+    name = feed.thoughtLanguage;
+    if (feed.meta && feed.meta.model) {
+      const m = feed.meta.model;
+      I18N.en.title = `${m} plays Stardew — Replay`;
+      I18N.th.title = `${m} เล่น Stardew — Replay`;
+      document.title = `${m} Replay`;
+    }
+  } catch (e) { /* default */ }
   setLang(name);
 }
 

@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<title>Haiku Overlay</title>
+<title>Farmer Overlay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -497,7 +497,10 @@ async function poll() {
     setLang(d.thoughtLanguage);
     const s = d.state || {};
     meta = d.meta || {};
-    if (meta.model) modelShort = meta.model.replace(/^Claude\s+/i, "").trim();
+    if (meta.model) {
+      modelShort = meta.model.replace(/^(Claude|Gemini)\s+/i, "").trim();
+      document.title = meta.model + " Overlay";
+    }
     const runnerStatus = (meta.runnerStatus || "").trim();   // set by the runner (e.g. usage-limit wait); "" clears it
     $("runnerText").textContent = runnerStatus;
     $("runnerLine").classList.toggle("hide", !runnerStatus);

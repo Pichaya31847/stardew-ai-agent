@@ -35,6 +35,7 @@ any case fails. That needs "EnableDebugApi": true in the mod's config.json; pass
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass, field
 import json
 import os
 import shutil
@@ -64,6 +65,7 @@ from run_control import RunControl  # noqa: E402
 
 API = "http://localhost:8770"
 CLAUDE_CMD = ["claude"]  # tests swap in a fake
+AGY_CMD = ["agy"]  # tests swap in a fake
 DEFAULT_OUT = HERE.parent / "runs"
 GUARD = game_watchdog.NullWatchdog()  # replaced in main() unless --no-watchdog
 DEFAULT_GOAL = (
@@ -159,32 +161,235 @@ def save_folder() -> Path | None:
         return None
 
 
+@dataclass
+class NormalizedEvent:
+    kind: str  # "init", "tool_call", "result"
+    session_id: str = ""
+    model: str = ""
+    tool_name: str = ""
+    tool_args: dict = field(default_factory=dict)
+    is_disallowed: bool = False
+    subtype: str = ""
+    is_error: bool = False
+    num_turns: int = 0
+    cost_usd: float = 0.0
+    error_message: str = ""
+
+
+KNOWN_STARDEW_TOOLS = {
+    "think", "status", "look", "walk_to", "use_tool", "go_to_bed", "journal", "wait",
+    "interact", "respond", "close_menu", "menu", "say", "whisper", "emote", "give",
+    "farm_summary", "harvest_all", "water_all", "clear_area", "till_area", "plant",
+    "craft", "cook", "eat", "quests", "accept_quest", "crack_geode", "watch_tv",
+    "ship", "shop_list", "buy", "sell", "calendar", "festival", "crops", "item_info",
+    "equip", "special_orders", "fight", "leave_mine", "fish", "build", "upgrade_house",
+    "buy_animal", "animals", "choose_profession", "trash", "chest", "plan_read", "plan_edit"
+}
+
+
+def normalize_agy_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
+    if raw_name.startswith("mcp_stardew_"):
+        return raw_name[len("mcp_stardew_"):], True
+    if raw_name.startswith("stardew_"):
+        return raw_name[len("stardew_"):], True
+    if raw_name == "call_mcp_tool":
+        srv = (arg.get("server_name") or arg.get("server") or "").lower()
+        if srv == "stardew":
+            tool_name = arg.get("tool_name") or arg.get("name") or "tool"
+            return tool_name, True
+        return raw_name, False
+    if raw_name in KNOWN_STARDEW_TOOLS:
+        return raw_name, True
+    return raw_name, False
+
+
+def ensure_agy_mcp(mcp_url: str) -> None:
+    """Ensure the 'stardew' MCP server is registered in agy CLI and points to the running game."""
+    try:
+        res = subprocess.run([*AGY_CMD, "mcp", "list"], capture_output=True, text=True, check=False)
+        output = res.stdout or ""
+        found_stardew = False
+        stardew_enabled = False
+        for line in output.splitlines():
+            parts = line.split()
+            if parts and parts[0] == "stardew":
+                found_stardew = True
+                if len(parts) >= 3 and parts[2].lower() == "enabled":
+                    stardew_enabled = True
+                break
+        if not found_stardew:
+            subprocess.run([*AGY_CMD, "mcp", "add", "stardew", mcp_url], capture_output=True, text=True, check=False)
+        elif not stardew_enabled:
+            subprocess.run([*AGY_CMD, "mcp", "enable", "stardew"], capture_output=True, text=True, check=False)
+    except Exception:
+        pass
+
+
+class Backend:
+    name: str = "base"
+    default_model: str = ""
+
+    @property
+    def display_name(self) -> str:
+        return "AI"
+
+    def prepare(self, args, out_dir: Path) -> None:
+        pass
+
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> tuple[list[str], dict[str, str], Path, Path]:
+        raise NotImplementedError
+
+    def parse_event(self, ev: dict) -> list[NormalizedEvent]:
+        raise NotImplementedError
+
+    def text_session(self, args, out_dir: Path, label: str) -> memory.Session:
+        raise NotImplementedError
+
+
+class ClaudeBackend(Backend):
+    name = "claude"
+    default_model = "claude-haiku-5-5"
+
+    @property
+    def display_name(self) -> str:
+        return "Claude Haiku 5.5"
+
+    def prepare(self, args, out_dir: Path) -> None:
+        pass
+
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1):
+        mcp_cfg = out_dir / "mcp.json"
+        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False))
+        mcp_cfg.write_text(json.dumps({"mcpServers": {"stardew": {"type": "http", "url": mcp_url}}}), encoding="utf-8")
+        sys_file = out_dir / f"system_day_{day:03}.md"
+        sys_file.write_text(system_prompt, encoding="utf-8")
+
+        transcript = out_dir / "logs" / (f"claude_day_{day:03}_part{part}" + (f"_retry{attempt - 1}" if attempt > 1 else "") + ".jsonl")
+        workdir = out_dir / "workdir"
+        workdir.mkdir(exist_ok=True)
+
+        cmd = [
+            *CLAUDE_CMD, "-p", prompt,
+            "--model", args.model,
+            "--system-prompt-file", str(sys_file),
+            "--mcp-config", str(mcp_cfg), "--strict-mcp-config",
+            "--tools", "",
+            "--allowedTools", "mcp__stardew__*",
+            "--setting-sources", "project",
+            "--output-format", "stream-json", "--verbose",
+            "--max-turns", str(args.max_turns),
+        ]
+        env = dict(os.environ)
+        env["MCP_TOOL_TIMEOUT"] = "600000"
+        env["MCP_TIMEOUT"] = "60000"
+        return cmd, env, transcript, workdir
+
+    def parse_event(self, ev: dict) -> list[NormalizedEvent]:
+        kind = ev.get("type")
+        if kind == "system" and ev.get("subtype") == "init":
+            return [NormalizedEvent(kind="init", session_id=ev.get("session_id", ""), model=ev.get("model", ""))]
+        elif kind == "assistant":
+            items = []
+            for c in ev.get("message", {}).get("content", []):
+                if c.get("type") == "tool_use":
+                    name = c["name"].replace("mcp__stardew__", "")
+                    items.append(NormalizedEvent(kind="tool_call", tool_name=name, tool_args=c.get("input", {})))
+            return items
+        elif kind == "result":
+            return [NormalizedEvent(
+                kind="result",
+                subtype=ev.get("subtype", ""),
+                is_error=bool(ev.get("is_error")),
+                num_turns=ev.get("num_turns", 0),
+                cost_usd=float(ev.get("total_cost_usd", 0.0) or 0.0),
+                error_message=str(ev.get("result", "")),
+            )]
+        return []
+
+    def text_session(self, args, out_dir: Path, label: str) -> memory.Session:
+        return claude_text_session(args, out_dir, label)
+
+
+class AgyBackend(Backend):
+    name = "agy"
+    default_model = "gemini-3.8-flash-medium"
+
+    @property
+    def display_name(self) -> str:
+        return "Gemini 3.8 Flash"
+
+    def prepare(self, args, out_dir: Path) -> None:
+        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False))
+        ensure_agy_mcp(mcp_url)
+
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1):
+        # agy has no --system-prompt-file: prepend system prompt to -p prompt
+        full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+        transcript = out_dir / "logs" / (f"agy_day_{day:03}_part{part}" + (f"_retry{attempt - 1}" if attempt > 1 else "") + ".jsonl")
+        workdir = out_dir / "workdir"
+        workdir.mkdir(exist_ok=True)
+
+        cmd = [
+            *AGY_CMD, "-p", full_prompt,
+            "--model", args.model,
+            "--output-format", "stream-json",
+            "--dangerously-skip-permissions",
+        ]
+        if getattr(args, "print_timeout", 0):
+            cmd.extend(["--print-timeout", f"{args.print_timeout}s"])
+        env = dict(os.environ)
+        env["MCP_TOOL_TIMEOUT"] = "600000"
+        env["MCP_TIMEOUT"] = "60000"
+        return cmd, env, transcript, workdir
+
+    def parse_event(self, ev: dict) -> list[NormalizedEvent]:
+        event = ev.get("event")
+        if event == "init":
+            init_obj = ev.get("init", {})
+            return [NormalizedEvent(kind="init", session_id=ev.get("conversation_id", ""), model=init_obj.get("model", ""))]
+        elif event == "step_update":
+            su = ev.get("step_update", {})
+            if su.get("step_type") == "tool" and su.get("state") == "ACTIVE":
+                raw_name = su.get("tool_name", "")
+                tinfo = su.get("tool_info", {})
+                arg = tinfo.get("parameters", {})
+                name, is_stardew = normalize_agy_tool(raw_name, arg)
+                if not is_stardew:
+                    return [NormalizedEvent(kind="tool_call", tool_name=raw_name, tool_args=arg, is_disallowed=True)]
+                return [NormalizedEvent(kind="tool_call", tool_name=name, tool_args=arg)]
+            return []
+        elif event == "result":
+            res = ev.get("result", {})
+            status = res.get("status", "")
+            is_err = status != "SUCCESS"
+            return [NormalizedEvent(
+                kind="result",
+                subtype=status.lower(),
+                is_error=is_err,
+                num_turns=res.get("num_turns", 0),
+                error_message=str(res.get("response", "")),
+            )]
+        return []
+
+    def text_session(self, args, out_dir: Path, label: str) -> memory.Session:
+        return agy_text_session(args, out_dir, label)
+
+
+def get_backend(name: str) -> Backend:
+    name = (name or "claude").lower()
+    if name == "agy":
+        return AgyBackend()
+    elif name == "claude":
+        return ClaudeBackend()
+    raise ValueError(f"Unknown backend: {name}")
+
+
 def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> sessions.PartResult:
-    mcp_cfg = out_dir / "mcp.json"
-    mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False))
-    mcp_cfg.write_text(json.dumps({"mcpServers": {"stardew": {"type": "http", "url": mcp_url}}}), encoding="utf-8")
-    sys_file = out_dir / f"system_day_{day:03}.md"
-    sys_file.write_text(system_prompt, encoding="utf-8")
+    backend_name = getattr(args, "backend", "claude")
+    backend = get_backend(backend_name)
+    backend.prepare(args, out_dir)
 
-    # a retry of the same part after a usage-limit wait must not overwrite the first attempt's transcript
-    transcript = out_dir / "logs" / (f"claude_day_{day:03}_part{part}" + (f"_retry{attempt - 1}" if attempt > 1 else "") + ".jsonl")
-    workdir = out_dir / "workdir"
-    workdir.mkdir(exist_ok=True)
-
-    cmd = [
-        *CLAUDE_CMD, "-p", prompt,
-        "--model", args.model,
-        "--system-prompt-file", str(sys_file),
-        "--mcp-config", str(mcp_cfg), "--strict-mcp-config",
-        "--tools", "",
-        "--allowedTools", "mcp__stardew__*",
-        "--setting-sources", "project",
-        "--output-format", "stream-json", "--verbose",
-        "--max-turns", str(args.max_turns),
-    ]
-    env = dict(os.environ)
-    env["MCP_TOOL_TIMEOUT"] = "600000"
-    env["MCP_TIMEOUT"] = "60000"
+    cmd, env, transcript, workdir = backend.build_cmd(args, out_dir, day, prompt, system_prompt, part, attempt)
 
     print(f"[{datetime.now():%H:%M:%S}] day {day} part {part}: starting {args.model}")
     session_id = ""
@@ -214,29 +419,46 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                 continue
             limit.feed(ev)
             tracker.feed(ev)
-            if ev.get("type") == "system" and ev.get("subtype") == "init":
-                session_id = ev.get("session_id", "")
-                model = ev.get("model", args.model)
-                print(f"  session {session_id} model {model}")
-                try:
-                    api_post("/api/meta", {"model": "Claude Haiku 5.5", "modelId": model, "session": session_id,
-                                           "run": f"day {day} · part {part}",
-                                           "event": f"Claude session {session_id} started ({model}), day {day} part {part}"})
-                except Exception:
-                    pass
-            elif ev.get("type") == "assistant":
-                for c in ev.get("message", {}).get("content", []):
-                    if c.get("type") == "tool_use":
-                        tool_calls += 1
-                        name = c["name"].replace("mcp__stardew__", "")
-                        arg = c.get("input", {})
-                        short = arg.get("text") or arg.get("reason") or ""
-                        print(f"  #{tool_calls} {name} {short[:90]}")
-            elif ev.get("type") == "result":
-                print(f"  result: {ev.get('subtype')} turns={ev.get('num_turns')} cost=${ev.get('total_cost_usd', 0):.3f}")
-                if ev.get("is_error") and tool_calls == 0 and not limit.info:
-                    GUARD.explain_failure()  # a dead game makes Claude fail at once: recover instead of stopping
-                    raise SystemExit(f"Claude error, stopping: {ev.get('result')}")
+
+            norm_events = backend.parse_event(ev)
+            stopped_by_turn_limit = False
+            for norm_ev in norm_events:
+                if norm_ev.kind == "init":
+                    session_id = norm_ev.session_id or session_id
+                    model = norm_ev.model or args.model
+                    print(f"  session {session_id} model {model}")
+                    try:
+                        api_post("/api/meta", {"model": backend.display_name, "modelId": model, "session": session_id,
+                                               "run": f"day {day} · part {part}",
+                                               "event": f"{backend.display_name} session {session_id} started ({model}), day {day} part {part}"})
+                    except Exception:
+                        pass
+                elif norm_ev.kind == "tool_call":
+                    if norm_ev.is_disallowed:
+                        print(f"  DISALLOWED TOOL: {norm_ev.tool_name}")
+                        if hasattr(proc, "kill"):
+                            proc.kill()
+                        raise SystemExit(f"Disallowed tool call aborted: {norm_ev.tool_name}")
+                    tool_calls += 1
+                    name = norm_ev.tool_name
+                    arg = norm_ev.tool_args
+                    short = arg.get("text") or arg.get("reason") or ""
+                    print(f"  #{tool_calls} {name} {short[:90]}")
+                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and backend.name == "agy":
+                        print(f"  result: error_max_turns turns={tool_calls}")
+                        if hasattr(proc, "kill"):
+                            proc.kill()
+                        stopped_by_turn_limit = True
+                        break
+                elif norm_ev.kind == "result":
+                    cost_str = f" cost=${norm_ev.cost_usd:.3f}" if (norm_ev.cost_usd or backend.name == "claude") else ""
+                    print(f"  result: {norm_ev.subtype} turns={norm_ev.num_turns}{cost_str}")
+                    if norm_ev.is_error and tool_calls == 0 and not limit.info:
+                        GUARD.explain_failure()  # a dead game makes Claude/agy fail at once: recover instead of stopping
+                        err_label = "Claude" if backend.name == "claude" else "agy"
+                        raise SystemExit(f"{err_label} error, stopping: {norm_ev.error_message}")
+            if stopped_by_turn_limit:
+                break
         proc.wait()
         GUARD.detach()
     if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
@@ -263,7 +485,7 @@ def claude_text_session(args, out_dir: Path, label: str) -> memory.Session:
         workdir = out_dir / "workdir"
         workdir.mkdir(exist_ok=True)
         cmd = [
-            "claude", "-p", prompt,
+            *CLAUDE_CMD, "-p", prompt,
             "--model", args.model,
             "--system-prompt-file", str(sys_file),
             "--mcp-config", str(mcp_cfg), "--strict-mcp-config",
@@ -294,10 +516,47 @@ def claude_text_session(args, out_dir: Path, label: str) -> memory.Session:
     return run
 
 
+def agy_text_session(args, out_dir: Path, label: str) -> memory.Session:
+    """A memory.Session backed by `agy -p` with no MCP tools: returns the reply text."""
+    def run(system_prompt: str, prompt: str) -> str:
+        full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+        transcript = out_dir / "logs" / f"agy_{label}.jsonl"
+        workdir = out_dir / "workdir"
+        workdir.mkdir(exist_ok=True)
+        cmd = [
+            *AGY_CMD, "-p", full_prompt,
+            "--model", args.model,
+            "--output-format", "stream-json",
+            "--dangerously-skip-permissions",
+        ]
+        reply, failed = "", ""
+        with transcript.open("a", encoding="utf-8") as tf:
+            proc = subprocess.Popen(cmd, cwd=workdir, env=dict(os.environ), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace", shell=False)
+            assert proc.stdout
+            for line in proc.stdout:
+                tf.write(line)
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if ev.get("event") == "result":
+                    res = ev.get("result") or {}
+                    reply = res.get("response") or ""
+                    if res.get("status") != "SUCCESS":
+                        failed = reply or f"agy reported status {res.get('status')}"
+            proc.wait()
+        if failed or not reply.strip():
+            raise RuntimeError(failed or "empty reply")
+        return reply
+    return run
+
+
 def batch_end_memory(args, out_dir: Path, log_dir: Path, current_day: int):
     """Shorter lessons and notes, a digest per finished week (memory.consolidate_batch), printed one line each."""
     print(f"[{datetime.now():%H:%M:%S}] batch finished: consolidating lessons, notes and weekly digests")
-    session = claude_text_session(args, out_dir, f"consolidate_day_{current_day:03}")
+    backend = get_backend(getattr(args, "backend", "claude"))
+    session = backend.text_session(args, out_dir, f"consolidate_day_{current_day:03}")
     for result in memory.consolidate_batch(log_dir, current_day, session):
         print("  " + result.describe())
 
@@ -325,16 +584,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=1, help="How many in-game days to play in this run")
     ap.add_argument("--until-day", type=int, default=0, help="Stop after this farm day number")
-    ap.add_argument("--model", default="claude-haiku-5-5")
+    ap.add_argument("--backend", choices=["claude", "agy"], default="claude",
+                    help="Player AI backend: 'claude' (Claude Code) or 'agy' (Antigravity Gemini 3.8 Flash)")
+    ap.add_argument("--model", default=None,
+                    help="Model identifier (default: claude-haiku-5-5 for claude, gemini-3.8-flash-medium for agy)")
     ap.add_argument("--goal", default=DEFAULT_GOAL)
     ap.add_argument("--language", default=None, help="Language of the AI's thoughts, reasons and diary (default: the mod's ThoughtLanguage, else Thai)")
     ap.add_argument("--max-turns", type=int, default=600)
-    ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if Haiku stops before sleeping (planned session breaks do not count)")
+    ap.add_argument("--max-parts", type=int, default=4, help="Sessions per day if the AI stops before sleeping (planned session breaks do not count)")
     ap.add_argument("--max-breaks", type=int, default=sessions.DEFAULT_MAX_BREAKS, help="Planned session breaks per day before a part counts toward --max-parts")
     ap.add_argument("--no-session-breaks", action="store_true", help="One session per day, as before (the baseline for comparing usage.csv)")
     ap.add_argument("--pass-out-timeout", type=int, default=1800,
                     help="Seconds to let game time run when a day's sessions are used up, waiting for the farmer to pass out")
-    ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--out", default=None,
+                    help="Output directory (default: runs for claude, runs-gemini for agy)")
     ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
     ap.add_argument("--skip-consolidation", action="store_true", help="Do not shorten lessons.md and notes.md after the batch")
     ap.add_argument("--keep-backups", type=int, default=save_backup.DEFAULT_KEEP,
@@ -343,10 +606,20 @@ def main():
     game_watchdog.add_args(ap)
     args = ap.parse_args()
 
+    backend = get_backend(args.backend)
+    if args.model is None:
+        args.model = backend.default_model
+    if args.out is None:
+        if args.backend == "agy":
+            args.out = str(DEFAULT_OUT.parent / "runs-gemini")
+        else:
+            args.out = str(DEFAULT_OUT)
+
     out_dir = Path(args.out)
     log_dir = out_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
+    template = template.replace("{MODEL_NAME}", backend.display_name)
     global GUARD
     GUARD = game_watchdog.from_args(args, log_dir, api_get, API)
 
