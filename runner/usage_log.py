@@ -113,6 +113,49 @@ class UsageTracker:
             return
 
         kind = ev.get("type")
+        if kind == "step_start":
+            self.session_id = ev.get("sessionID") or self.session_id
+            return
+        elif kind == "tool_use" and "part" in ev:
+            # opencode format
+            self.tool_calls += 1
+            part = ev.get("part") or {}
+            state = part.get("state") or {}
+            if state.get("status") in ("error", "failed"):
+                self.tool_errors += 1
+            output = str(state.get("output") or "")
+            if "Session break:" in output:
+                self.break_seen = True
+            return
+        elif kind == "text" and "part" in ev:
+            part = ev.get("part") or {}
+            if "Session break:" in str(part.get("text") or ""):
+                self.break_seen = True
+            return
+        elif kind == "step_finish" and "part" in ev:
+            part = ev.get("part") or {}
+            tokens = part.get("tokens") or {}
+            if isinstance(tokens, dict):
+                cache = tokens.get("cache") or {}
+                usage = {
+                    "input_tokens": tokens.get("input", 0),
+                    "output_tokens": tokens.get("output", 0),
+                    "cache_read_input_tokens": cache.get("read", 0),
+                    "cache_creation_input_tokens": cache.get("write", 0),
+                }
+                self.peak_context = max(self.peak_context, _context_of(usage))
+                self._messages[part.get("id") or f"step-{len(self._messages)}"] = usage
+            if not self.result:
+                reason = part.get("reason", "stop")
+                self.result = {
+                    "subtype": "success" if reason == "stop" else reason,
+                    "is_error": reason in ("error", "failed"),
+                    "session_id": self.session_id,
+                    "usage": tokens,
+                    "total_cost": part.get("cost", 0.0),
+                }
+            return
+
         if kind == "system" and ev.get("subtype") == "init":
             self.session_id = ev.get("session_id") or self.session_id
             self.model = ev.get("model") or self.model
@@ -270,7 +313,7 @@ def summary(rows: list[dict]) -> str:
 
 # ---------------------------------------------------------------------- transcripts <-> csv
 
-_TRANSCRIPT = re.compile(r"(?:claude|agy)_day_(\d+)_part(\d+)\.jsonl$")
+_TRANSCRIPT = re.compile(r"(?:claude|agy|opencode)_day_(\d+)(?:_(p\d+))?_part(\d+)\.jsonl$")
 
 
 def transcripts(log_dir: Path) -> dict[tuple[int, int], Path]:
@@ -278,7 +321,7 @@ def transcripts(log_dir: Path) -> dict[tuple[int, int], Path]:
     for p in Path(log_dir).glob("*_day_*_part*.jsonl"):
         m = _TRANSCRIPT.search(p.name)
         if m:
-            found[(int(m.group(1)), int(m.group(2)))] = p
+            found[(int(m.group(1)), int(m.group(3)))] = p
     return found
 
 

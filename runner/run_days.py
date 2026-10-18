@@ -50,7 +50,9 @@ import briefing
 import game_watchdog
 import language
 import memory
+import multi_runner
 import pass_out
+import personas
 import relationships
 import sessions
 import stats as run_stats
@@ -66,6 +68,29 @@ from run_control import RunControl  # noqa: E402
 API = "http://localhost:8770"
 CLAUDE_CMD = ["claude"]  # tests swap in a fake
 AGY_CMD = ["agy"]  # tests swap in a fake
+
+
+def find_opencode_cmd() -> list[str]:
+    # 1. Desktop app CLI location (contains active OpenCode Go credentials)
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        desktop_cli = Path(appdata) / "ai.opencode.desktop" / "cli" / "2.0.28-x64" / "opencode-cli.exe"
+        if desktop_cli.is_file():
+            return [str(desktop_cli)]
+        desktop_base = Path(appdata) / "ai.opencode.desktop" / "cli"
+        if desktop_base.is_dir():
+            matches = list(desktop_base.glob("*/opencode-cli.exe"))
+            if matches:
+                return [str(matches[-1])]
+    # 2. PATH lookup
+    for name in ("opencode-cli", "opencode"):
+        found = shutil.which(name)
+        if found:
+            return [found]
+    return ["opencode"]
+
+
+OPENCODE_CMD = find_opencode_cmd()  # tests swap in a fake
 DEFAULT_OUT = HERE.parent / "runs"
 GUARD = game_watchdog.NullWatchdog()  # replaced in main() unless --no-watchdog
 DEFAULT_GOAL = (
@@ -118,8 +143,9 @@ def recent_diaries(log_dir: Path, day: int, n: int = 3) -> str:
     return "\n\n".join(parts) if parts else "(This is your first day. No diaries yet.)"
 
 
-def last_actions(log_dir: Path, day: int, n: int = 25) -> str:
-    f = log_dir / f"day_{day:03}.jsonl"
+def last_actions(log_dir: Path, day: int, n: int = 25, player: str = "p1") -> str:
+    seat_file = log_dir / f"day_{day:03}_{player}.jsonl"
+    f = seat_file if player != "p1" and seat_file.exists() else log_dir / f"day_{day:03}.jsonl"
     if not f.exists():
         return ""
     lines = f.read_text(encoding="utf-8").splitlines()[-n * 3:]
@@ -138,11 +164,11 @@ def last_actions(log_dir: Path, day: int, n: int = 25) -> str:
     return "\n".join(out[-n:])
 
 
-def continue_prompt(day: int, log_dir: Path, planned: bool = False) -> str:
+def continue_prompt(day: int, log_dir: Path, planned: bool = False, player: str = "p1") -> str:
     sessions.add_context_provider(memory.continuation_context)
-    recent = last_actions(log_dir, day, 8 if planned else 25)
+    recent = last_actions(log_dir, day, 8 if planned else 25, player=player)
     prompt = sessions.continuation_prompt(day, log_dir, planned, recent=recent)
-    return prompt + pass_out.pending_reminder(game_state())
+    return prompt + pass_out.pending_reminder(game_state(), player=player)
 
 
 def report_failures(log_dir: Path, day: int) -> None:
@@ -188,13 +214,15 @@ KNOWN_STARDEW_TOOLS = {
 
 
 def normalize_agy_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
-    if raw_name.startswith("mcp_stardew_"):
-        return raw_name[len("mcp_stardew_"):], True
-    if raw_name.startswith("stardew_"):
-        return raw_name[len("stardew_"):], True
+    for prefix in ("mcp_stardew_", "stardew_"):
+        if raw_name.startswith(prefix):
+            name = raw_name[len(prefix):]
+            if any(name.startswith(f"{s}_") for s in ("p1", "p2", "p3", "p4")):
+                name = name.split("_", 1)[1]
+            return name, True
     if raw_name == "call_mcp_tool":
         srv = (arg.get("server_name") or arg.get("server") or "").lower()
-        if srv == "stardew":
+        if srv.startswith("stardew"):
             tool_name = arg.get("tool_name") or arg.get("name") or "tool"
             return tool_name, True
         return raw_name, False
@@ -203,7 +231,21 @@ def normalize_agy_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
     return raw_name, False
 
 
-def ensure_agy_mcp(mcp_url: str) -> None:
+def normalize_opencode_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
+    for prefix in ("mcp__stardew__", "stardew__", "stardew_", "stardew."):
+        if raw_name.startswith(prefix):
+            name = raw_name[len(prefix):]
+            if any(name.startswith(f"{s}_") for s in ("p1", "p2", "p3", "p4")):
+                name = name.split("_", 1)[1]
+            if name in KNOWN_STARDEW_TOOLS:
+                return name, True
+            return name, False
+    if raw_name in KNOWN_STARDEW_TOOLS:
+        return raw_name, True
+    return raw_name, False
+
+
+def ensure_agy_mcp(mcp_url: str, server_name: str = "stardew") -> None:
     """Ensure the 'stardew' MCP server is registered in agy CLI and points to the running game."""
     try:
         res = subprocess.run([*AGY_CMD, "mcp", "list"], capture_output=True, text=True, check=False)
@@ -212,15 +254,15 @@ def ensure_agy_mcp(mcp_url: str) -> None:
         stardew_enabled = False
         for line in output.splitlines():
             parts = line.split()
-            if parts and parts[0] == "stardew":
+            if parts and parts[0] == server_name:
                 found_stardew = True
                 if len(parts) >= 3 and parts[2].lower() == "enabled":
                     stardew_enabled = True
                 break
         if not found_stardew:
-            subprocess.run([*AGY_CMD, "mcp", "add", "stardew", mcp_url], capture_output=True, text=True, check=False)
+            subprocess.run([*AGY_CMD, "mcp", "add", server_name, mcp_url], capture_output=True, text=True, check=False)
         elif not stardew_enabled:
-            subprocess.run([*AGY_CMD, "mcp", "enable", "stardew"], capture_output=True, text=True, check=False)
+            subprocess.run([*AGY_CMD, "mcp", "enable", server_name], capture_output=True, text=True, check=False)
     except Exception:
         pass
 
@@ -233,10 +275,10 @@ class Backend:
     def display_name(self) -> str:
         return "AI"
 
-    def prepare(self, args, out_dir: Path) -> None:
+    def prepare(self, args, out_dir: Path, seat: str = "p1") -> None:
         pass
 
-    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> tuple[list[str], dict[str, str], Path, Path]:
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1") -> tuple[list[str], dict[str, str], Path, Path]:
         raise NotImplementedError
 
     def parse_event(self, ev: dict) -> list[NormalizedEvent]:
@@ -254,18 +296,20 @@ class ClaudeBackend(Backend):
     def display_name(self) -> str:
         return "Claude Haiku 5.5"
 
-    def prepare(self, args, out_dir: Path) -> None:
+    def prepare(self, args, out_dir: Path, seat: str = "p1") -> None:
         pass
 
-    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1):
-        mcp_cfg = out_dir / "mcp.json"
-        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False))
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1"):
+        mcp_cfg = out_dir / (f"mcp_{seat}.json" if seat != "p1" else "mcp.json")
+        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False), seat=seat)
         mcp_cfg.write_text(json.dumps({"mcpServers": {"stardew": {"type": "http", "url": mcp_url}}}), encoding="utf-8")
-        sys_file = out_dir / f"system_day_{day:03}.md"
+        sys_file = out_dir / (f"system_day_{day:03}_{seat}.md" if seat != "p1" else f"system_day_{day:03}.md")
         sys_file.write_text(system_prompt, encoding="utf-8")
 
-        transcript = out_dir / "logs" / (f"claude_day_{day:03}_part{part}" + (f"_retry{attempt - 1}" if attempt > 1 else "") + ".jsonl")
-        workdir = out_dir / "workdir"
+        seat_suffix = f"_{seat}" if seat != "p1" else ""
+        retry_suffix = f"_retry{attempt - 1}" if attempt > 1 else ""
+        transcript = out_dir / "logs" / (f"claude_day_{day:03}{seat_suffix}_part{part}" + retry_suffix + ".jsonl")
+        workdir = out_dir / (f"workdir_{seat}" if seat != "p1" else "workdir")
         workdir.mkdir(exist_ok=True)
 
         cmd = [
@@ -318,15 +362,18 @@ class AgyBackend(Backend):
     def display_name(self) -> str:
         return "Gemini 3.8 Flash"
 
-    def prepare(self, args, out_dir: Path) -> None:
-        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False))
-        ensure_agy_mcp(mcp_url)
+    def prepare(self, args, out_dir: Path, seat: str = "p1") -> None:
+        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False), seat=seat)
+        srv_name = f"stardew_{seat}" if seat != "p1" else "stardew"
+        ensure_agy_mcp(mcp_url, server_name=srv_name)
 
-    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1):
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1"):
         # agy has no --system-prompt-file: prepend system prompt to -p prompt
         full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
-        transcript = out_dir / "logs" / (f"agy_day_{day:03}_part{part}" + (f"_retry{attempt - 1}" if attempt > 1 else "") + ".jsonl")
-        workdir = out_dir / "workdir"
+        seat_suffix = f"_{seat}" if seat != "p1" else ""
+        retry_suffix = f"_retry{attempt - 1}" if attempt > 1 else ""
+        transcript = out_dir / "logs" / (f"agy_day_{day:03}{seat_suffix}_part{part}" + retry_suffix + ".jsonl")
+        workdir = out_dir / (f"workdir_{seat}" if seat != "p1" else "workdir")
         workdir.mkdir(exist_ok=True)
 
         cmd = [
@@ -375,23 +422,145 @@ class AgyBackend(Backend):
         return agy_text_session(args, out_dir, label)
 
 
+class OpenCodeBackend(Backend):
+    name = "opencode"
+    default_model = "opencode-go/gpt-6-luna"
+
+    @property
+    def display_name(self) -> str:
+        return "Luna (OpenCode)"
+
+    def prepare(self, args, out_dir: Path, seat: str = "p1") -> None:
+        workdir = out_dir / (f"workdir_{seat}" if seat != "p1" else "workdir")
+        workdir.mkdir(parents=True, exist_ok=True)
+        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False), seat=seat)
+        opencode_cfg = workdir / "opencode.json"
+        cfg_data = {
+            "$schema": "https://opencode.ai/config.json",
+            "mcp": {
+                "servers": {
+                    "stardew": {
+                        "type": "remote",
+                        "url": mcp_url,
+                    }
+                }
+            },
+            "tools": {
+                "bash": False,
+                "edit": False,
+                "write": False,
+                "view": False,
+                "read": False,
+                "glob": False,
+                "grep": False,
+            },
+            "permission": {
+                "stardew_*": "allow",
+                "*": "deny",
+            },
+        }
+        opencode_cfg.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
+
+    def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1"):
+        full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+        seat_suffix = f"_{seat}" if seat != "p1" else ""
+        retry_suffix = f"_retry{attempt - 1}" if attempt > 1 else ""
+        transcript = out_dir / "logs" / (f"opencode_day_{day:03}{seat_suffix}_part{part}" + retry_suffix + ".jsonl")
+        workdir = out_dir / (f"workdir_{seat}" if seat != "p1" else "workdir")
+        workdir.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            *OPENCODE_CMD, "run",
+            "--model", args.model,
+            "--format", "json",
+            "--auto",
+            full_prompt,
+        ]
+        env = dict(os.environ)
+        env["MCP_TOOL_TIMEOUT"] = "600000"
+        env["MCP_TIMEOUT"] = "60000"
+        return cmd, env, transcript, workdir
+
+    def parse_event(self, ev: dict) -> list[NormalizedEvent]:
+        ev_type = ev.get("type")
+        if ev_type == "step_start":
+            return [NormalizedEvent(kind="init", session_id=ev.get("sessionID", ""))]
+        elif ev_type == "tool_use" and "part" in ev:
+            part = ev.get("part") or {}
+            raw_name = part.get("tool") or ""
+            state = part.get("state") or {}
+            arg = state.get("input") or {}
+            name, is_stardew = normalize_opencode_tool(raw_name, arg)
+            if not is_stardew:
+                return [NormalizedEvent(kind="tool_call", tool_name=raw_name, tool_args=arg, is_disallowed=True)]
+            return [NormalizedEvent(kind="tool_call", tool_name=name, tool_args=arg)]
+        elif ev_type == "step_finish" and "part" in ev:
+            part = ev.get("part") or {}
+            reason = part.get("reason", "stop")
+            is_err = reason in ("error", "failed")
+            cost = float(part.get("cost") or 0.0)
+            return [NormalizedEvent(
+                kind="result",
+                subtype="success" if reason == "stop" else reason,
+                is_error=is_err,
+                num_turns=1,
+                cost_usd=cost,
+                error_message=str(part.get("output", "")),
+            )]
+        elif ev_type == "error":
+            return [NormalizedEvent(
+                kind="result",
+                subtype="error",
+                is_error=True,
+                error_message=str(ev.get("error", "opencode error")),
+            )]
+        return []
+
+    def text_session(self, args, out_dir: Path, label: str) -> memory.Session:
+        return opencode_text_session(args, out_dir, label)
+
+
 def get_backend(name: str) -> Backend:
     name = (name or "claude").lower()
     if name == "agy":
         return AgyBackend()
     elif name == "claude":
         return ClaudeBackend()
+    elif name == "opencode":
+        return OpenCodeBackend()
     raise ValueError(f"Unknown backend: {name}")
 
 
-def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1) -> sessions.PartResult:
+def copy_args_with_max_turns(args, max_turns: int):
+    d = vars(args).copy() if hasattr(args, "__dict__") else {}
+    new_args = argparse.Namespace(**d)
+    new_args.max_turns = max_turns
+    return new_args
+
+
+def copy_args_with_seat(args, backend_name: str, model: str):
+    d = vars(args).copy() if hasattr(args, "__dict__") else {}
+    new_args = argparse.Namespace(**d)
+    new_args.backend = backend_name
+    new_args.model = model
+    return new_args
+
+
+def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1") -> sessions.PartResult:
     backend_name = getattr(args, "backend", "claude")
     backend = get_backend(backend_name)
-    backend.prepare(args, out_dir)
+    try:
+        backend.prepare(args, out_dir, seat=seat)
+    except TypeError:
+        backend.prepare(args, out_dir)
 
-    cmd, env, transcript, workdir = backend.build_cmd(args, out_dir, day, prompt, system_prompt, part, attempt)
+    try:
+        cmd, env, transcript, workdir = backend.build_cmd(args, out_dir, day, prompt, system_prompt, part, attempt, seat=seat)
+    except TypeError:
+        cmd, env, transcript, workdir = backend.build_cmd(args, out_dir, day, prompt, system_prompt, part, attempt)
 
-    print(f"[{datetime.now():%H:%M:%S}] day {day} part {part}: starting {args.model}")
+    seat_tag = f" [{seat}]" if seat != "p1" else ""
+    print(f"[{datetime.now():%H:%M:%S}]{seat_tag} day {day} part {part}: starting {args.model}")
     session_id = ""
     tool_calls = 0
     limit = usage_limit.LimitWatcher()
@@ -399,11 +568,15 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     game_start, t_start = game_state().get("time", ""), time.time()
     with transcript.open("w", encoding="utf-8") as tf:
         try:
-            proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace", shell=False, **CTL.popen_kwargs())
-        except TypeError:  # test doubles without creationflags/start_new_session
-            proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, encoding="utf-8", errors="replace", shell=False)
+        except TypeError:  # test doubles without creationflags/start_new_session or without stdin
+            try:
+                proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        text=True, encoding="utf-8", errors="replace", shell=False)
+            except TypeError:
+                proc = subprocess.Popen(cmd, cwd=workdir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        text=True, encoding="utf-8", errors="replace", shell=False)
         if hasattr(proc, "poll"):
             CTL.watch(proc)  # stop_now / Ctrl+C: ends the session once the running tool call has finished
         assert proc.stdout
@@ -429,6 +602,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                     print(f"  session {session_id} model {model}")
                     try:
                         api_post("/api/meta", {"model": backend.display_name, "modelId": model, "session": session_id,
+                                               "seat": seat,
                                                "run": f"day {day} · part {part}",
                                                "event": f"{backend.display_name} session {session_id} started ({model}), day {day} part {part}"})
                     except Exception:
@@ -444,18 +618,18 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                     arg = norm_ev.tool_args
                     short = arg.get("text") or arg.get("reason") or ""
                     print(f"  #{tool_calls} {name} {short[:90]}")
-                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and backend.name == "agy":
+                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and backend.name in ("agy", "opencode"):
                         print(f"  result: error_max_turns turns={tool_calls}")
                         if hasattr(proc, "kill"):
                             proc.kill()
                         stopped_by_turn_limit = True
                         break
                 elif norm_ev.kind == "result":
-                    cost_str = f" cost=${norm_ev.cost_usd:.3f}" if (norm_ev.cost_usd or backend.name == "claude") else ""
+                    cost_str = f" cost=${norm_ev.cost_usd:.3f}" if (norm_ev.cost_usd or backend.name in ("claude", "opencode")) else ""
                     print(f"  result: {norm_ev.subtype} turns={norm_ev.num_turns}{cost_str}")
                     if norm_ev.is_error and tool_calls == 0 and not limit.info:
                         GUARD.explain_failure()  # a dead game makes Claude/agy fail at once: recover instead of stopping
-                        err_label = "Claude" if backend.name == "claude" else "agy"
+                        err_label = backend.display_name
                         raise SystemExit(f"{err_label} error, stopping: {norm_ev.error_message}")
             if stopped_by_turn_limit:
                 break
@@ -464,7 +638,8 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
         raise usage_limit.UsageLimitHit(limit.info, tool_calls)
     row = tracker.row(day, part, game_start, game_state().get("time", ""), time.time() - t_start)
-    usage_log.append_row(out_dir / "usage.csv", row)
+    csv_file = out_dir / (f"usage_{seat}.csv" if seat != "p1" else "usage.csv")
+    usage_log.append_row(csv_file, row)
     print(f"  usage: {row['total_tokens']:,} tokens (in {row['input_tokens']:,} · out {row['output_tokens']:,} · "
           f"cache read {row['cache_read_input_tokens']:,}), peak context {row['peak_context_tokens']:,}"
           f"{' · planned session break' if tracker.break_seen else ''}")
@@ -552,6 +727,46 @@ def agy_text_session(args, out_dir: Path, label: str) -> memory.Session:
     return run
 
 
+def opencode_text_session(args, out_dir: Path, label: str) -> memory.Session:
+    """A memory.Session backed by `opencode run --format json` with no tools: returns the reply text."""
+    def run(system_prompt: str, prompt: str) -> str:
+        full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+        transcript = out_dir / "logs" / f"opencode_{label}.jsonl"
+        workdir = out_dir / "workdir_text"
+        workdir.mkdir(exist_ok=True)
+        (workdir / "opencode.json").write_text(json.dumps({
+            "tools": {"bash": False, "edit": False, "write": False, "view": False, "read": False, "glob": False, "grep": False}
+        }), encoding="utf-8")
+        cmd = [
+            *OPENCODE_CMD, "run",
+            "--model", args.model,
+            "--format", "json",
+            "--auto",
+            full_prompt,
+        ]
+        reply, failed = "", ""
+        with transcript.open("a", encoding="utf-8") as tf:
+            proc = subprocess.Popen(cmd, cwd=workdir, env=dict(os.environ), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace", shell=False)
+            assert proc.stdout
+            for line in proc.stdout:
+                tf.write(line)
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if ev.get("type") == "text" and "part" in ev:
+                    part = ev.get("part") or {}
+                    reply += str(part.get("text") or "")
+                elif ev.get("type") == "error":
+                    failed = str(ev.get("error") or "opencode reported an error")
+            proc.wait()
+        if failed or not reply.strip():
+            raise RuntimeError(failed or "empty reply")
+        return reply
+    return run
+
+
 def batch_end_memory(args, out_dir: Path, log_dir: Path, current_day: int):
     """Shorter lessons and notes, a digest per finished week (memory.consolidate_batch), printed one line each."""
     print(f"[{datetime.now():%H:%M:%S}] batch finished: consolidating lessons, notes and weekly digests")
@@ -584,10 +799,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=1, help="How many in-game days to play in this run")
     ap.add_argument("--until-day", type=int, default=0, help="Stop after this farm day number")
-    ap.add_argument("--backend", choices=["claude", "agy"], default="claude",
-                    help="Player AI backend: 'claude' (Claude Code) or 'agy' (Antigravity Gemini 3.8 Flash)")
+    ap.add_argument("--backend", choices=["claude", "agy", "opencode"], default="claude",
+                    help="Player AI backend: 'claude' (Claude Code), 'agy' (Antigravity Gemini 3.8 Flash), or 'opencode' (OpenCode Go Luna)")
     ap.add_argument("--model", default=None,
-                    help="Model identifier (default: claude-haiku-5-5 for claude, gemini-3.8-flash-medium for agy)")
+                    help="Model identifier (default: claude-haiku-5-5 for claude, gemini-3.8-flash-medium for agy, opencode-go/gpt-6-luna for opencode)")
     ap.add_argument("--goal", default=DEFAULT_GOAL)
     ap.add_argument("--language", default=None, help="Language of the AI's thoughts, reasons and diary (default: the mod's ThoughtLanguage, else Thai)")
     ap.add_argument("--max-turns", type=int, default=600)
@@ -597,21 +812,43 @@ def main():
     ap.add_argument("--pass-out-timeout", type=int, default=1800,
                     help="Seconds to let game time run when a day's sessions are used up, waiting for the farmer to pass out")
     ap.add_argument("--out", default=None,
-                    help="Output directory (default: runs for claude, runs-gemini for agy)")
+                    help="Output directory (default: runs for claude, runs-gemini for agy, runs-opencode for opencode, runs-multi for multi)")
     ap.add_argument("--skip-smoke", action="store_true", help="Do not run runner/smoke.py before the batch")
     ap.add_argument("--skip-consolidation", action="store_true", help="Do not shorten lessons.md and notes.md after the batch")
     ap.add_argument("--keep-backups", type=int, default=save_backup.DEFAULT_KEEP,
                     help="Keep the newest N save backups (default %(default)s, 0 = keep all)")
+
+    # Multi-AI flags (Issue #41)
+    ap.add_argument("--multi", action="store_true", help="Run multi-AI co-op across multiple seats (default: p1, p2, p3)")
+    ap.add_argument("--seats", default=None, help="Comma-separated active seats, e.g. 'p1,p2' or 'p1,p2,p3'")
+    ap.add_argument("--backends", default=None, help="Comma-separated backends per seat, e.g. 'claude,agy,opencode'")
+    ap.add_argument("--models", default=None, help="Comma-separated models per seat")
+    ap.add_argument("--personas-dir", default=None, help="Directory containing {seat}.md persona files")
+    ap.add_argument("--skip-meeting", action="store_true", help="Skip Phase 1 Morning Meeting standup")
+    ap.add_argument("--meeting-turns", type=int, default=5, help="Turns for Morning Meeting standup (default 5)")
+    for s in ("p1", "p2", "p3", "p4"):
+        ap.add_argument(f"--{s}-backend", choices=["claude", "agy", "opencode"], default=None, help=f"Backend for seat {s}")
+        ap.add_argument(f"--{s}-model", default=None, help=f"Model for seat {s}")
+
     usage_limit.add_args(ap)
     game_watchdog.add_args(ap)
     args = ap.parse_args()
 
+    personas_dir = Path(args.personas_dir) if args.personas_dir else None
+    multi_cfg = multi_runner.parse_multi_config(args, personas_dir)
+    is_multi = len(multi_cfg.seats) > 1 or args.multi
+
     backend = get_backend(args.backend)
     if args.model is None:
         args.model = backend.default_model
+
     if args.out is None:
-        if args.backend == "agy":
+        if is_multi:
+            args.out = str(DEFAULT_OUT.parent / "runs-multi")
+        elif args.backend == "agy":
             args.out = str(DEFAULT_OUT.parent / "runs-gemini")
+        elif args.backend == "opencode":
+            args.out = str(DEFAULT_OUT.parent / "runs-opencode")
         else:
             args.out = str(DEFAULT_OUT)
 
@@ -657,56 +894,82 @@ def main():
             break
 
         # relationships.md is written from game data (not by the AI) once per day, right before the prompt is built.
-        # Placeholders filled by memory.inject: "{GOAL}", "{LESSONS}", "{PLAN}", "{NOTES}", "{MEMORY}"
         relationships.update(log_dir, lambda: api_get("/api/relationships"))
-        system_prompt = memory.inject(
-            template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
-            log_dir, args.goal, recent_diaries(log_dir, day)
-        )
-        morning = run_stats.morning_for_prompt(log_dir, day)
+        recent_d = recent_diaries(log_dir, day)
 
-        def call_session(p: str, part: int, attempt: int):
-            if attempt == 1:
-                return run_session(args, out_dir, day, p, system_prompt, part)
-            try:
-                return run_session(args, out_dir, day, p, system_prompt, part, attempt)
-            except TypeError:
-                return run_session(args, out_dir, day, p, system_prompt, part)
+        if is_multi:
+            system_prompts = {}
+            for s in multi_cfg.seats:
+                sc = multi_cfg.seat_configs[s]
+                seat_backend = get_backend(sc.backend_name)
+                raw_template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
+                raw_template = raw_template.replace("{MODEL_NAME}", seat_backend.display_name)
+                raw_template = language.fill_prompt(raw_template, lang)
+                s_template = personas.customize_system_prompt(
+                    raw_template,
+                    seat=s,
+                    active_seats=multi_cfg.seats,
+                    personas={seat: cfg.persona for seat, cfg in multi_cfg.seat_configs.items()},
+                    model_display=seat_backend.display_name,
+                    language=lang.get("name", "Thai") if isinstance(lang, dict) else "Thai",
+                )
+                system_prompts[s] = memory.inject(
+                    s_template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
+                    log_dir, args.goal, recent_d
+                )
 
-        def play_day(attempt: int) -> dict:
-            # After a crash the watchdog calls this again: the day restarts from the morning with a fresh part 1.
-            cur_state = wait_ready() if attempt > 1 else state
-            parts, planned = sessions.PartCounter(args.max_parts, args.max_breaks), False
-            part = 0
-            while True:
-                part += 1
-                if part == 1:
-                    # The morning briefing replaces "start with status and look" (falls back to it if the mod has none).
-                    prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir, sleep=time.sleep))
-                    if morning:
-                        prompt += "\n\n" + morning
-                    prompt = memory.with_reminder(prompt, cur_state, log_dir)
-                    # The previous day ended by passing out: say what happened and ask for that day's journal first.
-                    prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
-                else:
-                    prompt = continue_prompt(day, log_dir, planned=planned)
-                # a usage-limit stop waits for the reset and retries this same part (it does not count toward --max-parts)
-                res = usage_limit.run_part(waiter, lambda p, n: call_session(p, part, n),
-                                           prompt, lambda: continue_prompt(day, log_dir, planned=False), day, part,
-                                           day_done=lambda: wait_ready()["day"] > day)
-                if CTL.stop_now_requested():
-                    return {"ready": True, "day": game_state().get("day", day), "stop_now": True}
-                planned = res.planned_break if isinstance(res, sessions.PartResult) else False
-                GUARD.check()
-                time.sleep(3)
-                s = wait_ready()
-                if s["day"] > day:
-                    return s
-                print(f"  day {day} not finished after part {part}{' (planned session break)' if planned else ''}; continuing")
-                if not parts.after_part(planned):
-                    return s
+            def play_day(attempt: int) -> dict:
+                return multi_runner.run_multi_day(
+                    args, out_dir, log_dir, day, system_prompts, multi_cfg, api_get, api_post, wait_ready
+                )
 
-        s = GUARD.run_day(day, play_day)
+            s = GUARD.run_day(day, play_day)
+        else:
+            system_prompt = memory.inject(
+                template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
+                log_dir, args.goal, recent_d
+            )
+            morning = run_stats.morning_for_prompt(log_dir, day)
+
+            def call_session(p: str, part: int, attempt: int):
+                if attempt == 1:
+                    return run_session(args, out_dir, day, p, system_prompt, part)
+                try:
+                    return run_session(args, out_dir, day, p, system_prompt, part, attempt)
+                except TypeError:
+                    return run_session(args, out_dir, day, p, system_prompt, part)
+
+            def play_day(attempt: int) -> dict:
+                cur_state = wait_ready() if attempt > 1 else state
+                parts, planned = sessions.PartCounter(args.max_parts, args.max_breaks), False
+                part = 0
+                while True:
+                    part += 1
+                    if part == 1:
+                        prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir, sleep=time.sleep))
+                        if morning:
+                            prompt += "\n\n" + morning
+                        prompt = memory.with_reminder(prompt, cur_state, log_dir)
+                        prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
+                    else:
+                        prompt = continue_prompt(day, log_dir, planned=planned)
+                    res = usage_limit.run_part(waiter, lambda p, n: call_session(p, part, n),
+                                               prompt, lambda: continue_prompt(day, log_dir, planned=False), day, part,
+                                               day_done=lambda: wait_ready()["day"] > day)
+                    if CTL.stop_now_requested():
+                        return {"ready": True, "day": game_state().get("day", day), "stop_now": True}
+                    planned = res.planned_break if isinstance(res, sessions.PartResult) else False
+                    GUARD.check()
+                    time.sleep(3)
+                    s = wait_ready()
+                    if s["day"] > day:
+                        return s
+                    print(f"  day {day} not finished after part {part}{' (planned session break)' if planned else ''}; continuing")
+                    if not parts.after_part(planned):
+                        return s
+
+            s = GUARD.run_day(day, play_day)
+
         if s.get("stop_now"):
             if s.get("day", day) > day:  # the last call was go_to_bed and the day did finish
                 _do_backup(out_dir, day, args.keep_backups)
@@ -715,14 +978,20 @@ def main():
                 print(f"stop_now: the session ended after its last tool call; day {day} is not finished.")
             print("The game stays frozen until you resume (F8 or run_control.py resume). Run again to continue.")
             return
-        if s["day"] <= day and game_state().get("ready"):
-            # Every session of the day is used and the farmer is still up. The mod keeps the world frozen while no
-            # action runs, so release it and let the clock reach 2:00 AM: the farmer passes out and a new day starts.
+        if not is_multi and s["day"] <= day and game_state().get("ready"):
             s = pass_out.let_time_run_out(day, game_state, api_post, time.sleep, timeout=args.pass_out_timeout)
         if s.get("ready") and s["day"] > day:
             _do_backup(out_dir, day, args.keep_backups)
             report_failures(log_dir, day)
-            print(usage_log.day_line(out_dir / "usage.csv", day))
+            if is_multi:
+                for seat in multi_cfg.seats:
+                    seat_csv = out_dir / (f"usage_{seat}.csv" if seat != "p1" else "usage.csv")
+                    if seat_csv.exists():
+                        line = usage_log.day_line(seat_csv, day)
+                        if "no rows" not in line:
+                            print(f"  [{seat}] {line}")
+            else:
+                print(usage_log.day_line(out_dir / "usage.csv", day))
             days_played += 1
             batch_days.append(day)
             run_stats.finish_day(out_dir, log_dir, day, batch_days)

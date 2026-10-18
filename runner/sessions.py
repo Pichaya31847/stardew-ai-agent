@@ -32,9 +32,10 @@ _BREAK_LINE = re.compile(r"^" + re.escape(BREAK_MARKER), re.MULTILINE)
 DEFAULT_MAX_BREAKS = 8
 
 
-def mcp_url(api: str, breaks: bool = True) -> str:
+def mcp_url(api: str, breaks: bool = True, seat: str = "p1") -> str:
     """The seat's MCP URL. `?breaks=1` asks the mod for planned session breaks on this connection."""
-    return f"{api}/mcp?breaks=1" if breaks else f"{api}/mcp"
+    base = f"{api}/mcp/{seat}" if seat and seat != "p1" else f"{api}/mcp"
+    return f"{base}?breaks=1" if breaks else base
 
 
 # ---------------------------------------------------------------------- reading the transcript
