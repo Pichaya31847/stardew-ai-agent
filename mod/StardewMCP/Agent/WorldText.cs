@@ -30,8 +30,10 @@ public static partial class WorldText
         var sb = new StringBuilder();
         sb.AppendLine($"Farm day {AgentLog.FarmDay} — {Game1.currentSeason} {Game1.dayOfMonth}, year {Game1.year} ({Game1.shortDayNameFromDayOfSeason(Game1.dayOfMonth)}) {FormatTime(Game1.timeOfDay)} · weather: {Weather()}");
         sb.AppendLine(AgentTools.OutlookLine()); // festival today, tomorrow's weather, daily luck (CalendarTools.cs)
-        sb.AppendLine($"Location: {loc?.Name}{(loc is StardewValley.Locations.MineShaft ms ? $" (floor {ms.mineLevel})" : "")} at ({p.TilePoint.X},{p.TilePoint.Y}) facing {DirName(p.FacingDirection)}");
+        sb.AppendLine($"Location: {loc?.Name}{(loc is StardewValley.Locations.MineShaft ms ? $" ({MineFloorName(ms.mineLevel)})" : "")} at ({p.TilePoint.X},{p.TilePoint.Y}) facing {DirName(p.FacingDirection)}");
         sb.AppendLine($"Energy {(int)p.Stamina}/{p.MaxStamina} · Health {p.health}/{p.maxHealth} · Money {p.Money}g");
+        var walnuts = AgentTools.GoldenWalnutsLine();
+        if (walnuts.Length > 0) sb.AppendLine(walnuts);
         var held = p.CurrentItem;
         var owned = Professions.Owned(p);
         if (owned.Length > 0) sb.AppendLine($"Professions: {owned}");
@@ -273,7 +275,8 @@ public static partial class WorldText
         var cells = new Dictionary<(int x, int y), (char sym, string? label)>();
         var labels = new Dictionary<string, List<(int x, int y)>>();
         var sb = new StringBuilder();
-        sb.AppendLine($"Map {loc.Name} ({w}x{h}). You @ ({px},{py}) facing {DirName(p.FacingDirection)}. Showing x {x0}-{x1}, y {y0}-{y1}.");
+        var floor = loc is StardewValley.Locations.MineShaft mine ? $" · {MineFloorName(mine.mineLevel)}" : "";
+        sb.AppendLine($"Map {loc.Name} ({w}x{h}){floor}. You @ ({px},{py}) facing {DirName(p.FacingDirection)}. Showing x {x0}-{x1}, y {y0}-{y1}.");
         if (diff) sb.AppendLine("Diff: nothing earlier to compare with on this map (or most of this view is new), so this is the full view.");
 
         var tens = new StringBuilder("        ");

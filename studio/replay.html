@@ -60,7 +60,7 @@ const API = (new URLSearchParams(location.search).get("api") || (location.port =
 const LANG_NAMES = { thai: "th", english: "en" };
 const I18N = {
   en: {
-    title: "AI plays Stardew — Replay",
+    title: (m = "AI") => `${m || "AI"} plays Stardew — Replay`,
     fThink: "Thoughts", fAct: "Actions", fRes: "Results", fSys: "System",
     pickDay: "Pick a day on the left",
     noDiary: "(no diary for this day yet)",
@@ -69,7 +69,7 @@ const I18N = {
     rowThink: "💭 think",
   },
   th: {
-    title: "AI เล่น Stardew — Replay",
+    title: (m = "AI") => `${m || "AI"} เล่น Stardew — Replay`,
     fThink: "ความคิด", fAct: "การกระทำ", fRes: "ผลลัพธ์", fSys: "ระบบ",
     pickDay: "เลือกวันทางซ้าย",
     noDiary: "(ยังไม่มีไดอารี่วันนี้)",
@@ -104,8 +104,8 @@ async function initLang() {
     name = feed.thoughtLanguage;
     if (feed.meta && feed.meta.model) {
       const m = feed.meta.model;
-      I18N.en.title = `${m} plays Stardew — Replay`;
-      I18N.th.title = `${m} เล่น Stardew — Replay`;
+      I18N.en.title = I18N.en.title(m);
+      I18N.th.title = I18N.th.title(m);
       document.title = `${m} Replay`;
     }
   } catch (e) { /* default */ }

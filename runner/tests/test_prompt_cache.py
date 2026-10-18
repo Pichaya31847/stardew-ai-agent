@@ -19,7 +19,7 @@ GOAL = "Build the best farm you can."
 
 def render(template: str, memory: str, goal: str = GOAL) -> str:
     template = language.fill_prompt(template, "Thai")
-    return template.replace("{GOAL}", goal).replace("{MEMORY}", memory)
+    return template.replace("{GOAL}", goal).replace("{MEMORY}", memory).replace("{MODEL_NAME}", "Claude Haiku 4.5")
 
 
 def common_prefix_length(a: str, b: str) -> int:
@@ -39,7 +39,7 @@ def test_memory_is_the_last_thing_in_the_template():
 def test_every_placeholder_but_the_goal_comes_after_the_memory_heading():
     heading = TEMPLATE.index("# Memory")
     for m in re.finditer(r"\{[A-Z_]+\}", TEMPLATE):
-        if m.group() != "{GOAL}" and m.group() not in language.PLACEHOLDERS:
+        if m.group() not in ("{GOAL}", "{MODEL_NAME}") and m.group() not in language.PLACEHOLDERS:
             assert m.start() > heading, f"{m.group()} changes from day to day, so it must come after '# Memory'"
 
 

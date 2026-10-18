@@ -196,6 +196,8 @@ public static partial class AgentTools
                 Name = "travel_to",
                 Description = "Walk to another map through doors and exits: Farm, FarmHouse, BusStop, Town, SeedShop (Pierre's), Forest (Marnie), Beach, Mountain, Mine, Saloon, Blacksmith, etc. " +
                               "You can also name a shop keeper (Pierre, Clint, Robin, Marnie, Willy, Gus: their shop) or any villager (the map they are in now). " +
+                              "Late game: Desert and Calico Desert (500g bus from the Bus Stop, after the Vault bundle or Joja Bus), Skull Cavern (the Skull Key opens the desert door), " +
+                              "Ginger Island (1,000g boat from Willy's back room, after the boat is repaired), Casino, MovieTheater and Oasis. " +
                               "Locked doors stay locked outside opening hours; the failure says when they open.",
                 Schema = Obj(new { location = Str("Destination map name, shop keeper or villager"), reason = Str(ReasonDesc) }, "location", "reason"),
                 Run = TravelTo
@@ -695,7 +697,8 @@ public static partial class AgentTools
             what = PressAction(t) ? $"Interacted with ({t.X},{t.Y})" : $"Nothing happened at ({t.X},{t.Y})";
         else if (P.ActiveObject is { } obj and not StardewValley.Objects.Furniture && obj.performUseAction(Loc))
         {
-            P.reduceActiveItemByOne();
+            // Secret notes and journal scraps open a letter but stay in the pack (#55); other usable items are consumed.
+            if (obj.QualifiedItemId is not ("(O)79" or "(O)842")) P.reduceActiveItemByOne();
             what = $"Used {held}";
         }
         else
@@ -781,11 +784,22 @@ public static partial class AgentTools
     private static IEnumerator TravelTo(JsonElement a, CallContext c)
     {
         var asked = S(a, "location").Trim();
+        if (IsSkullCavernName(asked)) { yield return TravelToSkullCavern(c); yield break; }
         var (dest, note) = NpcInfo.ResolvePlace(asked); // map names, shop keepers (Pierre = SeedShop), villagers (where they are now)
         var target = dest == null ? null : Game1.getLocationFromName(dest);
         if (target == null)
         {
             c.Fail(Reasons.NotFound, $"Unknown location \"{asked}\". Use a map name (Farm, Town, SeedShop...), a shop keeper's name (Pierre, Clint, Robin, Marnie, Willy, Gus) or any villager's name.");
+            yield break;
+        }
+        if (target.Name == "Club" && !P.hasClubCard)
+        {
+            c.Fail(Reasons.ShopClosed, "The casino is behind the Oasis back door and the bouncer only lets in holders of the Club Card.");
+            yield break;
+        }
+        if (target.Name == "MovieTheater" && !Game1.MasterPlayer.hasOrWillReceiveMail("ccMovieTheater"))
+        {
+            c.Fail(Reasons.ShopClosed, "The movie theater is not restored yet. Complete the Movie Theater bundle in the Community Center, or buy it from Joja.");
             yield break;
         }
         yield return TravelTo(target.Name, c);
@@ -834,6 +848,13 @@ public static partial class AgentTools
                 prev[e.Target] = cur;
                 queue.Enqueue(e.Target);
             }
+            // Paid rides (bus, boat) connect maps that have no door or warp between them.
+            foreach (var t in TransitTargets(cur))
+            {
+                if (prev.ContainsKey(t) || Game1.getLocationFromName(t) == null) continue;
+                prev[t] = cur;
+                queue.Enqueue(t);
+            }
         }
         return null;
     }
@@ -849,6 +870,15 @@ public static partial class AgentTools
             yield return WaitIdle();
             var loc = Loc;
             var next = route[hop];
+            if (IsTransit(loc.Name, next))
+            {
+                var transit = new CallContext();
+                yield return TakeTransit(next, transit);
+                if (!transit.Ok) { c.Fail(transit.Reason ?? Reasons.NoPath, transit.Result); yield break; }
+                if (Loc.Name != next) { c.Fail(Reasons.NoPath, $"The ride ended in {Loc.Name} instead of {next}."); yield break; }
+                yield return Ticks(20);
+                continue;
+            }
             var me = P.TilePoint;
             var exit = Exits(loc).Where(e => e.Target == next)
                 .OrderBy(e => Math.Abs(e.Tile.X - me.X) + Math.Abs(e.Tile.Y - me.Y)).FirstOrDefault();

@@ -30,4 +30,15 @@ public class WorldTextFormatTests
     {
         Assert.Equal(expected, WorldText.DirName(facing));
     }
+
+    [Theory]
+    [InlineData(0, "Mine entrance")]
+    [InlineData(1, "floor 1")]
+    [InlineData(120, "floor 120")]
+    [InlineData(121, "Skull Cavern floor 1")] // the game's level 121 is the first Skull Cavern floor (#55)
+    [InlineData(200, "Skull Cavern floor 80")]
+    public void MineFloorName_counts_skull_cavern_floors_from_one(int level, string expected)
+    {
+        Assert.Equal(expected, WorldText.MineFloorName(level));
+    }
 }

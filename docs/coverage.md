@@ -126,11 +126,16 @@ Rules:
 | Mine ladders, shafts | action on a tile | `interact` | ✅ | |
 | Mine elevator | `MineElevator` → `MineElevatorMenu` | `menu choose` | ✅ smoke `mine_elevator` | #2 |
 | Combat | weapon swings, aim | `fight`: best weapon, walk to the nearest monster, swing with `Farmer.BeginUsingTool`; `eat_below` eats through the `eat` tool's path (`Farmer.eatHeldObject`) | 🟡 untested, no smoke case yet | #5, #6 |
-| Mine survival | watch health, eat, climb out | runtime interrupt when a monster within 3 tiles hurts the farmer (every action except `fight`, `eat`, `leave_mine`); `fight` stops at 30% HP; `leave_mine` walks to the up ladder (tile 115) and uses it with `checkAction`, else `Game1.warpFarmer` to the Mine; the footer shows HP and warns from 11 PM | 🟡 untested, no smoke case yet | #6 |
+| Mine survival | watch health, eat, climb out | runtime interrupt when a monster within 3 tiles hurts the farmer (every action except `fight`, `eat`, `leave_mine`); `fight` stops at 30% HP; `leave_mine` walks to the up ladder (tile 115), answers Leave, and the game exits to the Mine (Skull Cavern: the Skull Cave entrance); fallback warp to the same; the footer shows HP and warns from 11 PM | 🟡 untested; smoke `skull_cavern` covers the Skull Cavern exit | #6, #55 |
 | Festivals | arrive on time → ready check `festivalStart` → actions, shops, games | `calendar` (dates, hours), `travel_to`, `festival(start/leave)`, `talk_to` reaches festival villagers and booths, `interact(holding)` for the Luau soup | 🟡 untested; Egg Hunt eggs and the Fair and ice-fishing games are not covered | #11 |
 | Night events: fairy, witch, meteorite, Qi plane | automatic (`Game1.farmEvent`) | `NightEvents` reports them as an `Overnight:` line and a `night_event` log entry | 🟡 random, no smoke case | #54 |
-| Arcade, casino, darts, crane | `IMinigame`, `CalicoJack`, `Slots` | drivers (optional) | ❌ | |
-| Desert, Skull Cavern, Ginger Island, movie theater, Qi | travel, tile actions, menus | primitives | ❌ not checked | |
+| Arcade, darts, crane, casino minigames | `IMinigame`, `CalicoJack`, `Slots` | drivers (optional) | ❌ | |
+| Bus to Calico Desert | Bus Stop ticket machine → "Buy a ticket to the desert?" (500g; Pam at the wheel) | `travel_to Desert`: the game's `BusStop.checkAction`, the Yes answer and the ride (no fare re-implemented) | ✅ smoke `desert_and_bus` | #55 |
+| Desert, Oasis, Casino | bus, Oasis door, back room (Club Card) | `travel_to Desert`, `Oasis`, `Casino`; shops through `shop_list`/`buy` (Qi coins print as "Qi coins") | ✅ smoke `desert_and_bus` | #55 |
+| Skull Cavern | Skull door → `Game1.enterMine(121)`; up ladders; no elevator | `travel_to Skull Cavern` (needs the Skull Key and the bus); `status`/`look` say "Skull Cavern floor N"; `leave_mine` exits to the Skull Cave entrance | ✅ smoke `skull_cavern` | #55 |
+| Ginger Island | Willy's back room → donate 5 batteries, 200 hardwood and 5 iridium bars → boat ticket (1,000g) | repair: `interact(holding)` on the three donation tiles + `respond`; `travel_to Ginger Island` after `willyBoatFixed`; `status` counts `Golden Walnuts N/130`; island doors through `travel_to` | ✅ smoke `ginger_island` | #55 |
+| Movie theater | Town door → box office shop → ticket, then the entrance question | `travel_to MovieTheater` (needs `ccMovieTheater`); `interact` the box office, then `shop_list`/`buy` | ✅ smoke `movie_theater` | #55 |
+| Secret notes, journal scraps | use the note in the inventory (the magnifying glass finds them) | `interact(holding="Secret Note")` → `LetterViewerMenu`; `close_menu` | ✅ smoke `secret_note` | #55 |
 
 ### Knowledge
 
@@ -198,7 +203,7 @@ What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselv
    animals and buildings, bundles and museum, geodes, equipment.
 5. `look` labels: readable names for tile actions, plus animals and other farmers.
 6. Drivers: fishing, combat, festival games, casino.
-7. Late game: check each area; most should need no new tool.
+7. ✅ Late game (#55): the bus, Willy's boat, Skull Cavern, movie theater, and secret notes are fully supported and verified by in-game smoke tests.
 
 ## Keeping it complete
 

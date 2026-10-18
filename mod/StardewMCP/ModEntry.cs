@@ -45,6 +45,7 @@ public class ModEntry : Mod
         {
             SplitScreen.OnReturnedToTitle();
             PassOut.OnReturnedToTitle();
+            WorldProgress.Reset();
         };
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         helper.Events.GameLoop.DayStarted += (_, _) =>
@@ -68,6 +69,7 @@ public class ModEntry : Mod
         // Also raised on each farmhand screen when it joins (before its character exists);
         // SplitScreen logs those joins once they finish.
         SplitScreen.OnSaveLoaded();
+        WorldProgress.Reset();
         // The agents keep playing while the terminal or OBS window has focus.
         Game1.options.pauseWhenOutOfFocus = false;
         if (Context.ScreenId != 0)

@@ -58,7 +58,37 @@ internal static class NpcInfo
         ["Robin"] = "ScienceHouse",
         ["Marnie"] = "AnimalShop",
         ["Willy"] = "FishShop",
-        ["Gus"] = "Saloon"
+        ["Gus"] = "Saloon",
+        // Late-game areas (#55). Skull Cavern is a mine level, so travel_to handles that name itself.
+        ["Sandy"] = "SandyHouse",
+        ["Oasis"] = "SandyHouse",
+        ["Casino"] = "Club",
+        ["MovieTheater"] = "MovieTheater",
+        ["Movie Theater"] = "MovieTheater",
+        ["Cinema"] = "MovieTheater",
+        ["Theater"] = "MovieTheater",
+        ["Calico Desert"] = "Desert",
+        ["CalicoDesert"] = "Desert",
+        ["Calico"] = "Desert",
+        ["Desert Trader"] = "Desert",
+        ["DesertTrader"] = "Desert",
+        ["Ginger Island"] = "IslandSouth",
+        ["GingerIsland"] = "IslandSouth",
+        ["Island"] = "IslandSouth",
+        ["Island Farm"] = "IslandWest",
+        ["IslandFarm"] = "IslandWest",
+        ["Island FarmHouse"] = "IslandFarmHouse",
+        ["IslandFarmHouse"] = "IslandFarmHouse"
+    };
+
+    /// <summary>Aliases that name an area rather than a person, so ResolvePlace does not say "X works in Y".</summary>
+    public static readonly HashSet<string> AreaAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Oasis", "Casino",
+        "MovieTheater", "Movie Theater", "Cinema", "Theater",
+        "Calico Desert", "CalicoDesert", "Calico", "Desert Trader", "DesertTrader",
+        "Ginger Island", "GingerIsland", "Island",
+        "Island Farm", "IslandFarm", "Island FarmHouse", "IslandFarmHouse"
     };
 
     // ------------------------------------------------------------------ finding people
@@ -265,7 +295,7 @@ internal static class NpcInfo
 
         var key = input.EndsWith("'s", StringComparison.OrdinalIgnoreCase) ? input[..^2] : input;
         if (PlaceAliases.TryGetValue(key, out var shop) && Game1.getLocationFromName(shop) != null)
-            return (shop, $"{key} works in {shop}.");
+            return (shop, AreaAliases.Contains(key) ? "" : $"{key} works in {shop}.");
 
         var npc = ByName(key);
         if (npc?.currentLocation != null)

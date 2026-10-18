@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Locations;
+using StardewValley.Menus;
 
 namespace StardewMCP.Agent;
 
@@ -21,6 +22,9 @@ public static partial class AgentTools
     /// <summary>From this clock time (11 PM) the mines are too late: the footer warns and leave_mine stops climbing.</summary>
     internal const int MineLateTime = 2300;
 
+    /// <summary>Mine level 121 is Skull Cavern floor 1; its up ladder exits at the Skull Cave entrance, not at the Mine.</summary>
+    internal const int SkullCavernFirstFloor = 121;
+
     /// <summary>A monster this close (in tiles) when health drops interrupts a running action.</summary>
     internal const float DamageInterruptTiles = 3f;
 
@@ -33,8 +37,9 @@ public static partial class AgentTools
     private static ToolDef LeaveMineTool() => new()
     {
         Name = "leave_mine",
-        Description = "Get out of the Mines from any mine floor. You walk to the up ladder of the floor and climb it, floor after floor, until you are back at the Mine entrance. " +
-                      "If the ladder cannot be found or reached, your health is low (30% of maximum or less), it is 11 PM or later, or the climb takes over an hour of game time, you are warped to the Mine entrance instead. " +
+        Description = "Get out of the Mines from any mine floor. You walk to the up ladder and choose Leave, which takes you out to the Mine entrance. " +
+                      "In the Skull Cavern (mine level 121 and above) the same ladder takes you to the Skull Cave entrance in Calico Desert; the fallback warp goes there too. " +
+                      "If the ladder cannot be found or reached, your health is low (30% of maximum or less), it is 11 PM or later, or the climb takes over an hour of game time, you are warped out instead. " +
                       "The result says which floor you reached, the time and your health. Use it before health runs out, when you have no food left or when it gets late.",
         Schema = Obj(new { reason = Str(ReasonDesc) }, "reason"),
         Run = LeaveMine
@@ -124,16 +129,20 @@ public static partial class AgentTools
         }
         if (Loc is MineShaft stuck)
         {
-            c.Fail($"Could not leave the mines (still on floor {stuck.mineLevel}; {warpedBecause}). Try travel_to Mine, or walk to the up ladder yourself.");
+            c.Fail($"Could not leave the mines (still on {WorldText.MineFloorName(stuck.mineLevel)}; {warpedBecause}). Try leave_mine again, or walk to the up ladder yourself.");
             yield break;
         }
 
         int spent = Utility.ConvertTimeToMinutes(Game1.timeOfDay) - startMinutes;
+        bool skull = startFloor >= SkullCavernFirstFloor;
         var parts = new List<string>();
         if (climbed > 0) parts.Add($"climbed {climbed} ladder{(climbed == 1 ? "" : "s")}");
-        if (warpedBecause.Length > 0) parts.Add($"warped to the Mine entrance because {warpedBecause}");
-        var where = Loc?.Name == "Mine" ? "the Mine entrance (floor 0)" : Loc?.Name;
-        c.Result = $"Left the mines from floor {startFloor}; you are now at {where} ({string.Join(", then ", parts)}). " +
+        if (warpedBecause.Length > 0) parts.Add($"warped to the {(skull ? "Skull Cave entrance" : "Mine entrance")} because {warpedBecause}");
+        var where = Loc?.Name == "Mine" ? "the Mine entrance (floor 0)"
+                  : Loc?.Name == "SkullCave" ? "the Skull Cave entrance in Calico Desert"
+                  : Loc?.Name;
+        var start = skull ? $"the Skull Cavern from {WorldText.MineFloorName(startFloor)}" : $"the mines from floor {startFloor}";
+        c.Result = $"Left {start}; you are now at {where} ({string.Join(", then ", parts)}). " +
                    $"{spent} game minutes passed, it is {WorldText.FormatTime(Game1.timeOfDay)}. Health {P.health}/{P.maxHealth}.";
     }
 
@@ -153,6 +162,9 @@ public static partial class AgentTools
         if (Loc != floor) yield break; // something moved the farmer to another map on the way
 
         PressAction(ladder.Value);
+        // The up ladder asks "Leave the mine?" (ExitMine); choosing Leave is the game's own way out.
+        var answer = new CallContext();
+        yield return AnswerQuestion("Leave", answer);
         for (int i = 0; i < 300 && Loc == floor; i++) yield return null;
         yield return WaitIdle();
         if (Loc == floor) c.Fail("the ladder did not take you up");
@@ -175,13 +187,23 @@ public static partial class AgentTools
         return best;
     }
 
-    /// <summary>The fallback: warp to the Mine entrance hall with the game's own warp, like the elevator does.</summary>
+    /// <summary>The fallback: warp out with the game's own warp, like the elevator does. Skull Cavern floors exit at the Skull Cave entrance.</summary>
     private static IEnumerator WarpToMineEntrance()
     {
         P.controller = null;
         if (!P.UsingTool) P.Halt();
         yield return WaitIdle(120);
-        Game1.warpFarmer("Mine", MineEntranceTile.X, MineEntranceTile.Y, false);
+
+        if (Loc is MineShaft shaft && shaft.mineLevel >= SkullCavernFirstFloor)
+        {
+            // The game's ExitMine_Leave uses the same spot for Skull Cavern floors above 120.
+            Game1.warpFarmer("SkullCave", 3, 4, false);
+        }
+        else
+        {
+            Game1.warpFarmer("Mine", MineEntranceTile.X, MineEntranceTile.Y, false);
+        }
+
         for (int i = 0; i < 300 && Loc is MineShaft; i++) yield return null;
         yield return WaitIdle();
     }

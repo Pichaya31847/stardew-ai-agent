@@ -156,7 +156,7 @@ def test_limit_after_the_day_already_ended_is_not_repeated(run, game):
 
 def test_other_errors_still_stop_the_run(run, game):
     run.scenario("error", "ok")
-    with pytest.raises(SystemExit, match="Claude error, stopping: API Error: 500"):
+    with pytest.raises(SystemExit, match=r"Claude.* error, stopping: API Error: 500"):
         run.main("--max-parts", "1")
     assert run.calls == 1 and run.clock.slept == [] and game.statuses() == []
 

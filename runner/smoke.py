@@ -343,6 +343,14 @@ def inventory_stacks(name: str) -> dict[str, int]:
     return out
 
 
+def player_money() -> int:
+    """Gold shown by the `inventory` tool: 'Money 3500g · inventory (...)'."""
+    m = re.search(r"Money (\d+)g", ok("inventory"))
+    if not m:
+        raise Smoke("inventory shows no money")
+    return int(m.group(1))
+
+
 def open_shop(location: str, hhmm: int) -> str:
     """Set the time, travel to `location` and interact with its action tiles until a shop opens. Returns shop_list."""
     debug("set_time", time=hhmm)
@@ -525,6 +533,147 @@ def travel():
     text = ok("travel_to", location="Farm", reason="smoke test")
     if "Arrived in Farm" not in text:
         raise Smoke(f"expected arrival on Farm, got: {text.splitlines()[0]}")
+
+
+@case("desert_and_bus")
+def desert_and_bus():
+    """#55: the repaired bus sells a 500g ticket to Calico Desert, Oasis is reachable, and the desert bus returns."""
+    reset("Farm")
+    debug("set_time", time=1000)
+    debug("set_money", n=4000)
+    debug("mail_received", id="ccVault")
+    debug("set_bus_ready", on=1)
+    try:
+        text = ok("travel_to", location="Desert", reason="smoke test")
+        if "Arrived in Desert" not in text:
+            raise Smoke(f"travel_to Desert did not arrive: {text.splitlines()[0]}")
+        money = player_money()
+        if money != 3500:
+            raise Smoke(f"the bus fare was not 500g: money is {money}")
+        if "Location: Desert" not in ok("status"):
+            raise Smoke("status does not show the Desert")
+
+        text = ok("travel_to", location="Oasis", reason="smoke test")
+        if "Arrived in SandyHouse" not in text:
+            raise Smoke(f"Oasis did not resolve to Sandy's shop: {text.splitlines()[0]}")
+
+        text = ok("travel_to", location="BusStop", reason="smoke test")
+        if "Arrived in BusStop" not in text:
+            raise Smoke(f"the return bus did not arrive: {text.splitlines()[0]}")
+    finally:
+        call("close_menu")
+        debug("warp", location="Farm", x=64, y=15)
+
+
+@case("skull_cavern")
+def skull_cavern():
+    """#55: the Skull Key opens the desert door, floor 1 shows as floor 1, no elevator, leave_mine exits to the Desert."""
+    reset("Farm")
+    debug("set_time", time=1000)
+    debug("set_money", n=4000)
+    debug("mail_received", id="ccVault")
+    debug("set_bus_ready", on=1)
+    debug("set_power", name="skull_key", on=1)
+    try:
+        text = ok("travel_to", location="Skull Cavern", reason="smoke test")
+        if "Skull Cavern floor 1" not in text:
+            raise Smoke(f"travel_to Skull Cavern did not reach floor 1: {text.splitlines()[0]}")
+        if "Skull Cavern floor 1" not in ok("status"):
+            raise Smoke("status does not count the first Skull Cavern floor as floor 1")
+
+        labels = [label for label, _ in parse_things(ok("look", radius=12), "A")]
+        if any("MineElevator" in label or "Mine Elevator" in label for label in labels):
+            raise Smoke(f"the Skull Cavern should have no elevator: {labels}")
+
+        text = ok("leave_mine", reason="smoke test")
+        if "Skull Cave" not in text:
+            raise Smoke(f"leave_mine did not exit to the Skull Cave entrance: {text.splitlines()[0]}")
+        if "Location: SkullCave" not in ok("status"):
+            raise Smoke("leave_mine left the farmer somewhere other than the Skull Cave entrance")
+    finally:
+        call("close_menu")
+        debug("warp", location="Farm", x=64, y=15)
+
+
+@case("ginger_island")
+def ginger_island():
+    """#55: Willy's boat sails for 1,000g, the status counts golden walnuts, and the island boat returns."""
+    reset("Farm")
+    debug("set_time", time=1000)
+    debug("set_money", n=4000)
+    debug("mail_received", id="willyBackRoomInvitation")
+    debug("mail_received", id="willyBoatTicketMachine")
+    debug("mail_received", id="willyBoatHull")
+    debug("mail_received", id="willyBoatAnchor")
+    debug("mail_received", id="willyBoatFixed")
+    debug("mail_received", id="seenBoatJourney")
+    debug("set_walnuts", n=3)
+    try:
+        text = ok("travel_to", location="Ginger Island", reason="smoke test")
+        if "Arrived in IslandSouth" not in text:
+            raise Smoke(f"the boat did not reach Ginger Island: {text.splitlines()[0]}")
+        if player_money() != 3000:
+            raise Smoke(f"the boat fare was not 1,000g: money is {player_money()}")
+        if "Golden Walnuts 3/130" not in ok("status"):
+            raise Smoke("status does not show the golden walnut counter")
+
+        text = ok("travel_to", location="BoatTunnel", reason="smoke test")
+        if "Arrived in BoatTunnel" not in text:
+            raise Smoke(f"the island boat did not return: {text.splitlines()[0]}")
+    finally:
+        call("close_menu")
+        debug("warp", location="Farm", x=64, y=15)
+
+
+@case("movie_theater")
+def movie_theater():
+    """#55: Movie Theater is closed before restoration; restored theater sells tickets at the box office and admits the player."""
+    reset("Farm")
+    debug("set_time", time=1000)
+    good, text = call("travel_to", location="Movie Theater", reason="smoke test")
+    if good or "not restored yet" not in text:
+        raise Smoke(f"travel_to Movie Theater before restoration should fail: {text.splitlines()[0]}")
+
+    debug("clear_items")
+    debug("mail_received", id="ccMovieTheater")
+    debug("set_money", n=2000)
+    try:
+        text = ok("travel_to", location="Movie Theater", reason="smoke test")
+        if "Arrived in MovieTheater" not in text:
+            raise Smoke(f"travel_to Movie Theater did not arrive: {text.splitlines()[0]}")
+        if player_money() != 1000:
+            raise Smoke(f"the movie ticket was not 1,000g: money is {player_money()}")
+        if "Location: MovieTheater" not in ok("status"):
+            raise Smoke("status does not show MovieTheater")
+
+        text = ok("travel_to", location="Town", reason="smoke test")
+        if "Arrived in Town" not in text:
+            raise Smoke(f"travel_to Town from Movie Theater did not arrive: {text.splitlines()[0]}")
+    finally:
+        call("close_menu")
+        debug("warp", location="Farm", x=64, y=15)
+
+
+@case("secret_note")
+def secret_note():
+    """#55: reading a secret note opens the letter and preserves the item in the pack."""
+    reset("Farm")
+    debug("clear_items")
+    debug("mail_received", id="hasMagnifyingGlass")
+    debug("add_item", id="(O)79", qty=1)
+    try:
+        text = ok("interact", holding="Secret Note", reason="smoke test")
+        if "Used Secret Note" not in text:
+            raise Smoke(f"interact holding Secret Note did not use it: {text.splitlines()[0]}")
+        if "Letter open:" not in text:
+            raise Smoke(f"reading Secret Note did not open a letter: {text[:200]}")
+        ok("close_menu")
+        inv = ok("inventory")
+        if "Secret Note" not in inv:
+            raise Smoke("Secret Note should remain in pack after reading (#55)")
+    finally:
+        call("close_menu")
+        debug("warp", location="Farm", x=64, y=15)
 
 
 @case("farm_batch")

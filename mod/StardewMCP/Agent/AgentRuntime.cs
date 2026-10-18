@@ -119,6 +119,7 @@ public class AgentRuntime
         SocialTools.Tick(Log.Player);
         Perception.Tick(this);
         Story.Tick(this);
+        WorldProgress.Tick(this);
         Romance.Tick(this);
         Stats.Tick();
         NightEvents.Tick(this);

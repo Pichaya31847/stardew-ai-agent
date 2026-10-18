@@ -44,6 +44,11 @@ public static class DebugApi
             Op("clear_items", ClearItems),
             Op("set_money", SetMoney),
             Op("add_mail", AddMail),
+            Op("mail_received", AddMailReceived),
+            Op("set_power", SetPower),
+            Op("set_club_coins", SetClubCoins),
+            Op("set_walnuts", SetWalnuts),
+            Op("set_bus_ready", SetBusReady),
             Op("set_skill", SetSkill),
             Op("set_health", SetHealth),
             Op("set_stamina", SetStamina),
@@ -154,6 +159,67 @@ public static class DebugApi
         if (id.Length == 0) { c.Fail("id is required (a mail id, e.g. \"smoke_letter\")"); yield break; }
         Game1.player.mailbox.Add(id);
         c.Result = $"Mailbox now holds {Game1.player.mailbox.Count} letter(s)";
+        yield break;
+    }
+
+    /// <summary>Add a mail flag (a world flag such as ccVault or willyBoatFixed) for late-game smoke setup (#55).</summary>
+    private static IEnumerator AddMailReceived(JsonElement a, CallContext c)
+    {
+        var id = S(a, "id").Trim();
+        if (id.Length == 0) { c.Fail("id is required (a mail flag, e.g. \"ccVault\")"); yield break; }
+        Game1.MasterPlayer.mailReceived.Add(id);
+        Game1.player.mailReceived.Add(id);
+        if (id.Equals("willyBoatFixed", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var flag in new[] { "willyBoatTicketMachine", "willyBoatHull", "willyBoatAnchor" })
+            {
+                Game1.MasterPlayer.mailReceived.Add(flag);
+                Game1.player.mailReceived.Add(flag);
+            }
+        }
+        c.Result = $"Mail flag {id} set";
+        yield break;
+    }
+
+    /// <summary>Turn on a late-game power (skull_key, club_card, magnifying_glass) for smoke setup (#55).</summary>
+    private static IEnumerator SetPower(JsonElement a, CallContext c)
+    {
+        var name = S(a, "name").Trim().ToLowerInvariant().Replace(" ", "_");
+        bool on = I(a, "on", 1) != 0;
+        switch (name)
+        {
+            case "skull_key": Game1.player.hasSkullKey = on; break;
+            case "club_card": Game1.player.hasClubCard = on; break;
+            case "magnifying_glass": Game1.player.hasMagnifyingGlass = on; break;
+            default: c.Fail("name must be skull_key, club_card or magnifying_glass"); yield break;
+        }
+        c.Result = $"{name} {(on ? "on" : "off")}";
+        yield break;
+    }
+
+    private static IEnumerator SetClubCoins(JsonElement a, CallContext c)
+    {
+        if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
+        Game1.player.clubCoins = Math.Max(0, I(a, "n", 0));
+        c.Result = $"Qi coins set to {Game1.player.clubCoins}";
+        yield break;
+    }
+
+    private static IEnumerator SetWalnuts(JsonElement a, CallContext c)
+    {
+        if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
+        int found = Math.Clamp(I(a, "n", 0), 0, 130);
+        Game1.netWorldState.Value.GoldenWalnutsFound = found;
+        Game1.netWorldState.Value.GoldenWalnuts = found;
+        c.Result = $"Golden walnuts set to {found}/130";
+        yield break;
+    }
+
+    /// <summary>Let the bus run without waiting for Pam's schedule (for smoke cases only).</summary>
+    private static IEnumerator SetBusReady(JsonElement a, CallContext c)
+    {
+        Game1.netWorldState.Value.canDriveYourselfToday.Value = true;
+        c.Result = "The bus can be driven now";
         yield break;
     }
 
