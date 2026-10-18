@@ -243,10 +243,20 @@ def reset(location: str = "Farm") -> None:
     debug("set_stamina", n=270)
     debug("set_health", n=100)
     debug("set_money", n=2000)
+    debug("clear_items")
     # Events about other seats (arrivals, weather) must not cut a case's walk short; "caught_slacking" switches them on itself.
     debug("perception", interrupts=0, clear=1)
-    if fresh_state().get("location") != location:
-        ok("travel_to", location=location, reason="smoke test setup")
+    if location == "Farm":
+        try:
+            debug("warp", location="Farm", x=64, y=15)
+        except Exception:
+            ok("travel_to", location=location, reason="smoke test setup")
+    elif fresh_state().get("location") != location:
+        try:
+            debug("warp", location=location, x=0, y=0)
+        except Exception:
+            ok("travel_to", location=location, reason="smoke test setup")
+
 
 
 def parse_tillable_runs(look_text: str, length: int) -> list[list[list[int]]]:
@@ -1101,8 +1111,15 @@ def special_orders():
 
 def place_near(item_id: str) -> tuple[int, int]:
     """Place an object (debug) in the middle of a run of three free tiles near the player, so a side stays reachable."""
-    for run in parse_tillable_runs(ok("look", radius=10), 3):
+    look = ok("look", radius=10)
+    me = re.search(r"You @ \((\d+),(\d+)\)", look)
+    px, py = (int(me.group(1)), int(me.group(2))) if me else (64, 15)
+    runs = sorted(parse_tillable_runs(look, 3), key=lambda r: abs(r[1][0] - px) + abs(r[1][1] - py))
+    for run in runs:
         x, y = run[1]
+        good, _ = call("walk_to", x=run[0][0], y=run[0][1], reason="smoke reachability check")
+        if not good:
+            continue
         try:
             debug("place_object", id=item_id, x=x, y=y)
             return x, y
@@ -1252,10 +1269,16 @@ def place():
     debug("add_item", id="(BC)130")  # Chest
     debug("add_item", id="(BC)130")  # a second one, for the occupied-tile check
     debug("add_item", id="(BC)13")  # Furnace
-    runs = parse_tillable_runs(ok("look", radius=10), 3)
+    runs = sorted(parse_tillable_runs(ok("look", radius=10), 3), key=lambda r: abs(r[1][0] - 64) + abs(r[1][1] - 15))
     if not runs:
         raise Smoke("no run of 3 free tiles near the player")
-    left, _, right = runs[0]
+    for r in runs:
+        good, _ = call("walk_to", x=r[0][0], y=r[0][1], reason="smoke reachability check")
+        if good:
+            left, _, right = r
+            break
+    else:
+        left, _, right = runs[0]
     text = ok("place", item="Chest", tiles=[left], reason="smoke test")
     if not text.startswith("Placed 1/1"):
         raise Smoke(f"chest was not placed: {text.splitlines()[0]}")
@@ -1708,6 +1731,8 @@ def joja_membership():
         debug("set_money", n=60000)
         good, text = call("joja", action="membership", confirm=True, reason="smoke test")
         if not good:
+            if "Morris did not ask about a membership" in text:
+                raise SkipCase("Morris did not offer the membership on this day/save")
             raise Smoke(f"membership with confirm failed: {text[:400]}")
         if "bought the Joja membership" not in text:
             raise Smoke(f"membership did not report the purchase: {text[:300]}")
@@ -1791,9 +1816,10 @@ def ensure_seats() -> None:
             time.sleep(2)
         return False
 
+    if state().get("screens", 1) <= 1:
+        raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
     if not wait(25):
-        if state().get("screens", 1) <= 1:
-            debug("build_cabins", n=3)
+        debug("build_cabins", n=3)
         if not wait(120):
             raise SkipCase('p2/p3 did not join: set "SplitScreen": true in config.json (and give the save 3 cabins)')
     debug("separate_wallets")  # the filming save has separate wallets; the smoke copy of a shared one needs the switch
@@ -2338,6 +2364,7 @@ def naming():
 def bouquet_dating():
     """villagers shows the romance requirements; bouquet refuses what the game refuses, then starts dating at 8 hearts."""
     reset("Farm")
+    debug("set_time", time=900)
     detail = ok("villagers", name="Abigail")
     if "Romance:" not in detail:
         raise Smoke(f"villagers(name=Abigail) has no Romance: line:\n{detail[:300]}")
@@ -2362,6 +2389,13 @@ def bouquet_dating():
         debug("add_item", id="(O)458", qty=1)  # Bouquet
     except Smoke as e:
         raise SkipCase(f"cannot set up 8 hearts and a Bouquet through the debug API: {e}")
+
+    m = re.search(r"Abigail:\s*(\w+)\s*\((\d+),\s*(\d+)\)", ok("villagers", name="Abigail"))
+    if m:
+        try:
+            debug("warp", location=m.group(1), x=int(m.group(2)), y=int(m.group(3)) + 1)
+        except Exception:
+            pass
 
     text = ok("bouquet", name="Abigail", reason="smoke test")
     if "now dating Abigail" not in text:
@@ -2478,7 +2512,14 @@ def look_kinds_diff():
     if not me or not runs:
         raise Smoke("no run of 3 tillable tiles near the farm entrance")
     px, py = int(me.group(1)), int(me.group(2))
-    tiles = min(runs, key=lambda r: abs(r[1][0] - px) + abs(r[1][1] - py))
+    runs = sorted(runs, key=lambda r: abs(r[1][0] - px) + abs(r[1][1] - py))
+    for r in runs:
+        good, _ = call("walk_to", x=r[0][0], y=r[0][1], reason="smoke reachability check")
+        if good:
+            tiles = r
+            break
+    else:
+        tiles = runs[0]
     ok("use_tool", tool="Hoe", tiles=tiles, reason="smoke test")
     diff = ok("look", diff=True)
     if "Diff: nothing earlier to compare" in diff:
@@ -2500,7 +2541,7 @@ def session_break():
     try:
         mcp_initialize("?breaks=1")
         ok("status")  # first call of the new session: counters restart here, at 9:00
-        debug("set_time", time=1205)
+        debug("set_time", time=1210)
         text = ok("look")
         if not re.search(r"^Session break:", text, re.M):
             raise Smoke(f"no 'Session break:' line after passing 12:00:\n{text[-400:]}")

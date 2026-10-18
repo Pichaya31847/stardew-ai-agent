@@ -135,6 +135,8 @@ internal static class JojaRoute
             return "The farm already has the Joja membership (it covers every player). joja(action=projects) lists the gold projects.";
         if (BundleReader.HasMail(who, "ccIsComplete"))
             return "The Community Center is already complete, so there is no Joja membership to buy.";
+        if (!BundleReader.HasMail(who, "ccDoorUnlock"))
+            return "The Community Center scene with Mayor Lewis has not been seen yet; Morris does not offer the membership until then.";
         return null;
     }
 
@@ -453,7 +455,8 @@ public static partial class AgentTools
         var layer = Loc.Map.Layers[0];
         for (int y = 0; y < layer.LayerHeight; y++)
             for (int x = 0; x < layer.LayerWidth; x++)
-                if (Loc.doesTileHaveProperty(x, y, "Action", "Buildings") is { } act && act.Contains("Morris", StringComparison.OrdinalIgnoreCase))
+                if (Loc.doesTileHaveProperty(x, y, "Action", "Buildings") is { } act &&
+                    (act.Contains("Morris", StringComparison.OrdinalIgnoreCase) || act.Contains("JoinJoja", StringComparison.OrdinalIgnoreCase)))
                     tiles.Add(new Point(x, y));
         if (Loc.characters.FirstOrDefault(n => n.Name == "Morris") is { } morris)
             tiles.Add(morris.TilePoint);

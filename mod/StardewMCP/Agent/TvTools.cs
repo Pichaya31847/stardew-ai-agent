@@ -80,7 +80,7 @@ public static partial class AgentTools
         }
 
         var box0 = tv.GetBoundingBox();
-        var tile = new Point(box0.X / 64, box0.Y / 64);
+        var tile = new Point(box0.X / 64, (box0.Bottom - 1) / 64);
         var recipesBefore = P.cookingRecipes.Keys.ToHashSet();
         var sub = new CallContext();
         yield return Interact(ArgsOf(new { x = tile.X, y = tile.Y, reason = Reason(a) }), sub);

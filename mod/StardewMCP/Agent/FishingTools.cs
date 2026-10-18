@@ -29,7 +29,7 @@ public static partial class AgentTools
     private const int FishCutoffTime = 2430;
 
     private const int FishMinEnergy = 10;
-    private const int FishRadius = 25;
+    private const int FishRadius = 40;
 
     /// <summary>Ticks to wait for a bite before reeling in (60 ticks = 1 second = 1.4 game minutes).</summary>
     private const int FishBiteWaitTicks = 900;
@@ -172,7 +172,7 @@ public static partial class AgentTools
     private static (FishSpot? spot, string why) PlanFishingSpot(GameLocation loc, int added)
     {
         var me = P.TilePoint;
-        Func<int, int, bool> fishable = (fx, fy) => loc.isTileOnMap(fx, fy) && loc.isTileFishable(fx, fy);
+        Func<int, int, bool> fishable = (fx, fy) => loc.isTileOnMap(fx, fy) && (loc.isTileFishable(fx, fy) || loc.isWaterTile(fx, fy));
         var splash = SplashTile(loc);
         var found = new List<FishSpot>();
 
@@ -222,15 +222,12 @@ public static partial class AgentTools
                           "Use look to find water (~), or travel_to a map with water (Beach, Town river, Mountain lake, the Farm pond).");
 
         found.Sort((p, q) => q.Score.CompareTo(p.Score));
-        int tried = 0;
         foreach (var s in found)
         {
             if (!Pathfinder.IsWalkable(loc, s.Stand.X, s.Stand.Y))
                 continue;
             if (s.Stand == me)
                 return (s, "");
-            if (++tried > 3)
-                break;
             if (new Pathfinder().FindPath(loc, me.ToVector2(), s.Stand.ToVector2()) != null)
                 return (s, "");
         }
@@ -405,7 +402,7 @@ public static partial class AgentTools
             {
                 landedKnown = true;
                 landed = new Point((int)(rod.bobber.X / 64f), (int)(rod.bobber.Y / 64f));
-                landedWater = loc.isTileFishable(landed.Value.X, landed.Value.Y);
+                landedWater = loc.isTileFishable(landed.Value.X, landed.Value.Y) || loc.isWaterTile(landed.Value.X, landed.Value.Y);
             }
             if (rod.isNibbling && !hooked)
             {

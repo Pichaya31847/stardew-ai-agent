@@ -92,13 +92,32 @@ public static class DebugApi
         c.Result = $"Time set to {WorldText.FormatTime(t)}";
     }
 
-    /// <summary>Empty the pack except tools, so a case does not inherit the leftovers of earlier cases.</summary>
     private static IEnumerator ClearItems(JsonElement a, CallContext c)
     {
         var items = Game1.player.Items;
         for (int i = 0; i < items.Count; i++)
-            if (items[i] is not null and not StardewValley.Tool) items[i] = null;
-        c.Result = "Pack cleared (tools kept)";
+        {
+            if (items[i] is StardewValley.Tools.Axe or StardewValley.Tools.Hoe or StardewValley.Tools.Pickaxe or StardewValley.Tools.WateringCan or StardewValley.Tools.MeleeWeapon)
+                continue;
+            items[i] = null;
+        }
+
+        var farm = Game1.getFarm();
+        if (farm != null)
+        {
+            var allDirt = farm.terrainFeatures.Pairs
+                .Where(kv => kv.Value is StardewValley.TerrainFeatures.HoeDirt)
+                .Select(kv => kv.Key).ToList();
+            foreach (var pos in allDirt) farm.terrainFeatures.Remove(pos);
+
+            var toRemove = farm.Objects.Pairs
+                .Where(kv => kv.Value is StardewValley.Objects.Chest or StardewValley.Object { Name: "Furnace" or "Wood Fence" }
+                             || (Math.Abs(kv.Key.X - 64) <= 8 && Math.Abs(kv.Key.Y - 17) <= 6 && kv.Value is StardewValley.Object { IsSpawnedObject: true }))
+                .Select(kv => kv.Key).ToList();
+            foreach (var pos in toRemove) farm.Objects.Remove(pos);
+        }
+
+        c.Result = "Pack cleared (starter tools kept, farm clutter cleaned)";
         yield break;
     }
 

@@ -96,6 +96,7 @@ def run_main(monkeypatch, tmp_path, flags, planned, day_after_part):
 
     monkeypatch.setattr(run_days, "run_session", fake_run_session)
     monkeypatch.setattr(run_days, "wait_ready", fake_wait_ready)
+    monkeypatch.setattr(run_days, "game_state", fake_wait_ready)
     monkeypatch.setattr(run_days, "backup_save", lambda out_dir, day: None)
     monkeypatch.setattr(run_days.time, "sleep", lambda s: None)
     monkeypatch.setattr(sys, "argv", ["run_days.py", "--skip-smoke", "--out", str(tmp_path), "--days", "1"] + flags)

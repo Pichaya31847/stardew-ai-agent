@@ -68,6 +68,7 @@ def play(tmp_path, monkeypatch, capsys):
             return 3
 
         monkeypatch.setattr(run_days, "wait_ready", wait_ready)
+        monkeypatch.setattr(run_days, "game_state", lambda: {"ready": True, "day": game.day})
         monkeypatch.setattr(run_days, "run_session", run_session)
         monkeypatch.setattr(run_days, "backup_save", lambda out, day: game.backups.append(day))
         monkeypatch.setattr(run_days.time, "sleep", lambda s: None)

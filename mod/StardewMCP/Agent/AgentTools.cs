@@ -329,6 +329,13 @@ public static partial class AgentTools
             yield break;
         }
 
+        foreach (var step in path)
+        {
+            int sx = (int)step.X, sy = (int)step.Y;
+            if (Pathfinder.CanPassDoor(loc, sx, sy, P))
+                loc.openDoor(new xTile.Dimensions.Location(sx, sy), true);
+        }
+
         var stack = new Stack<Point>();
         for (int i = path.Count - 1; i >= 0; i--) stack.Push(new Point((int)path[i].X, (int)path[i].Y));
         P.controller = new PathFindController(stack, P, loc) { NPCSchedule = false };

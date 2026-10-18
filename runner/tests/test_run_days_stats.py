@@ -20,6 +20,7 @@ def _play(tmp_path, monkeypatch, first_day: int, days: int):
         return 1
 
     monkeypatch.setattr(run_days, "wait_ready", lambda timeout=600: {"ready": True, "day": state["day"]})
+    monkeypatch.setattr(run_days, "game_state", lambda: {"ready": True, "day": state["day"]})
     monkeypatch.setattr(run_days, "run_session", fake_session)
     monkeypatch.setattr(run_days, "backup_save", lambda out_dir, day: None)
     monkeypatch.setattr(run_days.time, "sleep", lambda s: None)

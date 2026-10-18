@@ -35,7 +35,28 @@ public partial class Pathfinder
 
         // Same footprint the game uses for a farmer standing on the tile.
         var feet = new Rectangle(x * Game1.tileSize + 8, y * Game1.tileSize + 16, 48, 32);
-        return !location.isCollidingPosition(feet, Game1.viewport, true, 0, false, Game1.player);
+        if (!location.isCollidingPosition(feet, Game1.viewport, true, 0, false, Game1.player))
+            return true;
+
+        return CanPassDoor(location, x, y, Game1.player);
+    }
+
+    public static bool CanPassDoor(GameLocation location, int x, int y, Farmer? who)
+    {
+        if (who == null) return false;
+        var action = location.doesTileHaveProperty(x, y, "Action", "Buildings");
+        if (string.IsNullOrEmpty(action)) return false;
+        var parts = action.Split(' ');
+        if (!parts[0].Equals("Door", StringComparison.OrdinalIgnoreCase)) return false;
+        if (parts.Length == 1) return true;
+        for (int i = 1; i < parts.Length; i++)
+        {
+            var name = parts[i];
+            if (int.TryParse(name, out _)) continue;
+            if (who.getFriendshipHeartLevelForNPC(name) >= 2 || who.spouse == name)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>The game's collision check as an <see cref="IWalkableGrid"/>.</summary>

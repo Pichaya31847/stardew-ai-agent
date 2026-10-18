@@ -130,10 +130,11 @@ public static class ToolResult
         return parts.Count == 0 ? "" : "[" + string.Join(" · ", parts) + "]";
     }
 
-    /// <summary>The structuredContent object: <c>{ok, reason, partial?, data?}</c>. <c>ok</c> is the MCP isError flag inverted.</summary>
-    public static Dictionary<string, object> Structured(ToolOutcome o)
+    /// <summary>The structuredContent object: <c>{ok, reason, text, partial?, data?}</c>. <c>ok</c> is the MCP isError flag inverted.</summary>
+    public static Dictionary<string, object> Structured(ToolOutcome o, string? text = null)
     {
         var d = new Dictionary<string, object> { ["ok"] = o.Ok, ["reason"] = o.Code };
+        if (text != null) d["text"] = text;
         if (o.Partial) d["partial"] = true;
         if (o.Data is { Count: > 0 }) d["data"] = o.Data;
         return d;
@@ -144,11 +145,12 @@ public static class ToolResult
     {
         var o = outcome ?? new ToolOutcome(ok, null, false, null);
         var tag = Tag(o);
+        var fullText = tag.Length > 0 ? tag + " " + text : text;
         return new
         {
-            content = new[] { new { type = "text", text = tag.Length > 0 ? tag + " " + text : text } },
+            content = new[] { new { type = "text", text = fullText } },
             isError = !o.Ok,
-            structuredContent = Structured(o)
+            structuredContent = Structured(o, fullText)
         };
     }
 
