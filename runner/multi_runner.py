@@ -127,7 +127,8 @@ def free_play_prompt(day: int, seat: str, persona: personas.Persona) -> str:
         f"[Phase 2: Free Play]\n"
         f"Morning meeting is adjourned. Head out and begin your day {day} work!\n"
         f"Execute your tasks: farm, forage, fish, mine, or trade. Coordinate via `say` or `whisper` when needed.\n"
-        f"When your work is done or evening approaches, write your private journal with `journal` and call `go_to_bed`."
+        f"When your work is done or evening approaches, write your private journal with `journal` "
+        f"(including your evolving `self` identity and notes on other `people`), then call `go_to_bed`."
     )
 
 
@@ -218,6 +219,11 @@ class MultiDayRunner:
                     in_bed = is_in_bed(state, seat)
                     if in_bed:
                         print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} ({self.cfg.seat_configs[seat].persona.name}) is in bed.")
+                        card = memory.bedtime_persona_card(self.log_dir, seat)
+                        if card.get("self"):
+                            print(f"[Bedtime Card] {seat} Self Identity:\n{card['self']}")
+                        if card.get("people"):
+                            print(f"[Bedtime Card] {seat} People Notes:\n{card['people']}")
                         done_seats.add(seat)
                         continue
 

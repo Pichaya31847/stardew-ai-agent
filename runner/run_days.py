@@ -824,6 +824,8 @@ def main():
     ap.add_argument("--backends", default=None, help="Comma-separated backends per seat, e.g. 'claude,agy,opencode'")
     ap.add_argument("--models", default=None, help="Comma-separated models per seat")
     ap.add_argument("--personas-dir", default=None, help="Directory containing {seat}.md persona files")
+    ap.add_argument("--emergent-personas", action=argparse.BooleanOptionalAction, default=True,
+                    help="Characters emerge from self/people notes written in journal (Issue #48, default: True)")
     ap.add_argument("--skip-meeting", action="store_true", help="Skip Phase 1 Morning Meeting standup")
     ap.add_argument("--meeting-turns", type=int, default=5, help="Turns for Morning Meeting standup (default 5)")
     for s in ("p1", "p2", "p3", "p4"):
@@ -912,10 +914,13 @@ def main():
                     personas={seat: cfg.persona for seat, cfg in multi_cfg.seat_configs.items()},
                     model_display=seat_backend.display_name,
                     language=lang.get("name", "Thai") if isinstance(lang, dict) else "Thai",
+                    emergent=getattr(args, "emergent_personas", True),
+                    self_note=memory.read_self(log_dir, s),
+                    people_note=memory.read_people(log_dir, s),
                 )
                 system_prompts[s] = memory.inject(
                     s_template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
-                    log_dir, args.goal, recent_d
+                    log_dir, args.goal, recent_d, player=s
                 )
 
             def play_day(attempt: int) -> dict:

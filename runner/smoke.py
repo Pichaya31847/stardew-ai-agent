@@ -834,7 +834,9 @@ def journal():
                 {"diary": diary, "lessons": "  ", "plan": "y"},
                 {"diary": diary, "lessons": "x", "plan": ""},
                 {"diary": diary, "lessons": "x", "plan": "y", "day": day + 1},
-                {"diary": diary, "lessons": "x", "plan": "y", "day": 0}):
+                {"diary": diary, "lessons": "x", "plan": "y", "day": 0},
+                {"diary": diary, "lessons": "x", "plan": "y", "self": "x" * 1001},
+                {"diary": diary, "lessons": "x", "plan": "y", "people": "\n".join(f"line {i}" for i in range(7))}):
         if call("journal", **bad)[0]:
             raise Smoke(f"journal accepted {bad}")
     if call("go_to_bed", reason="smoke test")[0]:
@@ -2097,16 +2099,24 @@ def journal_seats():
     """#21: each seat has its own journal and lessons files; p1's journal does not unlock p2's go_to_bed."""
     reset("Farm")
     diary = "Smoke test diary: the seats keep separate journals."
-    ok_seat("p1", "journal", diary=diary, lessons="SMOKE-P1-LESSON", plan="## Today\nSMOKE-P1-PLAN")
+    ok_seat("p1", "journal", diary=diary, lessons="SMOKE-P1-LESSON", plan="## Today\nSMOKE-P1-PLAN",
+            self="SMOKE-P1-SELF: Emergent identity p1", people="p2: reliable co-farmer")
     good, text = call_seat("p2", "go_to_bed", {"reason": "smoke test"})
     if good or "journal" not in text:
         raise Smoke(f"p2 slept on p1's journal, or the failure does not name the journal: {text.splitlines()[0]}")
-    ok_seat("p2", "journal", diary=diary, lessons="SMOKE-P2-LESSON", plan="## Today\nSMOKE-P2-PLAN")
+    ok_seat("p2", "journal", diary=diary, lessons="SMOKE-P2-LESSON", plan="## Today\nSMOKE-P2-PLAN",
+            self="SMOKE-P2-SELF: Emergent identity p2", people="p1: hard worker")
     p1, p2 = memory_of("p1"), memory_of("p2")
-    if "SMOKE-P2" in p1["lessons"] + p1["plan"] or "SMOKE-P1" in p2["lessons"] + p2["plan"]:
+    p1_all = p1["lessons"] + p1["plan"] + p1.get("self", "") + p1.get("people", "")
+    p2_all = p2["lessons"] + p2["plan"] + p2.get("self", "") + p2.get("people", "")
+    if "SMOKE-P2" in p1_all or "SMOKE-P1" in p2_all:
         raise Smoke(f"journals of p1 and p2 mixed:\np1 {p1}\np2 {p2}")
     if "SMOKE-P1-LESSON" not in p1["lessons"] or "SMOKE-P2-LESSON" not in p2["lessons"]:
         raise Smoke("a seat's lesson is missing from its own lessons file")
+    if "SMOKE-P1-SELF" not in p1.get("self", "") or "SMOKE-P2-SELF" not in p2.get("self", ""):
+        raise Smoke("a seat's self note is missing from memory")
+    if "p2: reliable" not in p1.get("people", "") or "p1: hard worker" not in p2.get("people", ""):
+        raise Smoke("a seat's people note is missing from memory")
 
 
 @case("emote")

@@ -32,7 +32,7 @@ def test_parse_multi_config_custom_seats_and_backends():
         multi=False,
         seats="p1,p3",
         backends="claude,opencode",
-        models="claude-3-5-haiku,opencode-go/gpt-6-luna",
+        models="claude-haiku-5-5,opencode-go/gpt-6-luna",
         p3_model="custom-luna-model",
         meeting_turns=3,
         skip_meeting=True,
@@ -67,6 +67,41 @@ def test_persona_customization():
     assert "give(to, item, count)" in custom
     assert "plan_read(history)" in custom
     assert "plan_edit(section, text)" in custom
+
+
+def test_emergent_persona_customization():
+    """Issue #48: emergent personas customize prompt with self and people notes."""
+    all_personas = personas.load_all_personas(["p1", "p2"])
+    template = "You are **{MODEL_NAME}**, playing Stardew Valley by yourself in a 100-day challenge.\n\nRules: ..."
+    custom_day1 = personas.customize_system_prompt(
+        template,
+        seat="p2",
+        active_seats=["p1", "p2"],
+        personas=all_personas,
+        model_display="Luna (OpenCode)",
+        language="Thai",
+        emergent=True,
+        self_note="",
+        people_note="",
+    )
+    assert "Gemini (Seat p2)" in custom_day1
+    assert "Luna (OpenCode)" in custom_day1
+    assert "Emerging Identity" in custom_day1
+    assert "Your Relationships With Other Farmers" in custom_day1
+
+    custom_day2 = personas.customize_system_prompt(
+        template,
+        seat="p2",
+        active_seats=["p1", "p2"],
+        personas=all_personas,
+        model_display="Luna (OpenCode)",
+        language="Thai",
+        emergent=True,
+        self_note="I am becoming a pragmatic trader after selling 15 parsnips.",
+        people_note="p1 (Claude): dependable partner who waters crops early.",
+    )
+    assert "I am becoming a pragmatic trader" in custom_day2
+    assert "p1 (Claude): dependable partner" in custom_day2
 
 
 def test_multi_day_morning_meeting(tmp_path, monkeypatch):
