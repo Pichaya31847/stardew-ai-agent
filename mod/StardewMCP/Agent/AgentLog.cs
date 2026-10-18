@@ -151,6 +151,12 @@ public class AgentLog
     /// <summary>Facts the player found out, one "- [topic, day N] ..." line each; appended by the journal tool.</summary>
     public string NotesFile(string? player = null) => MemoryFile("notes", player);
 
+    /// <summary>Character self-identity note (#48); overwritten each evening by the journal tool.</summary>
+    public string SelfFile(string? player = null) => MemoryFile("self", player);
+
+    /// <summary>Character stance and notes on other players (#48); updated by the journal tool.</summary>
+    public string PeopleFile(string? player = null) => MemoryFile("people", player);
+
     /// <summary>"spring 3 Y1" for a 1-based farm day (28 days a season, 4 seasons a year).</summary>
     public static string DateLabel(int day)
     {
@@ -268,13 +274,31 @@ public class AgentLog
         }
     }
 
-    /// <summary>A player's lessons, plan and notes, as served by /api/memory.</summary>
+    /// <summary>A player's lessons, plan, notes, self and people, as served by /api/memory.</summary>
     public object ReadMemory(string? player = null) => new
     {
         lessons = ReadMemoryText(LessonsFile(player)),
         plan = ReadMemoryText(PlanFile(player)),
-        notes = ReadMemoryText(NotesFile(player))
+        notes = ReadMemoryText(NotesFile(player)),
+        self = ReadMemoryText(SelfFile(player)),
+        people = ReadMemoryText(PeopleFile(player))
     };
+
+    public void WriteSelf(string text, string? player = null)
+    {
+        lock (_memoryLock)
+        {
+            File.WriteAllText(SelfFile(player), text.Trim() + "\n", Encoding.UTF8);
+        }
+    }
+
+    public void WritePeople(string text, string? player = null)
+    {
+        lock (_memoryLock)
+        {
+            File.WriteAllText(PeopleFile(player), text.Trim() + "\n", Encoding.UTF8);
+        }
+    }
 
     private List<string> ReadLines(string path) =>
         ReadMemoryText(path).Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Trim().Length > 0).ToList();
@@ -321,4 +345,12 @@ public class PlayerLog
     public void WritePlan(string plan) => _log.WritePlan(plan, Player);
 
     public (int added, int total) AppendNotes(int day, IEnumerable<(string topic, string text)> notes) => _log.AppendNotes(day, notes, Player);
+
+    public string ReadSelf() => _log.ReadMemoryText(_log.SelfFile(Player));
+
+    public void WriteSelf(string text) => _log.WriteSelf(text, Player);
+
+    public string ReadPeople() => _log.ReadMemoryText(_log.PeopleFile(Player));
+
+    public void WritePeople(string text) => _log.WritePeople(text, Player);
 }

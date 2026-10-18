@@ -176,3 +176,22 @@ def test_with_reminder_appends_only_when_there_is_one(tmp_path):
     write(tmp_path / "plan.md", PLAN)
     assert "Monday" in memory.with_reminder("PROMPT", state, tmp_path)
     assert memory.with_reminder("PROMPT", {"season": "spring", "dayOfMonth": 3}, tmp_path) == "PROMPT"
+
+
+def test_self_and_people_paths_and_bedtime_card(tmp_path):
+    """Issue #48: emergent persona self and people per-seat paths and bedtime cards."""
+    assert memory.self_path(tmp_path) == tmp_path / "self.md"
+    assert memory.self_path(tmp_path, "p1") == tmp_path / "self.md"
+    assert memory.self_path(tmp_path, "p2") == tmp_path / "self_p2.md"
+    assert memory.people_path(tmp_path, "p3") == tmp_path / "people_p3.md"
+
+    write(tmp_path / "self_p2.md", "I am becoming a hardworking miner.")
+    write(tmp_path / "people_p2.md", "p1 (Claude): helpful companion.")
+
+    assert memory.read_self(tmp_path, "p2") == "I am becoming a hardworking miner."
+    assert memory.read_people(tmp_path, "p2") == "p1 (Claude): helpful companion."
+    assert memory.read_self(tmp_path, "p1") == ""
+
+    card = memory.bedtime_persona_card(tmp_path, "p2")
+    assert card["self"] == "I am becoming a hardworking miner."
+    assert card["people"] == "p1 (Claude): helpful companion."

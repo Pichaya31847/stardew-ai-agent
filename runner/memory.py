@@ -67,6 +67,16 @@ def notes_path(log_dir: Path, player: str = "p1") -> Path:
     return seat_file(log_dir, "notes", player)
 
 
+def self_path(log_dir: Path, player: str = "p1") -> Path:
+    """Character self-identity file (#48); overwritten each evening by the AI."""
+    return seat_file(log_dir, "self", player)
+
+
+def people_path(log_dir: Path, player: str = "p1") -> Path:
+    """Relationship notes per other farmer (#48); updated when interactions happen."""
+    return seat_file(log_dir, "people", player)
+
+
 def diary_path(log_dir: Path, day: int, player: str = "p1") -> Path:
     return seat_file(log_dir, f"diary_{day:03}", player)
 
@@ -81,6 +91,21 @@ def read_text(path: Path) -> str:
         return Path(path).read_text(encoding="utf-8", errors="replace").strip()
     except FileNotFoundError:
         return ""
+
+
+def read_self(log_dir: Path, player: str = "p1") -> str:
+    return read_text(self_path(log_dir, player))
+
+
+def read_people(log_dir: Path, player: str = "p1") -> str:
+    return read_text(people_path(log_dir, player))
+
+
+def bedtime_persona_card(log_dir: Path, player: str = "p1") -> dict[str, str]:
+    return {
+        "self": read_self(log_dir, player),
+        "people": read_people(log_dir, player),
+    }
 
 
 def write_text(path: Path, text: str) -> None:

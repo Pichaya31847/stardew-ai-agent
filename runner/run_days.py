@@ -38,6 +38,7 @@ import argparse
 from dataclasses import dataclass, field
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -91,6 +92,13 @@ def find_opencode_cmd() -> list[str]:
 
 
 OPENCODE_CMD = find_opencode_cmd()  # tests swap in a fake
+
+
+def opencode_run_cmd() -> list[str]:
+    """`opencode run`; the 2.x CLI (opencode-cli) needs --standalone, or it runs inside the desktop app's background
+    service and ignores the workdir's opencode.json (no stardew MCP, no tool denials: it could read the repo)."""
+    standalone = Path(OPENCODE_CMD[0]).stem.lower() == "opencode-cli"
+    return [*OPENCODE_CMD, "run", *(["--standalone"] if standalone else [])]
 DEFAULT_OUT = HERE.parent / "runs"
 GUARD = game_watchdog.NullWatchdog()  # replaced in main() unless --no-watchdog
 DEFAULT_GOAL = (
@@ -213,7 +221,8 @@ KNOWN_STARDEW_TOOLS = {
 }
 
 
-def normalize_agy_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
+def normalize_agy_tool(raw_name: str, arg: dict, server: str = "") -> tuple[str, bool]:
+    """`server`: this seat's agy MCP server; call_mcp_tool to any other stardew_pN would drive another farmer."""
     for prefix in ("mcp_stardew_", "stardew_"):
         if raw_name.startswith(prefix):
             name = raw_name[len(prefix):]
@@ -221,14 +230,25 @@ def normalize_agy_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
                 name = name.split("_", 1)[1]
             return name, True
     if raw_name == "call_mcp_tool":
-        srv = (arg.get("server_name") or arg.get("server") or "").lower()
-        if srv.startswith("stardew"):
-            tool_name = arg.get("tool_name") or arg.get("name") or "tool"
+        srv = (arg.get("ServerName") or arg.get("server_name") or arg.get("server") or "").lower()
+        if srv == server if server else srv.startswith("stardew"):
+            tool_name = arg.get("ToolName") or arg.get("tool_name") or arg.get("name") or "tool"
             return tool_name, True
         return raw_name, False
     if raw_name in KNOWN_STARDEW_TOOLS:
         return raw_name, True
     return raw_name, False
+
+
+def agy_own_mcp_file(path: str, server: str) -> bool:
+    """agy keeps each MCP server's instructions under ~/.gemini/antigravity-cli/mcp/<server>/ and reads them with view_file."""
+    if not path or not server:
+        return False
+    root = (Path.home() / ".gemini" / "antigravity-cli" / "mcp" / server).resolve()
+    try:
+        return Path(path).resolve().is_relative_to(root)
+    except (OSError, ValueError):
+        return False
 
 
 def normalize_opencode_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
@@ -243,6 +263,22 @@ def normalize_opencode_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
     if raw_name in KNOWN_STARDEW_TOOLS:
         return raw_name, True
     return raw_name, False
+
+
+_EXEC_NAMESPACE = re.compile(r"""tools\s*(?:\.\s*([A-Za-z_][\w-]*)|\[\s*["']([^"']+)["']\s*\])""")
+_EXEC_STARDEW_CALL = re.compile(r"""tools\s*(?:\.\s*stardew|\[\s*["']stardew["']\s*\])\s*(?:\.\s*(\w+)|\[\s*["'](\w+)["']\s*\])""")
+def opencode_execute_tools(code: str) -> tuple[list[str], list[str]]:
+    """opencode 2.x reaches MCP tools only through its `execute` code tool (`tools["stardew"].status({})`).
+
+    Returns (stardew tool names called, other MCP namespaces the code touches). `tools.opencode.*` is opencode's own
+    discovery helper and counts as neither.
+    shortcut: regex, so `const t = tools; t.blender` slips past; the wall is the workdir config (verified 2026-10-19:
+    under --standalone only `stardew` has tools, and execute has no eval/globalThis/require).
+    """
+    namespaces = {a or b for a, b in _EXEC_NAMESPACE.findall(code or "")}
+    others = sorted(namespaces - {"stardew", "opencode"})
+    names = [a or b for a, b in _EXEC_STARDEW_CALL.findall(code or "")]
+    return names, others
 
 
 def ensure_agy_mcp(mcp_url: str, server_name: str = "stardew") -> None:
@@ -365,6 +401,7 @@ class AgyBackend(Backend):
     def prepare(self, args, out_dir: Path, seat: str = "p1") -> None:
         mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False), seat=seat)
         srv_name = f"stardew_{seat}" if seat != "p1" else "stardew"
+        self.server = srv_name
         ensure_agy_mcp(mcp_url, server_name=srv_name)
 
     def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1"):
@@ -400,7 +437,9 @@ class AgyBackend(Backend):
                 raw_name = su.get("tool_name", "")
                 tinfo = su.get("tool_info", {})
                 arg = tinfo.get("parameters", {})
-                name, is_stardew = normalize_agy_tool(raw_name, arg)
+                if raw_name == "view_file" and agy_own_mcp_file(str(arg.get("AbsolutePath") or ""), getattr(self, "server", "")):
+                    return []  # its own copy of the stardew server's instructions: not a game action, not a leak
+                name, is_stardew = normalize_agy_tool(raw_name, arg, getattr(self, "server", ""))
                 if not is_stardew:
                     return [NormalizedEvent(kind="tool_call", tool_name=raw_name, tool_args=arg, is_disallowed=True)]
                 return [NormalizedEvent(kind="tool_call", tool_name=name, tool_args=arg)]
@@ -438,11 +477,9 @@ class OpenCodeBackend(Backend):
         cfg_data = {
             "$schema": "https://opencode.ai/config.json",
             "mcp": {
-                "servers": {
-                    "stardew": {
-                        "type": "remote",
-                        "url": mcp_url,
-                    }
+                "stardew": {
+                    "type": "remote",
+                    "url": mcp_url,
                 }
             },
             "tools": {
@@ -453,10 +490,15 @@ class OpenCodeBackend(Backend):
                 "read": False,
                 "glob": False,
                 "grep": False,
+                # opencode 2.x calls MCP tools only through `execute`; parse_event kills code that reaches these
+                "blender_*": False,
+                "godot-mcp-pro_*": False,
             },
+            # opencode 2.x turns this into an ordered rule list where the last match wins: deny-all must come first
             "permission": {
-                "stardew_*": "allow",
                 "*": "deny",
+                "execute": "allow",
+                "stardew_*": "allow",
             },
         }
         opencode_cfg.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
@@ -470,7 +512,7 @@ class OpenCodeBackend(Backend):
         workdir.mkdir(parents=True, exist_ok=True)
 
         cmd = [
-            *OPENCODE_CMD, "run",
+            *opencode_run_cmd(),
             "--model", args.model,
             "--format", "json",
             "--auto",
@@ -490,6 +532,13 @@ class OpenCodeBackend(Backend):
             raw_name = part.get("tool") or ""
             state = part.get("state") or {}
             arg = state.get("input") or {}
+            if raw_name == "execute":
+                names, others = opencode_execute_tools(str(arg.get("code") or ""))
+                if others:  # the code reaches another MCP server from the user's global config
+                    return [NormalizedEvent(kind="tool_call", tool_name=f"execute:{','.join(others)}", tool_args=arg,
+                                            is_disallowed=True)]
+                return [NormalizedEvent(kind="tool_call", tool_name=n, tool_args=arg) for n in names] or \
+                       [NormalizedEvent(kind="tool_call", tool_name="execute", tool_args=arg)]
             name, is_stardew = normalize_opencode_tool(raw_name, arg)
             if not is_stardew:
                 return [NormalizedEvent(kind="tool_call", tool_name=raw_name, tool_args=arg, is_disallowed=True)]
@@ -618,7 +667,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                     arg = norm_ev.tool_args
                     short = arg.get("text") or arg.get("reason") or ""
                     print(f"  #{tool_calls} {name} {short[:90]}")
-                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and backend.name in ("agy", "opencode"):
+                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and (backend.name in ("agy", "opencode") or getattr(args, "cap_tool_calls", False)):
                         print(f"  result: error_max_turns turns={tool_calls}")
                         if hasattr(proc, "kill"):
                             proc.kill()
@@ -735,10 +784,11 @@ def opencode_text_session(args, out_dir: Path, label: str) -> memory.Session:
         workdir = out_dir / "workdir_text"
         workdir.mkdir(exist_ok=True)
         (workdir / "opencode.json").write_text(json.dumps({
-            "tools": {"bash": False, "edit": False, "write": False, "view": False, "read": False, "glob": False, "grep": False}
+            "tools": {"bash": False, "edit": False, "write": False, "view": False, "read": False, "glob": False, "grep": False},
+            "permission": {"*": "deny"},  # 2.x --standalone would otherwise offer the global MCP servers via execute
         }), encoding="utf-8")
         cmd = [
-            *OPENCODE_CMD, "run",
+            *opencode_run_cmd(),
             "--model", args.model,
             "--format", "json",
             "--auto",
@@ -799,7 +849,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=1, help="How many in-game days to play in this run")
     ap.add_argument("--until-day", type=int, default=0, help="Stop after this farm day number")
-    ap.add_argument("--backend", choices=["claude", "agy", "opencode"], default="claude",
+    ap.add_argument("--backend", choices=["claude", "agy", "opencode"], default=None,
                     help="Player AI backend: 'claude' (Claude Code), 'agy' (Antigravity Gemini 3.8 Flash), or 'opencode' (OpenCode Go Luna)")
     ap.add_argument("--model", default=None,
                     help="Model identifier (default: claude-haiku-5-5 for claude, gemini-3.8-flash-medium for agy, opencode-go/gpt-6-luna for opencode)")
@@ -824,6 +874,8 @@ def main():
     ap.add_argument("--backends", default=None, help="Comma-separated backends per seat, e.g. 'claude,agy,opencode'")
     ap.add_argument("--models", default=None, help="Comma-separated models per seat")
     ap.add_argument("--personas-dir", default=None, help="Directory containing {seat}.md persona files")
+    ap.add_argument("--emergent-personas", action=argparse.BooleanOptionalAction, default=True,
+                    help="Characters emerge from self/people notes written in journal (Issue #48, default: True)")
     ap.add_argument("--skip-meeting", action="store_true", help="Skip Phase 1 Morning Meeting standup")
     ap.add_argument("--meeting-turns", type=int, default=5, help="Turns for Morning Meeting standup (default 5)")
     for s in ("p1", "p2", "p3", "p4"):
@@ -837,6 +889,7 @@ def main():
     personas_dir = Path(args.personas_dir) if args.personas_dir else None
     multi_cfg = multi_runner.parse_multi_config(args, personas_dir)
     is_multi = len(multi_cfg.seats) > 1 or args.multi
+    args.backend = args.backend or "claude"  # after the seats: a default here would override p2=agy, p3=opencode
 
     backend = get_backend(args.backend)
     if args.model is None:
@@ -852,7 +905,7 @@ def main():
         else:
             args.out = str(DEFAULT_OUT)
 
-    out_dir = Path(args.out)
+    out_dir = Path(args.out).resolve()  # the CLIs run inside out_dir/workdir*, so relative paths would break
     log_dir = out_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
@@ -912,10 +965,13 @@ def main():
                     personas={seat: cfg.persona for seat, cfg in multi_cfg.seat_configs.items()},
                     model_display=seat_backend.display_name,
                     language=lang.get("name", "Thai") if isinstance(lang, dict) else "Thai",
+                    emergent=getattr(args, "emergent_personas", True),
+                    self_note=memory.read_self(log_dir, s),
+                    people_note=memory.read_people(log_dir, s),
                 )
                 system_prompts[s] = memory.inject(
                     s_template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
-                    log_dir, args.goal, recent_d
+                    log_dir, args.goal, recent_d, player=s
                 )
 
             def play_day(attempt: int) -> dict:

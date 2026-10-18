@@ -87,7 +87,7 @@ get caught and betray each other. The story must emerge from the game, not from 
 2. Social tools (#39): say, whisper, think, emote, give, plan board.
 3. Perception and interrupts (#40).
 4. Runner for claude / agy / opencode with day phases and per-seat memory (#41). Before filming, a 3-day, 2-seat
-   warm-up (Haiku + Gemini Flash) tests the emergent-persona mechanism (#48).
+   warm-up (Haiku + GPT Luna via opencode) tests the emergent-persona mechanism (#48).
 5. Studio (#42): `/api/events`, overlay and replay moved out, OBS director and scenes, recorder.
 
 ## Layout

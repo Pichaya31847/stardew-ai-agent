@@ -164,3 +164,42 @@ def test_agy_text_session(tmp_path, monkeypatch):
     session = run_days.agy_text_session(args, out_dir, "test_label")
     reply = session("System prompt", "User prompt")
     assert reply == "Consolidated summary text"
+
+
+def _agy_call(server: str, tool: str) -> dict:
+    # shape seen from agy 2026-10-19: PascalCase keys
+    return {"event": "step_update", "step_update": {"step_type": "tool", "state": "ACTIVE", "tool_name": "call_mcp_tool",
+            "tool_info": {"parameters": {"Arguments": {}, "ServerName": server, "ToolName": tool}}}}
+
+
+def test_agy_call_mcp_tool_to_own_seat_server_counts_as_game_tool():
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    assert [(e.tool_name, e.is_disallowed) for e in b.parse_event(_agy_call("stardew_p2", "plan_read"))] == [("plan_read", False)]
+
+
+def test_agy_call_mcp_tool_to_another_seat_or_server_is_disallowed():
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    assert b.parse_event(_agy_call("stardew_p1", "travel_to"))[0].is_disallowed  # would drive Claude's farmer
+    assert b.parse_event(_agy_call("Roblox_Studio", "run_code"))[0].is_disallowed
+
+
+def _agy_view(path: str) -> dict:
+    return {"event": "step_update", "step_update": {"step_type": "tool", "state": "ACTIVE", "tool_name": "view_file",
+            "tool_info": {"parameters": {"AbsolutePath": path}}}}
+
+
+def test_agy_view_file_of_its_own_stardew_instructions_is_ignored():
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    own = Path.home() / ".gemini" / "antigravity-cli" / "mcp" / "stardew_p2" / "instructions.md"
+    assert b.parse_event(_agy_view(str(own))) == []
+
+
+def test_agy_view_file_elsewhere_is_disallowed():
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    mcp = Path.home() / ".gemini" / "antigravity-cli" / "mcp"
+    for path in (mcp / "stardew_p1" / "instructions.md", mcp / "stardew_p2" / ".." / "blender" / "x.md", Path("CLAUDE.md").resolve()):
+        assert b.parse_event(_agy_view(str(path)))[0].is_disallowed, path

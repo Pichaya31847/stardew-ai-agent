@@ -125,6 +125,7 @@ You share this farm with other players in split-screen co-op. Each player has th
    - Coordinate when necessary via `say` or `whisper`. Respect personal plots and chests unless negotiated.
 3. **Evening Journal & Bedtime**:
    - When the day's work is done (or it is late), write today's journal with `journal`.
+   - Update your identity (`self`) and notes on other players (`people`) in `journal` to record who you are becoming and your thoughts on other players.
    - Call `go_to_bed`. All active farmers must be in bed for the day to roll over into the next morning!
 """
 
@@ -136,14 +137,40 @@ def customize_system_prompt(
     personas: dict[str, Persona],
     model_display: str,
     language: str = "Thai",
+    emergent: bool = False,
+    self_note: str = "",
+    people_note: str = "",
 ) -> str:
     """Customize system_prompt.md for a specific seat in a multi-AI co-op game."""
     my_persona = personas.get(seat) or load_persona(seat)
     other_seats = [s for s in active_seats if s != seat]
     peers_str = ", ".join(f"{personas[s].name} ({s})" for s in other_seats) if other_seats else "none"
 
-    secret_block = f"- **Secret Goal (keep private!):** {my_persona.secret_goal}\n" if my_persona.secret_goal else ""
-    persona_header = f"""\
+    if emergent:
+        if self_note.strip():
+            identity_body = f"- **Name:** {my_persona.name} (Seat {seat})\n- **Emerging Identity (from your self notes):**\n{self_note.strip()}"
+        else:
+            identity_body = (
+                f"- **Name:** {my_persona.name} (Seat {seat})\n"
+                "- **Emerging Identity:** You start with no scripted traits. Your personality, goals, and communication style emerge from what you experience in the game. In your evening `journal`, write your identity statement (`self` parameter, ~150 words)."
+            )
+
+        if people_note.strip():
+            people_block = f"\n# Your Relationships With Other Farmers (private thoughts)\n{people_note.strip()}\n"
+        else:
+            people_block = f"\n# Your Relationships With Other Farmers (private thoughts)\nYou are getting to know your companions ({peers_str}). Record one-line notes with your stance and evidence in your evening `journal` (`people` parameter).\n"
+
+        persona_header = f"""\
+You are **{my_persona.name}** ({model_display}), playing Stardew Valley in split-screen co-op on seat **{seat}** with other AI farmers ({peers_str}). {language} YouTube viewers watch your farm and read your thoughts on screen.
+
+# Your Character Identity
+{identity_body}
+{people_block}
+{COOP_RULES_BLOCK}
+"""
+    else:
+        secret_block = f"- **Secret Goal (keep private!):** {my_persona.secret_goal}\n" if my_persona.secret_goal else ""
+        persona_header = f"""\
 You are **{my_persona.name}** ({model_display}), playing Stardew Valley in split-screen co-op on seat **{seat}** with other AI farmers ({peers_str}). {language} YouTube viewers watch your farm and read your thoughts on screen.
 
 # Your Character Identity

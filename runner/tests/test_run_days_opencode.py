@@ -146,7 +146,10 @@ def test_opencode_seat_routing(play_opencode):
     cfg_file = s.out_dir / "workdir_p3" / "opencode.json"
     assert cfg_file.exists()
     cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
-    assert "/mcp/p3" in cfg["mcp"]["servers"]["stardew"]["url"]
+    assert "/mcp/p3" in cfg["mcp"]["stardew"]["url"]
+    assert "servers" not in cfg["mcp"]  # opencode reads mcp.<name>, a nested "servers" key registers nothing
+    assert "execute" not in cfg["tools"]  # opencode 2.x calls MCP tools only through execute
+    assert list(cfg["permission"]) == ["*", "execute", "stardew_*"]  # 2.x: last matching rule wins
     assert (s.out_dir / "usage_p3.csv").exists()
 
 
@@ -171,3 +174,30 @@ def test_opencode_text_session(tmp_path, monkeypatch):
     reply = session("System Prompt", "User Prompt")
     assert reply == "Consolidated lessons summary"
     assert "run" in called_cmd
+
+
+def _execute_event(code: str) -> dict:
+    return {"type": "tool_use", "part": {"tool": "execute", "state": {"input": {"code": code}}}}
+
+
+def test_opencode_execute_with_stardew_calls_counts_each_game_tool():
+    evs = run_days.OpenCodeBackend().parse_event(_execute_event(
+        'const s = await tools["stardew"].status({}); await tools.stardew.till_area({reason: "x"}); return s'))
+    assert [(e.tool_name, e.is_disallowed) for e in evs] == [("status", False), ("till_area", False)]
+
+
+def test_opencode_execute_discovery_only_is_allowed():
+    evs = run_days.OpenCodeBackend().parse_event(_execute_event("return await tools.opencode.list_mcp_resources({})"))
+    assert [(e.tool_name, e.is_disallowed) for e in evs] == [("execute", False)]
+
+
+def test_opencode_execute_reaching_another_mcp_server_is_disallowed():
+    evs = run_days.OpenCodeBackend().parse_event(_execute_event('await tools["blender"].get_scene_info({})'))
+    assert [(e.tool_name, e.is_disallowed) for e in evs] == [("execute:blender", True)]
+
+
+def test_opencode_cli_2x_runs_standalone(monkeypatch):
+    monkeypatch.setattr(run_days, "OPENCODE_CMD", [r"C:\x\ai.opencode.desktop\cli\2.0.28-x64\opencode-cli.exe"])
+    assert run_days.opencode_run_cmd()[1:] == ["run", "--standalone"]
+    monkeypatch.setattr(run_days, "OPENCODE_CMD", ["opencode"])
+    assert run_days.opencode_run_cmd()[1:] == ["run"]

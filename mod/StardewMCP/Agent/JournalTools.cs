@@ -21,6 +21,7 @@ namespace StardewMCP.Agent;
 public static class JournalTools
 {
     public const int MinDiary = 20, MaxLessonLines = 5, MaxLessonChars = 300, MaxNoteLines = 8, MaxNoteChars = 200, MaxPlanChars = 1500;
+    public const int MaxSelfChars = 1000, MaxPeopleLines = 6, MaxPeopleLineChars = 250;
 
     /// <summary>Plan sections in file order. "Today" is the plan for when the player next wakes up.</summary>
     private static readonly string[] Scopes = { "Season", "Week", "Today" };
@@ -44,7 +45,8 @@ public static class JournalTools
             Description = "Write your journal: your memory across days. A diary for the viewers, the lessons you learned today and your plan. " +
                           "At the start of every later day you get your lessons, plan and notes back, so write what future you needs to know. " +
                           "Costs no game time. Call it any time, and at the latest before go_to_bed, which refuses until today's journal is written. " +
-                          "Calling it again the same day replaces that day's diary and lessons and updates the plan.",
+                          "Calling it again the same day replaces that day's diary and lessons and updates the plan. " +
+                          "Multi-AI emergent personas (#48): write optional self and people to record who you are becoming and your stance on other players.",
             Schema = AgentTools.Obj(new
             {
                 diary = AgentTools.Str($"Today's diary in {Lang}, 3-8 sentences, written as yourself: what you did, what went well or badly"),
@@ -54,6 +56,8 @@ public static class JournalTools
                                       "a section you leave out keeps its old text, a heading with nothing under it clears that section"),
                 notes = AgentTools.Str("Optional facts you found out, one per line, e.g. \"shops: Pierre is closed on Wednesday\". " +
                                        $"Start a line with a topic and colon ({string.Join(", ", NoteTopics)}) to file it. They are added to your facts list"),
+                self = AgentTools.Str($"Optional emergent character identity note (#48) in {Lang}: who you are becoming, max ~150 words. Overwritten each evening; cite today's events as evidence."),
+                people = AgentTools.Str($"Optional notes on fellow players (#48) in {Lang}: one line per other player (current stance + latest evidence + day)."),
                 day = AgentTools.Int("Optional farm day to write this journal for, from 1 to today. Only for catching up a day you did not write (for example after passing out). Default: today")
             }, "diary", "lessons", "plan"),
             Instant = true, AppendStatus = false, Run = Journal
@@ -85,14 +89,43 @@ public static class JournalTools
 
         var notes = Notes(AgentTools.S(a, "notes")).Take(MaxNoteLines).ToList();
 
+        string self = AgentTools.Has(a, "self") ? AgentTools.S(a, "self").Trim() : "";
+        if (self.Length > MaxSelfChars)
+        {
+            c.Fail($"self is {self.Length} characters; the limit is {MaxSelfChars} (about 150 words). Shorten it.");
+            yield break;
+        }
+
+        string peopleRaw = AgentTools.Has(a, "people") ? AgentTools.S(a, "people").Trim() : "";
+        var peopleLines = Lines(peopleRaw, MaxPeopleLineChars);
+        if (peopleLines.Count > MaxPeopleLines)
+        {
+            c.Fail($"people has {peopleLines.Count} lines; the limit is {MaxPeopleLines} (one line per other player).");
+            yield break;
+        }
+
+        string prevSelf = log.ReadSelf();
+        string prevPeople = log.ReadPeople();
+
         log.WriteDiary(day, diary);
         int lessonLines = log.WriteLessons(day, lessons);
         var written = SplitPlan(plan);
         var merged = MergePlan(log.ReadPlan(), plan);
         log.WritePlan(merged);
         var (notesAdded, noteLines) = notes.Count > 0 ? log.AppendNotes(day, notes) : (0, 0);
+        if (self.Length > 0) log.WriteSelf(self);
+        if (peopleLines.Count > 0) log.WritePeople(string.Join("\n", peopleLines));
         log.MarkJournal(day);
-        log.Add("journal", text: string.Join("\n", lessons), args: new { day, plan = merged, notes = notes.Select(n => $"{n.topic}: {n.text}").ToList() });
+        log.Add("journal", text: string.Join("\n", lessons), args: new
+        {
+            day,
+            plan = merged,
+            notes = notes.Select(n => $"{n.topic}: {n.text}").ToList(),
+            self = self.Length > 0 ? self : null,
+            self_before = self.Length > 0 ? prevSelf : null,
+            people = peopleLines.Count > 0 ? string.Join("\n", peopleLines) : null,
+            people_before = peopleLines.Count > 0 ? prevPeople : null
+        });
 
         var sb = new StringBuilder($"Journal saved for farm day {day}{(day == today ? "" : " (a day you had missed)")}.");
         sb.Append($"\n- diary: {diary.Length} characters, shown to the viewers");
@@ -102,6 +135,8 @@ public static class JournalTools
         sb.Append($"\n- plan: updated {string.Join(", ", Scopes.Where(written.ContainsKey))}");
         var kept = Scopes.Where(s => !written.ContainsKey(s) && PlanHas(merged, s)).ToList();
         if (kept.Count > 0) sb.Append($"; kept your earlier {string.Join(", ", kept)}");
+        if (self.Length > 0) sb.Append($"\n- self: updated identity statement ({self.Length} chars)");
+        if (peopleLines.Count > 0) sb.Append($"\n- people: updated notes on {peopleLines.Count} player(s)");
         if (day == today)
             sb.Append("\nWhen your day is done, call go_to_bed.");
         else if (!log.HasJournal(today))

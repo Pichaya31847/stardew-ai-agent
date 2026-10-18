@@ -99,3 +99,43 @@ def _mock_watchdog_for_runner_tests(monkeypatch, request):
         monkeypatch.setattr(pass_out, "let_time_run_out", fake_let_time)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_briefing_fetch(monkeypatch):
+    """briefing.build with run_days' real api_get would hit localhost:8770 and retry 15x with 1 s sleeps."""
+    import briefing
+    import run_days
+    old_build = briefing.build
+
+    def build(api_get, *args, **kwargs):
+        return "" if api_get is run_days.api_get else old_build(api_get, *args, **kwargs)
+
+    monkeypatch.setattr(briefing, "build", build)
+
+
+@pytest.fixture(autouse=True)
+def _real_game_port_refuses_at_once(monkeypatch):
+    """A closed :8770 takes ~2 s to refuse on Windows; the tests that reach it by accident only need the error."""
+    import urllib.request
+    old_urlopen = urllib.request.urlopen
+
+    def urlopen(req, *args, **kwargs):
+        url = req if isinstance(req, str) else req.full_url
+        if ":8770/" in url or url.endswith(":8770"):
+            raise ConnectionRefusedError("no game in tests")
+        return old_urlopen(req, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+
+@pytest.fixture(autouse=True)
+def _no_stats_wait(monkeypatch, request):
+    """wait_for_stats polls up to 6 s for a file the fake game never writes."""
+    if "test_stats" not in request.node.nodeid:
+        import stats
+        old_wait = stats.wait_for_stats
+
+        def wait(log_dir, day, player="p1", timeout=6.0, poll=0.5, sleep=None):
+            return old_wait(log_dir, day, player, 0.0, poll, sleep)
+
+        monkeypatch.setattr(stats, "wait_for_stats", wait)
+

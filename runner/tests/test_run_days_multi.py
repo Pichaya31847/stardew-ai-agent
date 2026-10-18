@@ -32,7 +32,7 @@ def test_parse_multi_config_custom_seats_and_backends():
         multi=False,
         seats="p1,p3",
         backends="claude,opencode",
-        models="claude-3-5-haiku,opencode-go/gpt-6-luna",
+        models="claude-haiku-5-5,opencode-go/gpt-6-luna",
         p3_model="custom-luna-model",
         meeting_turns=3,
         skip_meeting=True,
@@ -67,6 +67,41 @@ def test_persona_customization():
     assert "give(to, item, count)" in custom
     assert "plan_read(history)" in custom
     assert "plan_edit(section, text)" in custom
+
+
+def test_emergent_persona_customization():
+    """Issue #48: emergent personas customize prompt with self and people notes."""
+    all_personas = personas.load_all_personas(["p1", "p2"])
+    template = "You are **{MODEL_NAME}**, playing Stardew Valley by yourself in a 100-day challenge.\n\nRules: ..."
+    custom_day1 = personas.customize_system_prompt(
+        template,
+        seat="p2",
+        active_seats=["p1", "p2"],
+        personas=all_personas,
+        model_display="Luna (OpenCode)",
+        language="Thai",
+        emergent=True,
+        self_note="",
+        people_note="",
+    )
+    assert "Gemini (Seat p2)" in custom_day1
+    assert "Luna (OpenCode)" in custom_day1
+    assert "Emerging Identity" in custom_day1
+    assert "Your Relationships With Other Farmers" in custom_day1
+
+    custom_day2 = personas.customize_system_prompt(
+        template,
+        seat="p2",
+        active_seats=["p1", "p2"],
+        personas=all_personas,
+        model_display="Luna (OpenCode)",
+        language="Thai",
+        emergent=True,
+        self_note="I am becoming a pragmatic trader after selling 15 parsnips.",
+        people_note="p1 (Claude): dependable partner who waters crops early.",
+    )
+    assert "I am becoming a pragmatic trader" in custom_day2
+    assert "p1 (Claude): dependable partner" in custom_day2
 
 
 def test_multi_day_morning_meeting(tmp_path, monkeypatch):
@@ -257,3 +292,104 @@ def test_multi_day_freeze_release_on_exhausted_sessions(tmp_path, monkeypatch):
         api_get_fn=api_get, api_post_fn=api_post, wait_ready_fn=lambda: state
     )
     assert any(path == "/api/release_freeze" and body.get("seat") == "p1" for path, body in posted)
+
+
+def test_multi_day_seat_stopped_by_system_exit_is_not_relaunched(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    log_dir = out_dir / "logs"
+    log_dir.mkdir(parents=True)
+    posted, calls = [], []
+
+    def fake_run_session(args, out_d, day, prompt, sys_prompt, part=1, attempt=1, seat="p1"):
+        calls.append((seat, part))
+        if seat == "p1":
+            raise SystemExit("Disallowed tool call aborted: read")  # inside a worker thread
+        return sessions.PartResult(2, False)
+
+    monkeypatch.setattr(run_days, "run_session", fake_run_session)
+    step = 0
+    state = {"ready": True, "day": 1,
+             "players": [{"id": "p1", "state": {"inBed": False}}, {"id": "p2", "state": {"inBed": True}}]}
+
+    def api_get(path):
+        nonlocal step
+        if path == "/api/state":
+            step += 1
+            if step >= 4:
+                state["day"] = 2
+        return state
+
+    args = SimpleNamespace(multi=True, seats="p1,p2", max_parts=4, max_breaks=0,
+                           meeting_turns=5, skip_meeting=True, pass_out_timeout=60)
+    cfg = multi_runner.parse_multi_config(args)
+    multi_runner.run_multi_day(args, out_dir, log_dir, 1, {"p1": "S1", "p2": "S2"}, cfg,
+                               api_get_fn=api_get, api_post_fn=lambda p, b: posted.append((p, b)) or {},
+                               wait_ready_fn=lambda: state)
+    assert [c for c in calls if c[0] == "p1"] == [("p1", 1)]  # not burned through all 4 parts
+    assert ("/api/release_freeze", {"seat": "p1"}) in posted
+
+
+def test_multi_day_stop_now_launches_no_further_parts(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    log_dir = out_dir / "logs"
+    log_dir.mkdir(parents=True)
+    posted, calls = [], []
+    ctl = SimpleNamespace(stop=False)
+    monkeypatch.setattr(run_days, "CTL", SimpleNamespace(stop_now_requested=lambda: ctl.stop))
+
+    def fake_run_session(args, out_d, day, prompt, sys_prompt, part=1, attempt=1, seat="p1"):
+        calls.append((seat, part))
+        ctl.stop = True  # stop_now arrives while part 1 runs
+        return sessions.PartResult(2, False)
+
+    monkeypatch.setattr(run_days, "run_session", fake_run_session)
+    state = {"ready": True, "day": 1, "players": [{"id": "p2", "state": {"inBed": False}}]}
+    args = SimpleNamespace(multi=True, seats="p2", max_parts=4, max_breaks=0,
+                           meeting_turns=5, skip_meeting=True, pass_out_timeout=60)
+    cfg = multi_runner.parse_multi_config(args)
+    res = multi_runner.run_multi_day(args, out_dir, log_dir, 1, {"p2": "S2"}, cfg,
+                                     api_get_fn=lambda p: state, api_post_fn=lambda p, b: posted.append((p, b)) or {},
+                                     wait_ready_fn=lambda: state)
+    assert res == {"ready": True, "day": 1, "stop_now": True}
+    assert calls == [("p2", 1)]
+    assert not any(p == "/api/release_freeze" for p, _ in posted)  # the world stays frozen until resume
+
+
+def test_main_multi_without_backend_flags_uses_each_seats_default(tmp_path, monkeypatch):
+    import sys
+    seen = {}
+    real = multi_runner.parse_multi_config
+
+    def capture(args, personas_dir=None):
+        seen["cfg"] = real(args, personas_dir)
+        raise KeyboardInterrupt  # stop main() right after the seats are known
+
+    monkeypatch.setattr(multi_runner, "parse_multi_config", capture)
+    monkeypatch.setattr(sys, "argv", ["run_days.py", "--multi", "--seats", "p1,p2,p3", "--skip-smoke", "--out", str(tmp_path)])
+    with pytest.raises(KeyboardInterrupt):
+        run_days.main()
+    cfg = seen["cfg"]
+    assert [cfg.seat_configs[s].backend_name for s in ("p1", "p2", "p3")] == ["claude", "agy", "opencode"]
+    assert [cfg.seat_configs[s].model for s in ("p1", "p2", "p3")] == \
+        ["claude-haiku-5-5", "gemini-3.8-flash-medium", "opencode-go/gpt-6-luna"]
+
+
+def test_meeting_caps_tool_calls_and_releases_each_seat_when_done(tmp_path, monkeypatch):
+    seen, posted = [], []
+
+    def fake_run_session(args, out_d, day, prompt, sys_prompt, part=0, attempt=1, seat="p1"):
+        seen.append((seat, args.cap_tool_calls))
+        return sessions.PartResult(2, False)
+
+    monkeypatch.setattr(run_days, "run_session", fake_run_session)
+    args = SimpleNamespace(multi=True, seats="p1,p2", max_parts=4, max_breaks=8,
+                           meeting_turns=5, skip_meeting=False, pass_out_timeout=60)
+    cfg = multi_runner.parse_multi_config(args)
+    runner = multi_runner.MultiDayRunner(args, tmp_path, tmp_path, cfg, api_get_fn=lambda p: {"ready": True, "day": 1},
+                                         api_post_fn=lambda p, b: posted.append((p, b)) or {},
+                                         wait_ready_fn=lambda: {"ready": True, "day": 1})
+    monkeypatch.setattr(multi_runner.briefing, "build", lambda *a, **k: {})
+    monkeypatch.setattr(multi_runner.briefing, "morning_prompt", lambda *a, **k: "")
+    runner.run_meeting_phase(1, {"p1": "S1", "p2": "S2"})
+    assert sorted(seen) == [("p1", True), ("p2", True)]  # claude too: its --max-turns counts turns, not calls
+    assert sorted(b["seat"] for p, b in posted if p == "/api/release_freeze") == ["p1", "p2"]
