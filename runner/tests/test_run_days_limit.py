@@ -76,8 +76,10 @@ def run(tmp_path, game, monkeypatch):
     monkeypatch.setenv("FAKE_CLAUDE_API", f"127.0.0.1:{game.port}")
     monkeypatch.setenv("FAKE_CLAUDE_DAYLOG", str(r.out / "logs" / "day_001.jsonl"))
     appdata = tmp_path / "appdata"
-    (appdata / "StardewValley" / "Saves" / "Farm_1").mkdir(parents=True)
+    saves = appdata / "StardewValley" / "Saves"
+    (saves / "Farm_1").mkdir(parents=True)
     monkeypatch.setenv("APPDATA", str(appdata))
+    monkeypatch.setenv("STARDEW_SAVES_DIR", str(saves))
     (r.out / "logs").mkdir(parents=True)
 
     def scenario(*names):
