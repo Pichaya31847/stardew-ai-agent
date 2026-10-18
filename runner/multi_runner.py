@@ -158,9 +158,19 @@ class MultiDayRunner:
 
             def run_seat_meeting(s=seat, p=prompt, sp=sys_prompt):
                 meeting_args = run_days.copy_args_with_max_turns(self.args, self.cfg.meeting_turns)
+                meeting_args.cap_tool_calls = True  # claude's --max-turns counts turns, not calls: Haiku ran farm work here
                 setattr(meeting_args, "backend", self.cfg.seat_configs[s].backend_name)
                 setattr(meeting_args, "model", self.cfg.seat_configs[s].model)
-                run_days.run_session(meeting_args, self.out_dir, day, p, sp, part=0, seat=s)
+                try:
+                    run_days.run_session(meeting_args, self.out_dir, day, p, sp, part=0, seat=s)
+                except SystemExit as e:  # a thread would swallow it silently
+                    print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {s} meeting stopped: {e}")
+                # done talking: stop holding the world still, or a seat still in its meeting that started an action
+                # waits forever (the seat's next MCP call takes the release back)
+                try:
+                    self.api_post("/api/release_freeze", {"seat": s, "on": True})
+                except Exception:
+                    pass
 
             t = threading.Thread(target=run_seat_meeting, name=f"meeting_{seat}")
             threads.append(t)
@@ -178,14 +188,18 @@ class MultiDayRunner:
         done_seats = set()
         active_threads: dict[str, threading.Thread] = {}
         seat_results: dict[str, sessions.PartResult] = {}
+        stopped: set[str] = set()  # seats whose session raised SystemExit: not relaunched
 
         def launch_seat_session(seat: str, prompt: str, part: int):
             sc = self.cfg.seat_configs[seat]
             seat_args = run_days.copy_args_with_seat(self.args, sc.backend_name, sc.model)
 
             def worker():
-                res = run_days.run_session(seat_args, self.out_dir, day, prompt, system_prompts[seat], part=part, seat=seat)
-                seat_results[seat] = res
+                try:
+                    seat_results[seat] = run_days.run_session(seat_args, self.out_dir, day, prompt, system_prompts[seat], part=part, seat=seat)
+                except SystemExit as e:  # disallowed tool / backend error; a thread would swallow it and get relaunched
+                    print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} stopped: {e}")
+                    stopped.add(seat)
 
             t = threading.Thread(target=worker, name=f"play_{seat}_p{part}")
             active_threads[seat] = t
@@ -206,6 +220,12 @@ class MultiDayRunner:
             if state.get("day", day) > day:
                 print(f"[Multi-AI] Day rollover detected! Day {state.get('day')} started.")
                 return state
+
+            # stop_now: each session ends after its running tool call; launch nothing new, keep the world frozen
+            if run_days.CTL.stop_now_requested():
+                if not any(t.is_alive() for t in active_threads.values()):
+                    return {"ready": True, "day": state.get("day", day), "stop_now": True}
+                continue
 
             # Check completed threads
             for seat in self.cfg.seats:
@@ -231,13 +251,13 @@ class MultiDayRunner:
                     res = seat_results.get(seat)
                     planned = res.planned_break if isinstance(res, sessions.PartResult) else False
                     has_more = parts[seat].after_part(planned)
-                    if has_more:
+                    if has_more and seat not in stopped:
                         cur_part[seat] += 1
                         print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} continuing with part {cur_part[seat]}{' (planned break)' if planned else ''}")
                         cont_p = run_days.continue_prompt(day, self.log_dir, planned=planned, player=seat)
                         launch_seat_session(seat, cont_p, cur_part[seat])
                     else:
-                        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} used all {self.args.max_parts} sessions: releasing freeze.")
+                        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} {'was stopped' if seat in stopped else f'used all {self.args.max_parts} sessions'}: releasing freeze.")
                         try:
                             self.api_post("/api/release_freeze", {"seat": seat})
                         except Exception:
@@ -268,4 +288,6 @@ def run_multi_day(
 ) -> dict:
     runner = MultiDayRunner(args, out_dir, log_dir, multi_cfg, api_get_fn, api_post_fn, wait_ready_fn)
     runner.run_meeting_phase(day, system_prompts)
+    if run_days.CTL.stop_now_requested():
+        return {"ready": True, "day": day, "stop_now": True}
     return runner.run_free_play_phase(day, system_prompts)
