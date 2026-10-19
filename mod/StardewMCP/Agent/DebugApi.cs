@@ -78,6 +78,7 @@ public static class DebugApi
             Op("disconnect", Disconnect),
             Op("hang", Hang, needsWorld: false),
             Op("perception", PerceptionOp),
+            Op("set_display", SetDisplay),
         }.ToDictionary(t => t.Name);
     }
 
@@ -588,6 +589,40 @@ public static class DebugApi
         var last = SplitScreenPatches.LastCapture;
         if (last == null || last.StartsWith("error")) { c.Fail(last ?? "No frame was drawn"); yield break; }
         c.Result = last;
+    }
+
+    /// <summary>Set music volume, fullscreen resolution, or unlock host input for settings adjustment.</summary>
+    private static IEnumerator SetDisplay(JsonElement a, CallContext c)
+    {
+        if (a.TryGetProperty("music", out var m) && m.ValueKind == JsonValueKind.Number)
+        {
+            float vol = (float)m.GetDouble();
+            Game1.options.musicVolumeLevel = vol;
+            try { Game1.musicCategory?.SetVolume(vol); } catch { }
+        }
+        if (a.TryGetProperty("unlock_input", out var u) && u.GetBoolean())
+        {
+            AgentTools.Config.LockHostInput = false;
+            AgentTools.Config.CleanFrames = false;
+        }
+        if (Has(a, "w") || Has(a, "h") || a.TryGetProperty("fullscreen", out _))
+        {
+            int w = I(a, "w", 3840), h = I(a, "h", 2160);
+            Game1.options.preferredResolutionX = w;
+            Game1.options.preferredResolutionY = h;
+            Game1.graphics.PreferredBackBufferWidth = w;
+            Game1.graphics.PreferredBackBufferHeight = h;
+            if (a.TryGetProperty("fullscreen", out var fs))
+            {
+                bool fullscreen = fs.GetBoolean();
+                Game1.options.windowedBorderlessFullscreen = false;
+                Game1.options.fullscreen = fullscreen;
+                Game1.graphics.IsFullScreen = fullscreen;
+            }
+            Game1.graphics.ApplyChanges();
+        }
+        c.Result = $"BackBuffer: {Game1.graphics.GraphicsDevice.PresentationParameters.BackBufferWidth}x{Game1.graphics.GraphicsDevice.PresentationParameters.BackBufferHeight}, FullScreen: {Game1.options.fullscreen}, Music: {Game1.options.musicVolumeLevel}, HostLocked: {AgentTools.Config.LockHostInput}";
+        yield break;
     }
 
     // ------------------------------------------------------------------ save switching
