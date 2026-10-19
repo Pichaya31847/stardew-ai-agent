@@ -75,6 +75,8 @@ the seat, then `set_look` P1 back to its own look.
 
 ## Each batch
 
+Step by step from launching the game to the MP4: [howto-record-day.md](howto-record-day.md).
+
 Terminal 1 (the game running, save loaded):
 
 ```
