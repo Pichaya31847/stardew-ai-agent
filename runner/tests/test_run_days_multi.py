@@ -52,10 +52,10 @@ def test_persona_customization():
         personas=all_personas,
         language="Thai",
     )
-    assert "Gemini (Seat p2)" in custom
+    assert "- **Name:** Gemini\n- **Traits:**" in custom
     assert "Curious, enthusiastic, adventurous" in custom
     assert "Discover the rarest items" in custom
-    assert "Claude (p1), GPT (p3)" in custom
+    assert "Claude, GPT" in custom and "p1" not in custom and "p3" not in custom
     assert "- Claude, who goes by พี่ส้ม\n- Gemini, who goes by พี่ฟ้า (that is you)" in custom
     assert "{MODEL_NAME}" not in custom and "viewer" not in custom.lower()
     assert "say(text)" in custom and "Only people who can see you" in custom
@@ -78,8 +78,7 @@ def test_emergent_persona_customization():
         self_note="",
         people_note="",
     )
-    assert "Gemini (Seat p2)" in custom_day1
-    assert "Who you are:" in custom_day1
+    assert "- **Name:** Gemini\n- **Who you are:**" in custom_day1 and "p2" not in custom_day1
     assert "What You Think of the Others" in custom_day1
 
     custom_day2 = personas.customize_system_prompt(

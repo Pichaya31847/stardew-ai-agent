@@ -266,7 +266,7 @@ public static class Briefing
         bool waiting = b.Pending || NightFlow() || (b.Before != null && b.Before.Day < AgentLog.FarmDay && b.Overnight?.Day != AgentLog.FarmDay);
         var sections = BuildSections();
 
-        var sb = new StringBuilder($"Morning briefing, farm day {AgentLog.FarmDay} ({seat.Id})");
+        var sb = new StringBuilder($"Morning briefing, farm day {AgentLog.FarmDay}");
         foreach (var s in sections)
             sb.Append('\n').Append(s.Text);
 

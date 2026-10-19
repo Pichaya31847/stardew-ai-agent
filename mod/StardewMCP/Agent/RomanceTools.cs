@@ -413,7 +413,7 @@ public static partial class AgentTools
             Name = "propose",
             Description = "Propose marriage to another player. You need a Wedding Ring (or a Mermaid's Pendant) in your inventory; you walk next to them and hold it out like the game does. " +
                           "They see a Yes/No box and are told in their next result; they answer with answer_proposal. Waits up to 90 seconds for the answer. Both wallets stay separate.",
-            Schema = Obj(new { to = Str("Player id (p1, p2...) or name"), reason = Str(ReasonDesc) }, "to", "reason"),
+            Schema = Obj(new { to = Str("Their name"), reason = Str(ReasonDesc) }, "to", "reason"),
             Run = ProposeToPlayer
         },
         new()

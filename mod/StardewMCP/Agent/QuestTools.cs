@@ -76,7 +76,7 @@ public static partial class AgentTools
         if (P.questLog.Any(q => q != null && SameQuest(q, board))) return ("mine", "you");
         var takers = PlayingFarmers()
             .Where(f => f.UniqueMultiplayerID != P.UniqueMultiplayerID && f.questLog.Any(q => q != null && SameQuest(q, board)))
-            .Select(SeatLabel)
+            .Select(f => f.Name)
             .ToList();
         if (takers.Count > 0) return ("taken", string.Join(" and ", takers));
         if (Peek.Flag(board, "accepted") == true) return ("taken", "another player");

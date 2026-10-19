@@ -81,7 +81,7 @@ public static class SocialTools
             Name = "say",
             Description = "Say something out loud: it appears above your head and in the chat box. Only players who can see you " +
                           "hear it (the same place, close enough to be in their view, the way look lists players in view). To talk to " +
-                          "someone, go and find them first. Keep it short. Write @name or @p2 to call a player who can hear you: it " +
+                          "someone, go and find them first. Keep it short. Write @name to call a player who can hear you: it " +
                           "stops what they are doing (walking, waiting, farming) so they read it at once.",
             Schema = AgentTools.Obj(new { text = AgentTools.Str("What you say") }, "text"),
             Instant = true, AppendStatus = false, Run = Say
@@ -97,7 +97,7 @@ public static class SocialTools
         {
             Name = "give",
             Description = "Hand an item from your inventory to another player standing within 4 tiles of you (same map). Tools can't be given.",
-            Schema = AgentTools.Obj(new { to = AgentTools.Str("Player id (p1, p2...) or name"), item = AgentTools.Str("Item name"), count = AgentTools.Int("How many (default 1)") }, "to", "item"),
+            Schema = AgentTools.Obj(new { to = AgentTools.Str("Their name"), item = AgentTools.Str("Item name"), count = AgentTools.Int("How many (default 1)") }, "to", "item"),
             Instant = true, AppendStatus = false, Run = Give
         }
     };
@@ -110,8 +110,8 @@ public static class SocialTools
 
     internal static string? NameOf(PlayerSlot s) => (s.State as ScreenState)?.Name;
 
-    /// <summary>"Gemini (p2)": how players refer to each other.</summary>
-    internal static string Label(PlayerSlot s) => $"{NameOf(s) ?? "?"} ({s.Id})";
+    /// <summary>"Gemini": how players refer to each other.</summary>
+    internal static string Label(PlayerSlot s) => NameOf(s) ?? "?";
 
     private static IEnumerable<PlayerSlot> OtherAis() =>
         Players.Slots.Where(s => s.Role == SeatRole.Ai && s.Id != Me && s.Active && NameOf(s) != null);

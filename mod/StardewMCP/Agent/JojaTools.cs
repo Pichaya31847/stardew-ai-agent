@@ -187,13 +187,13 @@ internal static class JojaRoute
         var me = AgentTools.Rt.Log.Player;
         return Players.Slots
             .Where(s => s.Role == SeatRole.Ai && s.Id != me && s.Active && (s.State as ScreenState)?.Name != null)
-            .Select(s => $"{((ScreenState)s.State!).Name} ({s.Id})")
+            .Select(s => ((ScreenState)s.State!).Name!)
             .ToList();
     }
 
     private static List<(string name, string label)> Seats() => Players.Slots
         .Where(s => s.Role == SeatRole.Ai && s.Active && (s.State as ScreenState)?.Name != null)
-        .Select(s => { var n = ((ScreenState)s.State!).Name!; return (n, $"{n} ({s.Id})"); })
+        .Select(s => { var n = ((ScreenState)s.State!).Name!; return (n, n); })
         .ToList();
 
     /// <summary>Filled ingredient slots by donor name (from the donate_bundle ledger), and how many have no known donor.</summary>
@@ -315,7 +315,7 @@ internal static class JojaRoute
     public static void OnMembershipBought(PlayerLog log, Farmer who, int paid)
     {
         int day = AgentLog.FarmDay;
-        var label = $"{who.Name} ({log.Player})";
+        var label = who.Name;
         log.Add("joja_membership", text: $"{who.Name} bought the Joja membership", args: new { player = log.Player, day, name = who.Name, paid });
         Decide(log, "joja", $"{label} bought the Joja membership for {Gold(paid)}. The Community Center bundles are closed for every player, for good; Joja gold projects replace them.");
         SocialTools.Announce($"[Joja] {who.Name} bought the Joja membership on day {day}. The Community Center bundles are closed for everyone; the building is a Joja warehouse now.");

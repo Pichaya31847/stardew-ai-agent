@@ -120,7 +120,7 @@ Other newcomers share this farm with you. Each of you has your own wallet, inven
 Nobody asked you to work together: helping each other, trading, competing or keeping to yourself is up to you.
 
 ## Talking
-- `say(text)`: Speak aloud: it shows in the chat box and above your head. Only people who can see you right now hear it, so to talk with someone, go where they are. Write `@name` (their farmer name) or `@p2` to call someone who can hear you and interrupt what they are doing.
+- `say(text)`: Speak aloud: it shows in the chat box and above your head. Only people who can see you right now hear it, so to talk with someone, go where they are. Write `@name` (their farmer name) to call someone who can hear you and interrupt what they are doing.
 - `think(text)`: Your private thought. Nobody else ever sees it. Your true feelings, doubts and secret plans belong here.
 - `give(to, item, count)`: Hand items to someone standing within 4 tiles of you.
 
@@ -149,18 +149,18 @@ def customize_system_prompt(
     """Customize system_prompt.md for a specific seat in a multi-AI co-op game."""
     my_persona = personas.get(seat) or load_persona(seat)
     other_seats = [s for s in active_seats if s != seat]
-    peers_str = ", ".join(f"{personas[s].name} ({s})" for s in other_seats) if other_seats else "none"
+    peers_str = ", ".join(personas[s].name for s in other_seats) if other_seats else "none"
     me = f"**{my_persona.name}**" + (f" (people call you **{my_persona.nickname}**)" if my_persona.nickname else "")
-    opening = (f"You are {me}, a newcomer who has just moved to a run-down farm in Stardew Valley, on seat **{seat}**. "
+    opening = (f"You are {me}, a newcomer who has just moved to a run-down farm in Stardew Valley. "
                f"Other newcomers ({peers_str}) arrived the same day; you have never met them.\n\n"
                f"{welcome_note(seat, active_seats, personas)}")
 
     if emergent:
         if self_note.strip():
-            identity_body = f"- **Name:** {my_persona.name} (Seat {seat})\n- **Who you are becoming (from your self notes):**\n{self_note.strip()}"
+            identity_body = f"- **Name:** {my_persona.name}\n- **Who you are becoming (from your self notes):**\n{self_note.strip()}"
         else:
             identity_body = (
-                f"- **Name:** {my_persona.name} (Seat {seat})\n"
+                f"- **Name:** {my_persona.name}\n"
                 "- **Who you are:** nobody wrote that for you. Your personality, goals and way of talking come from what you live through here. "
                 "In your evening `journal`, write who you are (`self` parameter, ~150 words)."
             )
@@ -185,7 +185,7 @@ def customize_system_prompt(
 {opening}
 
 # Your Character Identity
-- **Name:** {my_persona.name} (Seat {seat})
+- **Name:** {my_persona.name}
 - **Traits:** {my_persona.traits}
 {secret_block}
 {COOP_RULES_BLOCK}

@@ -75,13 +75,13 @@ public class McpDispatcherTests
     }
 
     [Fact]
-    public async Task Initialize_instructions_name_the_seat_in_split_screen_only()
+    public async Task Initialize_instructions_never_name_the_seat()
     {
         const string message = "{'jsonrpc':'2.0','id':1,'method':'initialize','params':{}}";
         var split = await Call(NewDispatcher(splitScreen: true), new FakeSeat { Id = "p3" }, message);
         var single = await Call(NewDispatcher(splitScreen: false), new FakeSeat { Id = "p3" }, message);
 
-        Assert.Contains("player p3", split.GetProperty("result").GetProperty("instructions").GetString());
+        Assert.DoesNotContain("p3", split.GetProperty("result").GetProperty("instructions").GetString());
         Assert.DoesNotContain("p3", single.GetProperty("result").GetProperty("instructions").GetString());
     }
 
