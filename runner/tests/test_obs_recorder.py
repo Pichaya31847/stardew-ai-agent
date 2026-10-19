@@ -5,41 +5,75 @@ import re
 from datetime import datetime
 from types import SimpleNamespace
 
+
 import obs_recorder as rec
 
-ARGS = SimpleNamespace(hold=3.0, diary_hold=6.0, read_time=1.5)
+ARGS = SimpleNamespace(diary_hold=6.0, read_time=1.5)
 
 
 def think(player, text="hm"):
     return {"kind": "think", "player": player, "text": text}
 
 
-def test_strip_texts_overlap_per_player():
+def diary(player, text="day"):
+    return {"kind": "diary", "player": player, "text": text}
+
+
+def test_think_never_holds_a_frozen_frame():
     until = {}
-    rec.add_hold(until, think("p1"), 100.0, ARGS)
-    one = rec.hold_seconds(think("p1"), ARGS)
-    rec.add_hold(until, {"kind": "say", "player": "p1", "text": "hm"}, 100.0, ARGS)
-    assert until["p1"] == 100.0 + one           # shown at once next to the first, not queued after it
-    rec.add_hold(until, think("p2"), 100.0, ARGS)
+    assert not rec.add_hold(until, think("p1", "x" * 400), 100.0, ARGS)
+    assert until == {}
+
+
+def test_say_never_holds_a_frozen_frame():
+    until = {}
+    assert not rec.add_hold(until, {"kind": "say", "player": "p2", "text": "hi"}, 100.0, ARGS)  # the mod shows it once the world runs
+    assert until == {}
+
+
+def test_diaries_overlap_per_player():
+    until = {}
+    rec.add_hold(until, diary("p1"), 100.0, ARGS)
+    one = rec.hold_seconds(diary("p1"), ARGS)
+    assert one == rec.OVERLAY_POLL_SECONDS + ARGS.diary_hold
+    rec.add_hold(until, diary("p1"), 100.0, ARGS)
+    assert until["p1"] == 100.0 + one           # shown at once, not queued after the first
+    rec.add_hold(until, diary("p2"), 100.0, ARGS)
     assert until["p2"] == 100.0 + one           # other seat has its own hold
+
+
+def menu_state(m2, m4=None, thinking=()):
+    return {"thinking": list(thinking),
+            "players": [{"id": "p1", "role": "ai", "state": {"menu": None}},
+                        {"id": "p2", "role": "ai", "state": {"menu": m2}},
+                        {"id": "p4", "role": "camera", "state": {"menu": m4}}]}
+
+
+def test_menus_opened_only_on_the_poll_a_menu_appears():
+    since = {}
+    assert rec.menus_opened(since, menu_state(None), 0.0) == []
+    assert rec.menus_opened(since, menu_state("DialogueBox", "GameMenu"), 1.0) == ["p2"]   # camera seat ignored
+    assert rec.menus_opened(since, menu_state("DialogueBox"), 2.0) == []                   # still open: same menu
+    assert since == {"p2": 1.0}
+    assert rec.menus_opened(since, menu_state(None), 3.0) == []
+    assert since == {}
+    assert rec.menus_opened(since, {"players": [{"id": "p2", "role": "ai"}]}, 4.0) == []  # screen not ready
+
+
+def test_menu_holds_only_a_box_its_own_seat_is_thinking_over():
+    since = {}
+    rec.menus_opened(since, menu_state("ItemGrabMenu"), 10.0)
+    assert rec.menu_holds(since, menu_state("ItemGrabMenu", thinking=["p2"]), 11.0, 2.5)      # p2's action ended on it
+    assert not rec.menu_holds(since, menu_state("ItemGrabMenu", thinking=["p2"]), 12.5, 2.5)  # held long enough
+    assert not rec.menu_holds(since, menu_state("TV", thinking=["p1"]), 11.0, 2.5)            # p2 mid-action, p1 froze it
+    rec.menus_opened(since, menu_state(None), 11.5)
+    assert not rec.menu_holds(since, menu_state(None, thinking=["p2"]), 11.6, 2.5)            # closed: nothing to show
 
 
 def test_hold_restarts_from_now_after_it_ran_out():
     until = {"p1": 50.0}
-    rec.add_hold(until, think("p1"), 100.0, ARGS)
-    assert until["p1"] == 100.0 + rec.hold_seconds(think("p1"), ARGS)
-
-
-def test_say_uses_plain_max():
-    until = {}
-    say = {"kind": "say", "player": "p1", "text": "hi"}
-    rec.add_hold(until, say, 100.0, ARGS)
-    rec.add_hold(until, say, 100.0, ARGS)
-    assert until["p1"] == 100.0 + rec.hold_seconds(say, ARGS)
-
-
-def test_thought_hold_is_a_flat_beat():
-    assert rec.hold_seconds(think("p1", "x" * 400), ARGS) == rec.hold_seconds(think("p1"), ARGS) == rec.OVERLAY_POLL_SECONDS + ARGS.hold
+    rec.add_hold(until, diary("p1"), 100.0, ARGS)
+    assert until["p1"] == 100.0 + rec.hold_seconds(diary("p1"), ARGS)
 
 
 def test_journal_self_holds_with_diary_time_and_self_text():

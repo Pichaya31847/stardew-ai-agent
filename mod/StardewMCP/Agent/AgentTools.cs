@@ -116,7 +116,7 @@ public static partial class AgentTools
             new()
             {
                 Name = "walk_to",
-                Description = "Walk to a tile on the current map (pathfinding is automatic). If the tile is blocked you stop next to it. Time passes while walking.",
+                Description = "Walk to a tile on the current map (pathfinding is automatic). If the tile is blocked or someone stands on it you stop next to it. Time passes while walking.",
                 Schema = Obj(new { x = Int("Tile x"), y = Int("Tile y"), reason = Str(ReasonDesc) }, "x", "y", "reason"),
                 Run = WalkToTool
             },
@@ -279,7 +279,7 @@ public static partial class AgentTools
     private static IEnumerator WalkToTool(JsonElement a, CallContext c)
     {
         var target = new Point(I(a, "x", -1), I(a, "y", -1));
-        if (Pathfinder.IsWalkable(Loc, target.X, target.Y))
+        if (Pathfinder.IsWalkable(Loc, target.X, target.Y) && !FarmerOn(Loc, target))
             yield return WalkTo(target, c);
         else
             yield return WalkAdjacent(target, c);
@@ -374,6 +374,10 @@ public static partial class AgentTools
             c.Fail(Reasons.NoPath, $"Could not reach ({target.X},{target.Y}); stopped at ({P.TilePoint.X},{P.TilePoint.Y}).");
     }
 
+    /// <summary>Another farmer stands on this tile: farmers don't collide in the game, so walking there stacks them.</summary>
+    private static bool FarmerOn(GameLocation loc, Point tile) =>
+        Game1.getOnlineFarmers().Any(f => f != P && f.currentLocation == loc && f.TilePoint == tile);
+
     private static readonly Point[] Dirs = { new(0, -1), new(1, 0), new(0, 1), new(-1, 0) }; // up right down left
 
     /// <summary>Walk to the best tile next to target and face it.</summary>
@@ -389,7 +393,7 @@ public static partial class AgentTools
             foreach (var d in Dirs)
             {
                 var n = new Point(target.X + d.X, target.Y + d.Y);
-                if (!Pathfinder.IsWalkable(loc, n.X, n.Y)) continue;
+                if (!Pathfinder.IsWalkable(loc, n.X, n.Y) || FarmerOn(loc, n)) continue;
                 if (n == me) { best = n; bestLen = 0; break; }
                 var path = new Pathfinder().FindPath(loc, me.ToVector2(), n.ToVector2());
                 if (path != null && path.Count < bestLen) { best = n; bestLen = path.Count; }

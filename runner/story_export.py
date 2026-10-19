@@ -3,7 +3,7 @@
 OBS recording pauses while the world is frozen, so a log line's wall-clock `ts` is not its place in the video.
 `runner/obs_recorder.py` writes `<out>/video_map.jsonl` with one line per recorder event:
 
-    {"ts": "...", "ev": "start|pause|resume|stop", "video_ms": 12345, "path": "<recording file, stop only>"}
+    {"ts": "...", "ev": "start|pause|resume|stop|frozen|live|menu", "video_ms": 12345, "path": "<recording file, stop only>"}
 
 One take per recording file, ending at its stop. A log time inside a take maps through the last anchor at or
 before it: a pause (or the stop) holds its `video_ms`; a start or resume adds the time elapsed since, capped at

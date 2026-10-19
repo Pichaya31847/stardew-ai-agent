@@ -35,6 +35,8 @@
     <Compile Include="..\StardewMCP\Agent\ToolContract.cs" Link="Mod\ToolContract.cs" />
     <Compile Include="..\StardewMCP\Agent\McpDispatcher.cs" Link="Mod\McpDispatcher.cs" />
     <Compile Include="..\StardewMCP\Agent\WorldText.Format.cs" Link="Mod\WorldText.Format.cs" />
+    <Compile Include="..\StardewMCP\Agent\BubbleText.cs" Link="Mod\BubbleText.cs" />
+    <Compile Include="..\StardewMCP\Agent\SpeechQueue.cs" Link="Mod\SpeechQueue.cs" />
   </ItemGroup>
 
 </Project>

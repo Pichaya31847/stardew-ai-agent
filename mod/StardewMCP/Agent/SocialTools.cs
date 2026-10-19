@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using StardewValley.Menus;
 using StardewValley.Tools;
 
 namespace StardewMCP.Agent;
@@ -28,11 +29,14 @@ public static class SocialTools
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> Inbox = new();
     // Items handed over by another seat; added to the receiver's inventory on the receiver's own tick.
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<(Item item, string from)>> Gifts = new();
-    // Chat lines for a listener's own chat box (each screen has its own), shown on that seat's tick.
-    private static readonly ConcurrentDictionary<string, ConcurrentQueue<(long speaker, string text)>> ChatLines = new();
-
-    // Speech bubbles by farmer id. The game only draws them for NPCs, so a draw patch shows these above farmers.
-    private static readonly ConcurrentDictionary<long, (string text, long until)> Bubbles = new();
+    // Said lines waiting for and showing their turn: a bubble above the speaker (the game only draws them for NPCs, so a
+    // draw patch shows them) and a line in the chat box of the speaker's and the listeners' screens (each has its own).
+    private static readonly SpeechQueue<Spoken> Speech = new();
+    private sealed record Spoken(long Speaker, string Text, List<string> Lines, HashSet<string> Screens)
+    {
+        public readonly ConcurrentDictionary<string, ChatMessage> Shown = new();
+    }
+    private const int BubbleChars = 20, BubbleLines = 3, BubbleLineHeight = 60; // a line covers the tail of the one above it
 
     public static void Apply(IManifest manifest)
     {
@@ -42,10 +46,30 @@ public static class SocialTools
 
     private static void DrawBubble_Postfix(Farmer __instance, SpriteBatch b)
     {
-        if (!Bubbles.TryGetValue(__instance.UniqueMultiplayerID, out var bubble)) return;
-        if (Environment.TickCount64 > bubble.until) { Bubbles.TryRemove(__instance.UniqueMultiplayerID, out _); return; }
-        var at = Game1.GlobalToLocal(new Vector2(__instance.StandingPixel.X, __instance.StandingPixel.Y - 192));
-        SpriteText.drawStringWithScrollCenteredAt(b, bubble.text, (int)at.X, (int)at.Y, "", 1f, null, 1, 0.99f);
+        if (__instance.currentLocation is not { } loc || Speech.Showing(loc.NameOrUniqueName) is not { } line
+            || line.Speaker != __instance.UniqueMultiplayerID) return;
+        if (!Game1.viewport.Contains(new xTile.Dimensions.Location(__instance.StandingPixel.X, __instance.StandingPixel.Y)))
+            return; // viewers watch one screen: a sliver of an unseen speaker's bubble at its edge only confuses
+        var widest = line.Lines.MaxBy(l => SpriteText.getWidthOfString(l))!; // every line's box gets this width
+        float x = OnScreen(__instance, SpriteText.getWidthOfString(widest) + 64), bottom = __instance.StandingPixel.Y - 192;
+        // the top line starts at least BubbleTopMargin down the screen (it may then cover the head: better than hidden text)
+        float minTop = Game1.viewport.Y + AgentTools.Config.BubbleTopMargin * Game1.viewport.Height;
+        bottom = Math.Max(bottom, minTop + (line.Lines.Count - 1) * BubbleLineHeight);
+        for (int i = 0; i < line.Lines.Count; i++)
+        {
+            var at = Game1.GlobalToLocal(new Vector2(x, bottom - (line.Lines.Count - 1 - i) * BubbleLineHeight));
+            SpriteText.drawStringWithScrollCenteredAt(b, line.Lines[i], (int)at.X, (int)at.Y, widest, 1f, null, 1, 0.99f);
+        }
+    }
+
+    /// <summary>Bubble centre over the speaker, kept on screen and clear of the clock and money box in the top right.</summary>
+    private static float OnScreen(Farmer f, int w)
+    {
+        float at = f.StandingPixel.X;
+        var v = Game1.viewport;
+        float hud = StardewValley.Menus.DayTimeMoneyBox.width * Game1.options.uiScale / Game1.options.zoomLevel;
+        float left = v.X + w / 2f, right = v.X + v.Width - hud - w / 2f;
+        return left < right ? Math.Clamp(at, left, right) : at;
     }
 
     // All of these are marked Instant: talking costs no game time, so they run even while the world is
@@ -140,8 +164,13 @@ public static class SocialTools
     public static void Tick(string player)
     {
         if (!Context.IsWorldReady) return;
-        if (ChatLines.TryGetValue(player, out var lines))
-            while (lines.TryDequeue(out var l)) ShowChat(l.speaker, l.text);
+        Speech.Advance(Environment.TickCount64, WorldClock.WorldPaused);
+        foreach (var line in Speech.AllShowing().Where(l => l.Screens.Contains(player)))
+        {
+            if (!line.Shown.ContainsKey(player) && ShowChat(line.Speaker, line.Text) is { } msg) line.Shown[player] = msg;
+            if (line.Shown.TryGetValue(player, out var shown))
+                shown.timeLeftToDisplay = Math.Max(shown.timeLeftToDisplay, 60); // up while its bubble shows, then fades
+        }
         if (!Gifts.TryGetValue(player, out var q) || q.IsEmpty) return;
         var me = Game1.player;
         while (q.TryDequeue(out var g))
@@ -181,10 +210,10 @@ public static class SocialTools
 
         // Heard only on screens that show the speaker: in the video a line appears on the speaker's and the listeners' screens.
         var heard = OtherAis().Where(s => s.State is ScreenState st && st.Sees(me)).ToList();
-        ShowChat(me.UniqueMultiplayerID, text);
-        foreach (var s in heard) ChatLines.GetOrAdd(s.Id, _ => new()).Enqueue((me.UniqueMultiplayerID, text));
         int maxMs = Math.Max(1, AgentTools.Config.ChatSeconds) * 1000;
-        Bubbles[me.UniqueMultiplayerID] = (Clip(text, 60), Environment.TickCount64 + Math.Clamp(1500 + text.Length * 60, Math.Min(2500, maxMs), maxMs));
+        var screens = heard.Select(s => s.Id).Append(Me).ToHashSet();
+        Speech.Add(me.currentLocation.NameOrUniqueName, new Spoken(me.UniqueMultiplayerID, text, BubbleText.Wrap(text, BubbleChars, BubbleLines), screens),
+            Math.Clamp(1500 + text.Length * 60, Math.Min(2500, maxMs), maxMs));
 
         var from = Label(Players.ById(Me)!);
         foreach (var s in heard) Deliver(s, $"[{WorldText.FormatTime(Game1.timeOfDay)}] {from}: {text}");
@@ -195,12 +224,14 @@ public static class SocialTools
             : $"You said: \"{text}\". Heard by {string.Join(", ", heard.Select(Label))}.";
     }
 
-    /// <summary>A chat line in this screen's own chat box, shown for <see cref="ModConfig.ChatSeconds"/>.</summary>
-    private static void ShowChat(long speaker, string text)
+    /// <summary>A chat line in this screen's own chat box; <see cref="Tick"/> keeps it up while its bubble shows.</summary>
+    private static ChatMessage? ShowChat(long speaker, string text)
     {
         Game1.chatBox?.receiveChatMessage(speaker, 0, LocalizedContentManager.CurrentLanguageCode, text);
         int ticks = Math.Max(1, AgentTools.Config.ChatSeconds) * 60;
-        if (Game1.chatBox?.messages.LastOrDefault() is { } line) line.timeLeftToDisplay = Math.Min(line.timeLeftToDisplay, ticks);
+        var line = Game1.chatBox?.messages.LastOrDefault();
+        if (line != null) line.timeLeftToDisplay = Math.Min(line.timeLeftToDisplay, ticks);
+        return line;
     }
 
     private static IEnumerator Emote(JsonElement a, CallContext c)

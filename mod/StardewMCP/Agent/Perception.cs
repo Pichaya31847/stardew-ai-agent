@@ -412,6 +412,8 @@ public static class Perception
         if (Game1.activeClickableMenu != null || Game1.isWarping || Game1.fadeToBlack || Game1.eventUp || p.UsingTool) return;
         bool waiting = call.Tool.Name == "wait";
         if (!waiting && p.controller == null) return;
+        // farmers don't collide: stopping on another's tile stacks them, so the walk goes on to the next free tile first
+        if (!waiting && Game1.getOnlineFarmers().Any(f => f != p && f.currentLocation == p.currentLocation && f.TilePoint == p.TilePoint)) return;
 
         var why = string.Join("; ", q.Select(e => e.Short).Distinct().Take(4));
         var tool = call.Tool.Name;

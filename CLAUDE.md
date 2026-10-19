@@ -83,8 +83,10 @@ get caught and betray each other. The story must emerge from the game, not from 
   (cap `--outage-cap-hours`, default 6); the runner holds the world whenever it exits.
 - Per-screen base zoom = 1.5 × (screen width / 960), keeping about 20 tiles in view.
 - Frozen frames must look like live ones: no "Paused" banner, HUD kept, no gamepad hint,
-  join/hosting chat lines or cursor. The recorder keeps cutting frozen time, holding a few
-  seconds for chat bubbles and thoughts.
+  join/hosting chat lines or cursor. The recorder keeps cutting frozen time; a say's bubble and chat line wait their turn
+  (one line at a time per place, in the order said) and count only time the world runs, so talk shows over moving footage;
+  a menu an action opens (item box, letter) keeps recording; a think never holds a frozen frame; the evening diary and
+  self note are held.
 
 ### Phases
 

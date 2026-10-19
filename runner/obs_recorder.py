@@ -1,9 +1,11 @@
 """Record the run with OBS, cutting out the time the game sits frozen waiting for the AI.
 
 The mod freezes game time while the model thinks (`frozen` in /api/state). This script watches that flag
-and pauses the OBS recording while the game is frozen, so the video only contains gameplay. When the AI
-posts a `think`, `say`, diary or `self` note, recording resumes for a few seconds so the text
-shown on the overlay is in the video. Each farm day gets its own OBS file.
+and pauses the OBS recording while the game is frozen, so the video only contains gameplay. A
+`say` never holds a frozen frame either: the mod shows its bubble when the world runs again, each line in turn. A `think` stays on the
+overlay into the live footage after it and never holds a frozen frame. The evening diary and `self` note (no live
+footage follows them) keep recording long enough to read, and so does a box an action leaves open as it ends (item box, letter). Each farm day gets its
+own OBS file.
 
 With `--out DIR`, every start / pause / resume / stop is appended to `DIR/video_map.jsonl` as
 `{ts, ev, video_ms, path}` (ts = local time like the mod's log, video_ms = OBS's own outputDuration,
@@ -12,7 +14,7 @@ path only on stop), so log timestamps can be mapped to positions in the video fi
 Usage (OBS open with obs-websocket enabled, game running with the mod):
 
     py runner/obs_recorder.py                      # starts recording if needed, Ctrl+C to quit
-    py runner/obs_recorder.py --hold 3 --stop-on-exit
+    py runner/obs_recorder.py --diary-hold 8 --stop-on-exit
     py runner/obs_recorder.py --out runs/run1      # also writes runs/run1/video_map.jsonl
     py runner/obs_recorder.py --no-pause --out runs/run1   # no pauses; cut the still time afterwards
 
@@ -29,6 +31,7 @@ import os
 import re
 import socket
 import struct
+import sys
 import time
 import urllib.request
 from datetime import datetime
@@ -154,9 +157,6 @@ class Obs:
 
 # ---------------------------------------------------------------- recorder loop
 
-STRIP_KINDS = ("think", "diary")  # shown at once and stacked in the player's overlay strip
-
-
 def is_self_note(entry: dict) -> bool:
     return entry.get("tool") == "journal" and bool(((entry.get("args") or {}).get("self") or "").strip())
 
@@ -166,19 +166,40 @@ def hold_text(entry: dict) -> str:
 
 
 def hold_seconds(entry: dict, args) -> float:
-    if entry.get("kind") != "diary" and not is_self_note(entry):
-        # a thought stays on the strip into the live footage after it, so a short frozen beat is enough
-        return OVERLAY_POLL_SECONDS + args.hold
     return OVERLAY_POLL_SECONDS + max(args.diary_hold, len(hold_text(entry)) * READ_SECONDS_PER_CHAR + args.read_time)
 
 
 def add_hold(until: dict, entry: dict, now: float, args) -> bool:
-    """Extend the entry's player's hold. The strip shows each text at once (no queue), so holds overlap like `say`."""
+    """Extend the player's hold for a diary or self note. Each shows at once, so holds overlap."""
     p = entry.get("player") or ""
-    if entry.get("kind") not in STRIP_KINDS + ("say",) and not is_self_note(entry):
+    if entry.get("kind") != "diary" and not is_self_note(entry):
         return False
     until[p] = max(until.get(p, 0.0), now + hold_seconds(entry, args))
     return True
+
+
+def menus_opened(since: dict, state: dict, now: float) -> list[str]:
+    """AI seats whose screen opened a menu (item box, dialogue, letter) since the last poll; `since` keeps when each
+    seat's open menu appeared."""
+    opened = []
+    for p in state.get("players") or []:
+        if p.get("role") != "ai":
+            continue
+        if (p.get("state") or {}).get("menu"):
+            if p["id"] not in since:
+                since[p["id"]] = now
+                opened.append(p["id"])
+        else:
+            since.pop(p["id"], None)
+    return opened
+
+
+def menu_holds(since: dict, state: dict, now: float, hold: float) -> bool:
+    """A box an action left open as it ended (seeds received, a letter) keeps recording for its first `hold` seconds: its
+    seat is the one thinking. A menu opened mid-action (the TV's channels) waits for the world like the rest of the
+    picture, and a closed one holds nothing."""
+    thinking = set(state.get("thinking") or [])
+    return any(p in thinking and now - t < hold for p, t in since.items())
 
 
 def feed_day(entries: list, state: dict):
@@ -264,6 +285,7 @@ def run(args):
     api_down = False
 
     hold_until: dict[str, float] = {}
+    menus: dict[str, float] = {}
     frozen_since: float | None = None
     t_start = time.monotonic()
     paused_total = 0.0
@@ -337,13 +359,19 @@ def run(args):
                 if add_hold(hold_until, e, now, args) and args.verbose:
                     log(f"{e.get('player')} {e.get('tool') or e['kind']}: {hold_text(e)[:60]}")
 
+            for p in menus_opened(menus, state, now):
+                write_map("menu")  # for check_recording.py
+                if args.verbose:
+                    log(f"{p} opened a menu")
             frozen = bool(state.get("frozen"))
+            if frozen != (frozen_since is not None):
+                write_map("frozen" if frozen else "live")  # flag flips, for check_recording.py's lag numbers
             frozen_since = (frozen_since or now) if frozen else None
             waiting = frozen_since is not None and now - frozen_since >= args.min_pause
 
             if args.no_pause:
                 set_paused(False, "continuous")  # still stretches are cut afterwards (docs/recording.md, auto-editor)
-            elif any(now < t for t in hold_until.values()):
+            elif any(now < t for t in hold_until.values()) or menu_holds(menus, state, now, args.menu_hold):
                 set_paused(False, "showing text")
             elif waiting:
                 set_paused(True, "waiting for the AI")
@@ -378,15 +406,18 @@ def main():
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=4455)
     ap.add_argument("--password", default=os.environ.get("OBS_WS_PASSWORD", ""))
-    ap.add_argument("--hold", type=float, default=1.5, help="Seconds of frozen video kept for each thought or say")
     ap.add_argument("--diary-hold", type=float, default=6.0, help="Minimum seconds kept for the end-of-day diary")
     ap.add_argument("--read-time", type=float, default=1.5,
                     help="Extra seconds to read a long diary or self note")
-    ap.add_argument("--min-pause", type=float, default=0.8,
-                    help="Only pause after the game has been frozen this long (avoids tiny cuts between tool calls)")
+    ap.add_argument("--menu-hold", type=float, default=2.5,
+                    help="Seconds of frozen video kept for a box an AI's action left open as it ended (item box, letter)")
+    ap.add_argument("--min-pause", type=float, default=0.0,
+                    help="Only pause after the game has been frozen this long. 0: a cut on a frozen world is seamless, "
+                         "while every frozen frame let through shows as a hitch")
     ap.add_argument("--no-pause", action="store_true",
                     help="Record continuously (one file per day) and cut the frozen time afterwards with auto-editor")
-    ap.add_argument("--interval", type=float, default=0.2, help="Polling interval in seconds")
+    ap.add_argument("--interval", type=float, default=0.05,
+                    help="Polling interval in seconds (frozen frames reach the video for up to this long)")
     ap.add_argument("--report-every", type=float, default=300, help="Seconds between progress lines")
     ap.add_argument("--max-minutes", type=float, default=0,
                     help="Stop recording and exit once the (cut) video is this long. 0 = no limit")
@@ -398,6 +429,7 @@ def main():
                     help="Run folder for video_map.jsonl (log time to video position). Without it no map is written")
     ap.add_argument("-v", "--verbose", action="store_true", help="Log every pause/resume")
     args = ap.parse_args()
+    sys.stdout.reconfigure(errors="replace")  # a redirected Windows console is cp1252: log lines carry ⏸ → and Thai
 
     while True:
         try:

@@ -34,7 +34,9 @@ The recording holds only the game; the VO is written from the logs and recorded 
     | think P2 | `http://localhost:8770/overlay?player=p2` | 1920, 0 |
     | think P3 | `http://localhost:8770/overlay?player=p3` | 0, 1080 |
 
-    Add `&mock=1` to see sample text without the game.
+    Add `&mock=1` to see sample text without the game. Speech bubbles stay below the top `BubbleTopMargin` (part of
+    the screen height, default 0.12, in `Mods/StardewMCP/config.json`) so a strip never covers what is said; raise it
+    if a strip grows taller.
 
 ## Once per farm, before day 1
 
@@ -92,9 +94,9 @@ Terminal 3:
 py runner/run_days.py --multi --days 10 --out runs-ep01 --skip-smoke --game-cmd "<SMAPI command>"
 ```
 
-- `--min-pause` trades cuts for still frames: a freeze shorter than it stays in the video. On the rehearsal's
-  56 min (451 cuts, one every 7.4 s): 2 s → 391 cuts and +47 s of still frames; 3 s → 300 cuts, +192 s;
-  4 s → 244 cuts, +337 s. Default 0.8 s. Holding the video longer after short live stretches does not reduce cuts.
+- The recorder pauses OBS as soon as it sees the world frozen (`--min-pause 0`, polled every 0.05 s): the frames
+  before and after a frozen stretch are the same, so the cut is seamless, while every frozen frame let through shows
+  as a hitch (a 0.45 s one with the old 0.3 s min-pause, 2026-10-19). Only the sound is cut (see Music above).
 - `LogDir` in `Mods/StardewMCP/config.json` must be `<out>/logs` (set it before launching the game);
   `run_days.py` refuses to start otherwise, since the AIs would lose their diaries and the export its logs.
 - The next batch is the same command with the same `--out`; it continues from the day in the save.
