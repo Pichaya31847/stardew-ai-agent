@@ -446,6 +446,17 @@ def touch(d: Path, *names: str) -> None:
         (d / n).write_text(n, encoding="utf-8")
 
 
+def test_quarantine_moves_every_backend_and_seat_transcript(tmp_path):
+    touch(tmp_path, "agy_day_005_p2_part1.jsonl", "opencode_day_005_p3_part0.jsonl", "claude_day_005_part2.jsonl",
+          "agy_day_004_p2_part1.jsonl", "agy_probe_p2.jsonl")
+    gw.quarantine(tmp_path, 5, 1, stamp="0000")
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted([
+        "agy_day_005_p2_attempt1_part1.jsonl", "opencode_day_005_p3_attempt1_part0.jsonl",
+        "claude_day_005_attempt1_part2.jsonl",
+        "agy_day_004_p2_part1.jsonl", "agy_probe_p2.jsonl",                 # earlier day / not per-day: untouched
+    ])
+
+
 def test_quarantine_names(tmp_path):
     touch(tmp_path, "day_004.jsonl", "diary_004.md", "claude_day_004_part1.jsonl",
           "day_005.jsonl", "diary_005.md", "diary_005_p2.md", "diary_005_p3.md", "journal_005.md",

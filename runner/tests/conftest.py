@@ -100,6 +100,14 @@ def _mock_watchdog_for_runner_tests(monkeypatch, request):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_run_control(monkeypatch):
+    """run_days.main() ends by holding the world (stop_now), which sticks in its RunControl: one per test."""
+    import run_days
+    from run_control import RunControl
+    monkeypatch.setattr(run_days, "CTL", RunControl(run_days.api_get, run_days.api_post))
+
+
+@pytest.fixture(autouse=True)
 def _no_real_briefing_fetch(monkeypatch):
     """briefing.build with run_days' real api_get would hit localhost:8770 and retry 15x with 1 s sleeps."""
     import briefing

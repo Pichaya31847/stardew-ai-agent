@@ -73,3 +73,24 @@ def test_no_thai_outside_the_table(page):
     html = (HERE / page).read_text(encoding="utf-8")
     a, b = html.index("i18n:begin"), html.index("i18n:end")
     assert not THAI.search(html[:a] + html[b:])
+
+
+PLAIN_DRIVER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const plain = new Function(input.src + ' return plain;')();
+console.log(JSON.stringify(input.cases.map(c => plain(c, w => input.words[w]))));
+"""
+
+
+def test_strip_plain_words_hides_coordinates_numbers_and_tool_names():
+    html = (HERE / "overlay.html").read_text(encoding="utf-8")
+    m = re.search(r"^const plain = .*?;\n", html.replace("\r\n", "\n"), re.S | re.M)
+    assert m, "plain() not found"
+    cases = ["ไปทาง (0 2 1) ก่อน", "เดินไป (52,14) แล้วรดน้ำ", "วันนี้โชคดี +0.5 นะ", "พลังงาน 8/270 แล้ว",
+             "เหนื่อยแล้ว go_to_bed ดีกว่า", "ลอง till_area ตรงนี้", "ปลูก 15 เมล็ด ตอน 6:30"]
+    payload = json.dumps({"src": m.group(0), "cases": cases, "words": {"go_to_bed": "ไปนอน"}})
+    r = subprocess.run([NODE, "-e", PLAIN_DRIVER], input=payload,
+                       capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == ["ไปทาง ก่อน", "เดินไป แล้วรดน้ำ", "วันนี้โชคดี นะ", "พลังงาน แล้ว",
+                                    "เหนื่อยแล้ว ไปนอน ดีกว่า", "ลอง till area ตรงนี้", "ปลูก 15 เมล็ด ตอน 6:30"]

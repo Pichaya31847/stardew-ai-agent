@@ -15,78 +15,11 @@ using StardewValley.Tools;
 
 namespace StardewMCP.Agent;
 
-/// <summary>One edit of the shared plan board.</summary>
-public record PlanEdit(int Id, int Day, string Time, string Author, string Section, string Text);
-
-/// <summary>The plan every player can read and edit. Every edit is kept with author and time.</summary>
-public static class PlanBoard
-{
-    public const int MaxSections = 12, MaxText = 600;
-    private static readonly object Lock = new();
-    private static readonly Dictionary<string, PlanEdit> Sections = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly List<PlanEdit> History = new();
-
-    public static PlanEdit? Edit(string author, string section, string text)
-    {
-        lock (Lock)
-        {
-            if (text.Length == 0)
-                Sections.Remove(section);
-            else if (!Sections.ContainsKey(section) && Sections.Count >= MaxSections)
-                return null;
-            var e = new PlanEdit(History.Count + 1, AgentLog.FarmDay, WorldText.FormatTime(Game1.timeOfDay), author, section, text);
-            if (text.Length > 0) Sections[section] = e;
-            History.Add(e);
-            return e;
-        }
-    }
-
-    /// <summary>The newest section written by <paramref name="author"/> ("Name (pN)"), or null: what that player has put on record as its plan.</summary>
-    public static PlanEdit? LatestBy(string author)
-    {
-        lock (Lock)
-            return Sections.Values.Where(e => e.Author == author).OrderByDescending(e => e.Id).FirstOrDefault();
-    }
-
-    public static PlanEdit? Get(string section)
-    {
-        lock (Lock)
-            return Sections.TryGetValue(section, out var e) ? e : null;
-    }
-
-    public static object Snapshot()
-    {
-        lock (Lock)
-            return new { sections = Sections.Values.ToList(), history = History.TakeLast(50).ToList() };
-    }
-
-    public static string Render(int history)
-    {
-        lock (Lock)
-        {
-            var sb = new StringBuilder();
-            if (Sections.Count == 0) sb.AppendLine("Plan board is empty. Use plan_edit(section, text) to write on it.");
-            foreach (var s in Sections.Values)
-                sb.AppendLine($"## {s.Section} (by {s.Author}, day {s.Day} {s.Time})\n{s.Text}");
-            var shown = History.TakeLast(history).ToList();
-            sb.AppendLine($"History, oldest first ({shown.Count} of {History.Count} edits):");
-            foreach (var h in shown)
-                sb.AppendLine($"  #{h.Id} day {h.Day} {h.Time} {h.Author} {(h.Text.Length == 0 ? "cleared" : "set")} \"{h.Section}\"" +
-                              (h.Text.Length == 0 ? "" : $": {Clip(h.Text, 80)}"));
-            var quests = AgentTools.QuestPlanHint();
-            if (quests.Length > 0) sb.AppendLine(quests);
-            return sb.ToString().TrimEnd();
-        }
-    }
-
-    private static string Clip(string s, int n) => s.Length <= n ? s : s[..n] + "...";
-}
-
 /// <summary>
-/// Social tools: say, whisper, emote, give and the shared plan board. Kept apart from
-/// <see cref="AgentTools"/>. Chat and whispers land in the target's inbox and ride on that
-/// seat's next tool result (see <see cref="TakeMail"/>). An @mention, a whisper or a gift also raises a <see cref="Perception"/>
-/// event, which can stop the target's running walk, wait or farm action.
+/// Social tools: say, emote and give. Kept apart from <see cref="AgentTools"/>. What is said reaches only the players
+/// whose screen shows the speaker; it lands in their inbox and rides on that seat's next tool result (see
+/// <see cref="TakeMail"/>). An @mention or a gift also raises a <see cref="Perception"/> event, which can stop the
+/// target's running walk, wait or farm action.
 /// </summary>
 public static class SocialTools
 {
@@ -95,6 +28,8 @@ public static class SocialTools
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> Inbox = new();
     // Items handed over by another seat; added to the receiver's inventory on the receiver's own tick.
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<(Item item, string from)>> Gifts = new();
+    // Chat lines for a listener's own chat box (each screen has its own), shown on that seat's tick.
+    private static readonly ConcurrentDictionary<string, ConcurrentQueue<(long speaker, string text)>> ChatLines = new();
 
     // Speech bubbles by farmer id. The game only draws them for NPCs, so a draw patch shows these above farmers.
     private static readonly ConcurrentDictionary<long, (string text, long until)> Bubbles = new();
@@ -114,23 +49,18 @@ public static class SocialTools
     }
 
     // All of these are marked Instant: talking costs no game time, so they run even while the world is
-    // frozen (a morning meeting is chat only) and never count as "acting" in WorldClock. They log their own entries.
+    // frozen and never count as "acting" in WorldClock. They log their own entries.
     public static List<ToolDef> All() => new()
     {
         new()
         {
             Name = "say",
-            Description = "Say something out loud: it appears in the in-game chat box and above your head. Every player hears it, at any distance, and so do the viewers. Keep it short. " +
-                          "Write @name or @p2 to call a player: it stops what they are doing (walking, waiting, farming) so they read it at once.",
+            Description = "Say something out loud: it appears above your head and in the chat box. Only players who can see you " +
+                          "hear it (the same place, close enough to be in their view, the way look lists players in view). To talk to " +
+                          "someone, go and find them first. Keep it short. Write @name or @p2 to call a player who can hear you: it " +
+                          "stops what they are doing (walking, waiting, farming) so they read it at once.",
             Schema = AgentTools.Obj(new { text = AgentTools.Str("What you say") }, "text"),
             Instant = true, AppendStatus = false, Run = Say
-        },
-        new()
-        {
-            Name = "whisper",
-            Description = "Tell one player something privately. Nobody else in the game learns it happened; viewers do see it. It stops what that player is doing (walking, waiting, farming) so they read it at once.",
-            Schema = AgentTools.Obj(new { to = AgentTools.Str("Player id (p1, p2...) or name"), text = AgentTools.Str("What you whisper") }, "to", "text"),
-            Instant = true, AppendStatus = false, Run = Whisper
         },
         new()
         {
@@ -145,21 +75,6 @@ public static class SocialTools
             Description = "Hand an item from your inventory to another player standing within 4 tiles of you (same map). Tools can't be given.",
             Schema = AgentTools.Obj(new { to = AgentTools.Str("Player id (p1, p2...) or name"), item = AgentTools.Str("Item name"), count = AgentTools.Int("How many (default 1)") }, "to", "item"),
             Instant = true, AppendStatus = false, Run = Give
-        },
-        new()
-        {
-            Name = "plan_read",
-            Description = "Read the shared plan board (sections everyone can see) and its edit history: who changed what, and when.",
-            Schema = AgentTools.Obj(new { history = AgentTools.Int("How many recent edits to list, 0-100 (default 10)") }),
-            Instant = true, NeedsWorld = false, AppendStatus = false,
-            Run = (a, c) => AgentTools.Instant(c, PlanBoard.Render(Math.Clamp(AgentTools.I(a, "history", 10), 0, 100)))
-        },
-        new()
-        {
-            Name = "plan_edit",
-            Description = "Write a section of the shared plan board, replacing that section. Empty text deletes it. Everyone can read it and every edit is logged with your name.",
-            Schema = AgentTools.Obj(new { section = AgentTools.Str("Section title, e.g. \"Today\" or \"Crops\""), text = AgentTools.Str($"New content, up to {PlanBoard.MaxText} characters") }, "section", "text"),
-            Instant = true, AppendStatus = false, Run = PlanEditTool
         }
     };
 
@@ -221,10 +136,13 @@ public static class SocialTools
         return sb.ToString();
     }
 
-    /// <summary>Per-tick work on the seat's own screen: add items other players gave it.</summary>
+    /// <summary>Per-tick work on the seat's own screen: show what it heard in its chat box, add items other players gave it.</summary>
     public static void Tick(string player)
     {
-        if (!Gifts.TryGetValue(player, out var q) || q.IsEmpty || !Context.IsWorldReady) return;
+        if (!Context.IsWorldReady) return;
+        if (ChatLines.TryGetValue(player, out var lines))
+            while (lines.TryDequeue(out var l)) ShowChat(l.speaker, l.text);
+        if (!Gifts.TryGetValue(player, out var q) || q.IsEmpty) return;
         var me = Game1.player;
         while (q.TryDequeue(out var g))
         {
@@ -261,29 +179,28 @@ public static class SocialTools
         if (text.Length == 0) { c.Fail("text is empty"); yield break; }
         var me = Game1.player;
 
-        Game1.Multiplayer.sendChatMessage(LocalizedContentManager.CurrentLanguageCode, text, Multiplayer.AllPlayers);
-        Game1.chatBox?.receiveChatMessage(me.UniqueMultiplayerID, 0, LocalizedContentManager.CurrentLanguageCode, text);
-        Bubbles[me.UniqueMultiplayerID] = (Clip(text, 60), Environment.TickCount64 + Math.Clamp(1500 + text.Length * 60, 2500, 7000));
+        // Heard only on screens that show the speaker: in the video a line appears on the speaker's and the listeners' screens.
+        var heard = OtherAis().Where(s => s.State is ScreenState st && st.Sees(me)).ToList();
+        ShowChat(me.UniqueMultiplayerID, text);
+        foreach (var s in heard) ChatLines.GetOrAdd(s.Id, _ => new()).Enqueue((me.UniqueMultiplayerID, text));
+        int maxMs = Math.Max(1, AgentTools.Config.ChatSeconds) * 1000;
+        Bubbles[me.UniqueMultiplayerID] = (Clip(text, 60), Environment.TickCount64 + Math.Clamp(1500 + text.Length * 60, Math.Min(2500, maxMs), maxMs));
 
         var from = Label(Players.ById(Me)!);
-        var heard = OtherAis().ToList();
         foreach (var s in heard) Deliver(s, $"[{WorldText.FormatTime(Game1.timeOfDay)}] {from}: {text}");
         Perception.OnSay(Players.ById(Me)!, text, heard);
-        AgentTools.Rt.Log.Add("say", text: text);
-        c.Result = $"You said: \"{text}\" ({heard.Count} other player{(heard.Count == 1 ? "" : "s")} heard it).";
+        AgentTools.Rt.Log.Add("say", text: text, args: new { heard = heard.Select(s => s.Id).ToList() });
+        c.Result = heard.Count == 0
+            ? $"You said: \"{text}\", but nobody was close enough to hear it. Find the others first."
+            : $"You said: \"{text}\". Heard by {string.Join(", ", heard.Select(Label))}.";
     }
 
-    private static IEnumerator Whisper(JsonElement a, CallContext c)
+    /// <summary>A chat line in this screen's own chat box, shown for <see cref="ModConfig.ChatSeconds"/>.</summary>
+    private static void ShowChat(long speaker, string text)
     {
-        var text = Clip(Clean(AgentTools.S(a, "text")), MaxChat);
-        if (text.Length == 0) { c.Fail("text is empty"); yield break; }
-        var to = Target(AgentTools.S(a, "to"), c);
-        if (to == null) yield break;
-
-        Deliver(to, $"[{WorldText.FormatTime(Game1.timeOfDay)}] {Label(Players.ById(Me)!)} whispers: {text}");
-        Perception.Notify(to, "whisper", $"{Label(Players.ById(Me)!)} whispered to you");
-        AgentTools.Rt.Log.Add("whisper", text: text, args: new { to = to.Id });
-        c.Result = $"You whispered to {Label(to)}: \"{text}\". Only they will see it.";
+        Game1.chatBox?.receiveChatMessage(speaker, 0, LocalizedContentManager.CurrentLanguageCode, text);
+        int ticks = Math.Max(1, AgentTools.Config.ChatSeconds) * 60;
+        if (Game1.chatBox?.messages.LastOrDefault() is { } line) line.timeLeftToDisplay = Math.Min(line.timeLeftToDisplay, ticks);
     }
 
     private static IEnumerator Emote(JsonElement a, CallContext c)
@@ -338,18 +255,5 @@ public static class SocialTools
         Gifts.GetOrAdd(to.Id, _ => new()).Enqueue((gift, Label(Players.ById(Me)!)));
         AgentTools.Rt.Log.Add("give", text: $"{count} x {gift.DisplayName}", args: new { to = to.Id });
         c.Result = $"You gave {count} x {gift.DisplayName} to {Label(to)}.";
-    }
-
-    private static IEnumerator PlanEditTool(JsonElement a, CallContext c)
-    {
-        var section = Clip(Clean(AgentTools.S(a, "section")), 40);
-        var text = AgentTools.S(a, "text").Trim();
-        if (section.Length == 0) { c.Fail("section is empty"); yield break; }
-        if (text.Length > PlanBoard.MaxText) { c.Fail($"text is {text.Length} characters; the limit is {PlanBoard.MaxText}. Shorten it or split it into sections."); yield break; }
-
-        var e = PlanBoard.Edit(Label(Players.ById(Me)!), section, text);
-        if (e == null) { c.Fail($"The board already has {PlanBoard.MaxSections} sections. Reuse or clear one."); yield break; }
-        AgentTools.Rt.Log.Add("plan", text: text, args: new { section, edit = e.Id });
-        c.Result = text.Length == 0 ? $"Cleared section \"{section}\" (edit #{e.Id})." : $"Section \"{section}\" saved (edit #{e.Id}).";
     }
 }

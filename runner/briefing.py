@@ -152,9 +152,9 @@ def build(api_get: Callable[[str], Any], day: int, seat: str = "p1", *, out_dir:
 def morning_prompt(day: int, briefing: str | None) -> str:
     """The part-1 prompt of a day. Without a briefing it is the original "start with status and look" prompt."""
     if not briefing:
-        return (f"วันนี้คือวันที่ {day} ของชาเลนจ์ 100 วัน เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
+        return (f"วันนี้คือวันที่ {day} ของคุณในหุบเขานี้ เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
                 "จากนั้นเล่นทั้งวันจนเข้านอนด้วย go_to_bed")
-    return (f"วันนี้คือวันที่ {day} ของชาเลนจ์ 100 วัน นี่คือสรุปเช้านี้จากเกม "
+    return (f"วันนี้คือวันที่ {day} ของคุณในหุบเขานี้ นี่คือสรุปเช้านี้ "
             "(ผลขายเมื่อวาน จดหมาย อากาศ และฟาร์ม อ่านแล้วไม่ต้องเรียก status เพื่อหาข้อมูลเหล่านี้ซ้ำ):\n\n"
             f"{briefing}\n\n"
             "ใช้ look ดูรอบตัว แล้ว think แผนของวันเป็นภาษาไทย จากนั้นเล่นทั้งวันจนเข้านอนด้วย go_to_bed")

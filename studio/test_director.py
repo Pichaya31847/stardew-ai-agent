@@ -19,9 +19,9 @@ from director import (  # noqa: E402
 
 
 class DirectorScenePickingTests(unittest.TestCase):
-    def test_say_and_whisper_focus_speaker(self) -> None:
+    def test_say_focuses_speaker(self) -> None:
         self.assertEqual(pick_scene({"type": "say", "player": "p1", "text": "Good morning!"}), "focus-P1")
-        self.assertEqual(pick_scene({"kind": "whisper", "speaker": "P2", "to": "p1", "text": "psst"}), "focus-P2")
+        self.assertEqual(pick_scene({"kind": "say", "speaker": "P2", "text": "psst"}), "focus-P2")
         self.assertEqual(pick_scene({"kind": "action", "tool": "say", "player": "p3", "text": "On my way"}), "focus-P3")
 
     def test_theft_gift_and_caught_slacking_focus_player(self) -> None:
@@ -51,7 +51,7 @@ class DirectorScenePickingTests(unittest.TestCase):
         self.assertEqual(pick_scene({"type": "use_tool", "player": "p2"}, now=2.9, director=d), "focus-P1")
 
         # Even if another player triggers an event at t=2.5s (< 3s), current focus is held >= 3s
-        self.assertEqual(pick_scene({"type": "whisper", "player": "p2"}, now=2.5, director=d), "focus-P1")
+        self.assertEqual(pick_scene({"type": "say", "player": "p2"}, now=2.5, director=d), "focus-P1")
 
         # t=3.0s: 3s hold has elapsed; plain work returns to all-three grid
         self.assertEqual(pick_scene({"type": "walk_to", "player": "p1"}, now=3.0, director=d), "all-three")
@@ -74,7 +74,7 @@ class DirectorScenePickingTests(unittest.TestCase):
     def test_parse_sse_lines(self) -> None:
         raw = [
             ": keepalive\n",
-            "event: whisper\n",
+            "event: say\n",
             'data: {"player": "p2", "to": "p3", "text": "secret"}\n',
             "\n",
             'data: {"type": "caught-slacking", "player": "p3"}\n',

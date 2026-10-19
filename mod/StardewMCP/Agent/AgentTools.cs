@@ -38,8 +38,8 @@ public static partial class AgentTools
         string.IsNullOrWhiteSpace(Config.ThoughtLanguage) ? "Thai" : Config.ThoughtLanguage.Trim();
 
     private static string ReasonDesc => Lang.Equals("Thai", StringComparison.OrdinalIgnoreCase)
-        ? "Short reason IN THAI shown to viewers on screen (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"
-        : $"Short reason IN {Lang.ToUpperInvariant()} shown to viewers on screen";
+        ? "Short reason IN THAI, in plain words with no coordinates or numbers (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"
+        : $"Short reason IN {Lang.ToUpperInvariant()}, in plain words with no coordinates or numbers";
 
     private static string StatusText()
     {
@@ -78,7 +78,7 @@ public static partial class AgentTools
             new()
             {
                 Name = "think",
-                Description = $"Say what you are thinking/planning, IN {Lang.ToUpperInvariant()}, 1-3 sentences. It is shown to viewers on screen. Call this before each new plan and whenever something surprising happens. Game time is frozen while you think.",
+                Description = $"Say what you are thinking/planning, IN {Lang.ToUpperInvariant()}, 1-3 sentences. It is your private thought: nobody else in the game sees it. Talk to yourself like a person, with no tile coordinates, decimals or tool names. Call this before each new plan and whenever something surprising happens. Game time is frozen while you think.",
                 Schema = Obj(new { text = Str($"Your thought in {Lang}") }, "text"),
                 Instant = true, NeedsWorld = false, AppendStatus = false,
                 Run = Think

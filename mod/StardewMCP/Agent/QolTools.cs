@@ -32,7 +32,7 @@ public static partial class AgentTools
         return found;
     }
 
-    /// <summary>"Gemini (p2)": a farmer's name with the seat that plays them, as the chat and plan board name players.</summary>
+    /// <summary>"Gemini (p2)": a farmer's name with the seat that plays them, as the chat names players.</summary>
     private static string SeatLabel(Farmer f)
     {
         var slot = Players.Slots.FirstOrDefault(s => (s.State as ScreenState)?.Name == f.Name);

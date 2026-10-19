@@ -150,8 +150,7 @@ class UsageTracker:
                 self.result = {
                     "subtype": "success" if reason == "stop" else reason,
                     "is_error": reason in ("error", "failed"),
-                    "session_id": self.session_id,
-                    "usage": tokens,
+                    "session_id": self.session_id,  # no "usage": opencode's key names differ; totals sum the steps
                     "total_cost": part.get("cost", 0.0),
                 }
             return

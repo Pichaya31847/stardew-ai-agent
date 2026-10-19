@@ -1,0 +1,5 @@
+{
+  "p1": {"female":false,"hair":116,"hairColor":"#645B29","skin":3,"eyeColor":"#242C4D","accessory":29,"shirt":"1066","shirtColor":"#FFFFFF","pants":"0","pantsColor":"#F2A93B"},
+  "p2": {"female":true,"hair":17,"hairColor":"#3628E9","skin":0,"eyeColor":"#292210","accessory":-1,"shirt":"1074","shirtColor":"#FFFFFF","pants":"0","pantsColor":"#5AA9FF"},
+  "p3": {"female":false,"hair":113,"hairColor":"#926C46","skin":0,"eyeColor":"#1B0000","accessory":1,"shirt":"1047","shirtColor":"#FFFFFF","pants":"0","pantsColor":"#5CC46A"}
+}

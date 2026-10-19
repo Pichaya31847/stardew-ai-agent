@@ -21,7 +21,7 @@ namespace StardewMCP.Agent;
 // mail lists that could not be checked against the decompiled game are reached through LateBound (see CommunityTools.cs).
 //
 // The membership is global and irreversible: it closes the bundles for every player. So it needs confirm=true, names
-// what the other players lose, is announced to everyone, is written to the plan board and the log, and raises the
+// what the other players lose, is announced to everyone, is written to the log, and raises the
 // events joja_membership and joja_project_bought on the log feed (and so on /api/events).
 
 /// <summary>One Joja Community Development project. <see cref="Flags"/> are the mail flags the game may use for it (candidates, see <see cref="JojaRoute"/>).</summary>
@@ -33,8 +33,6 @@ internal enum ProjectState { Open, Pending, Built, BuiltByCommunityCenter }
 internal static class JojaRoute
 {
     public const int MembershipPrice = 5000;
-    public const string PlanSection = "Community Center vs Joja";
-    private const string BoardAuthor = "mod";
     private const string MemberFlag = "JojaMember";
 
     /// <summary>
@@ -264,7 +262,7 @@ internal static class JojaRoute
         sb.AppendLine($"  - Items and gold already donated are not given back. Donated so far: {RosterText(all, compact: false)}.");
         sb.AppendLine("GAINED:");
         sb.AppendLine($"  - The Joja Community Development form in the JojaMart: {Projects.Length} projects paid in gold from the buyer's own wallet, each built the day after it is bought: {ProjectList()}; {Gold(TotalPrice)} for all of them.");
-        sb.AppendLine($"The mod recommends neither route. The other players are not asked by the game or the mod: the plan board section \"{PlanSection}\" is where you can settle it with them first.");
+        sb.AppendLine($"The mod recommends neither route. The other players are not asked by the game or the mod: talk it over with them first.");
         sb.Append("To buy it anyway: joja(action=\"membership\", confirm=true, reason=...) while standing in the JojaMart.");
         return sb.ToString();
     }
@@ -298,32 +296,28 @@ internal static class JojaRoute
         return sb.ToString();
     }
 
-    // ------------------------------------------------------------------ decision, events, plan board
-
-    private static string Clip(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
+    // ------------------------------------------------------------------ decision, events
 
     /// <summary>
     /// Records the route decision once per kind: a "system" line in the day log (and so in the overlay and the story log), the
-    /// <see cref="DecisionRecorded"/> event, and for a final decision the plan board section.
+    /// <see cref="DecisionRecorded"/> event.
     /// </summary>
-    private static void Decide(PlayerLog log, string route, string line, string? board, string boardAuthor)
+    private static void Decide(PlayerLog log, string route, string line)
     {
         _route = route;
         var text = $"DECISION (farm day {AgentLog.FarmDay}): {line}";
         Decision = text;
         log.Add("system", text: text);
-        if (board != null) PlanBoard.Edit(boardAuthor, PlanSection, Clip(board, PlanBoard.MaxText));
         DecisionRecorded?.Invoke(text);
     }
 
-    /// <summary>The membership was bought through the joja tool: event, decision, plan board and a notice for everyone.</summary>
+    /// <summary>The membership was bought through the joja tool: event, decision and a notice for everyone.</summary>
     public static void OnMembershipBought(PlayerLog log, Farmer who, int paid)
     {
         int day = AgentLog.FarmDay;
         var label = $"{who.Name} ({log.Player})";
         log.Add("joja_membership", text: $"{who.Name} bought the Joja membership", args: new { player = log.Player, day, name = who.Name, paid });
-        Decide(log, "joja", $"{label} bought the Joja membership for {Gold(paid)}. The Community Center bundles are closed for every player, for good; Joja gold projects replace them.",
-            $"DECIDED on day {day}: {label} bought the Joja membership. The Community Center bundles are closed for everyone, for good. Gold projects: joja(action=projects) at the JojaMart.", label);
+        Decide(log, "joja", $"{label} bought the Joja membership for {Gold(paid)}. The Community Center bundles are closed for every player, for good; Joja gold projects replace them.");
         SocialTools.Announce($"[Joja] {who.Name} bought the Joja membership on day {day}. The Community Center bundles are closed for everyone; the building is a Joja warehouse now.");
     }
 
@@ -336,7 +330,7 @@ internal static class JojaRoute
 
     /// <summary>
     /// Once per morning on the host: notes a route that was decided without the tool (a membership found, the first bundle done,
-    /// the Community Center complete) and keeps the standing plan board section alive while the question is open.
+    /// the Community Center complete).
     /// </summary>
     public static void OnDayStarted()
     {
@@ -348,8 +342,7 @@ internal static class JojaRoute
             if (IsMember(host))
             {
                 if (_route != "joja")
-                    Decide(log, "joja", "the farm is on the Joja route: the membership is in place (found at the start of the day, not bought through the joja tool in this session).",
-                        "DECIDED: the farm is on the Joja route. The Community Center bundles are closed for everyone, for good. Gold projects: joja(action=projects) at the JojaMart.", BoardAuthor);
+                    Decide(log, "joja", "the farm is on the Joja route: the membership is in place (found at the start of the day, not bought through the joja tool in this session).");
                 return;
             }
 
@@ -357,34 +350,16 @@ internal static class JojaRoute
             if (BundleReader.HasMail(host, "ccIsComplete") || (all.Count > 0 && all.All(b => b.Complete)))
             {
                 if (_route != "cc-complete")
-                    Decide(log, "cc-complete", "the Community Center is complete; the Joja membership is no longer an option.",
-                        "DECIDED: the Community Center is complete. The Joja membership is no longer an option.", BoardAuthor);
+                    Decide(log, "cc-complete", "the Community Center is complete; the Joja membership is no longer an option.");
                 return;
             }
             if (_route == null && all.Any(b => b.Complete))
-                Decide(log, "cc-started", $"the Community Center route is under way: {all.Count(b => b.Complete)}/{all.Count} bundles complete ({RoomLine(all)}).", null, BoardAuthor);
-
-            if (AgentTools.Config.SplitScreen) SeedBoard(all);
+                Decide(log, "cc-started", $"the Community Center route is under way: {all.Count(b => b.Complete)}/{all.Count} bundles complete ({RoomLine(all)}).");
         }
         catch (Exception ex)
         {
             log.Add("system", text: $"Joja route check failed: {ex.Message}");
         }
-    }
-
-    /// <summary>The standing plan board section where the players can argue the choice. The mod keeps its facts fresh until a player edits it.</summary>
-    private static void SeedBoard(List<BundleInfo> all)
-    {
-        var head = "Open question for every player: repair the town through the Community Center or through Joja? Nobody decides for you. " +
-                   $"Community Center: bundles need items from all four seasons plus gold in the Vault; each bundle pays a reward. " +
-                   $"Joja: {Gold(MembershipPrice)} membership (closes the bundles for everyone, for good), then {Projects.Length} gold projects ({Gold(TotalPrice)}), each built the day after buying. " +
-                   "Write your position below; plan_edit replaces the section, so keep the other lines.";
-        var roster = all.Count > 0 ? $" Bundles {all.Count(b => b.Complete)}/{all.Count}; donated: {RosterText(all, compact: true)}." : "";
-        var text = Clip(head + roster, PlanBoard.MaxText);
-
-        var current = PlanBoard.Get(PlanSection);
-        if (current == null || (current.Author == BoardAuthor && current.Text != text))
-            PlanBoard.Edit(BoardAuthor, PlanSection, text);
     }
 }
 

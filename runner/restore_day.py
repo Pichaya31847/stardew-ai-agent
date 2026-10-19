@@ -37,8 +37,9 @@ API = "http://localhost:8770"
 DEFAULT_OUT = HERE.parent / "runs"
 
 # Files the run writes per in-game day, including the per-attempt and per-part variants:
-# day_007.jsonl, diary_007.md, diary_007_p2.md, journal_007.md, claude_day_007_part1.jsonl, system_day_007.md ...
-DAY_FILE_RE = re.compile(r"^(?:claude_day|system_day|day|diary|journal)_(\d{3,})(?:[_.]|$)")
+# day_007.jsonl, diary_007.md, diary_007_p2.md, journal_007.md, claude_day_007_part1.jsonl, agy_day_007_p2_part1.jsonl,
+# system_day_007.md ...
+DAY_FILE_RE = re.compile(r"^(?:claude_day|agy_day|opencode_day|system_day|day|diary|journal)_(\d{3,})(?:[_.]|$)")
 
 
 class RestoreError(Exception):

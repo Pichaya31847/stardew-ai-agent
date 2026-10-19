@@ -16,8 +16,7 @@ namespace StardewMCP.Agent;
 /// <summary>
 /// quests and accept_quest. quests is the shared view of everything players can work towards: the journal (Help Wanted
 /// requests and the main story), today's Help Wanted board with who already took it, the team's Special Orders and
-/// the Community Center / Joja line. It can post the player's quests to the plan board, and plan_read shows deadline
-/// hints from <see cref="QuestPlanHint"/>. accept_quest walks to the Town board and presses Accept like a player.
+/// the Community Center / Joja line. accept_quest walks to the Town board and presses Accept like a player.
 /// The Quest classes keep details under version-dependent names, so those are read through <see cref="Peek"/>.
 /// </summary>
 public static partial class AgentTools
@@ -29,8 +28,8 @@ public static partial class AgentTools
             Name = "quests",
             Description = "Your quests and the shared goals. Journal: every open quest with its type (Help Wanted or Story), who asked, the story text, the objective and progress, days left and reward. " +
                           "Help Wanted board: today's request in Town and whether another player already took it (first come, first served, one request a day). " +
-                          "Also the team's Special Orders and the Community Center / Joja line. share=true also posts your open quests to the plan board for the others.",
-            Schema = Obj(new { share = new { type = "boolean", description = "Also write your open quests to the shared plan board (default false)" } }),
+                          "Also the team's Special Orders and the Community Center / Joja line.",
+            Schema = Obj(new { }),
             Instant = true,
             Run = (a, c) => Instant(c, QuestsText(a))
         },
@@ -229,73 +228,7 @@ public static partial class AgentTools
         }
         var longTerm = LongTermLine();
         if (longTerm.Length > 0) sb.AppendLine(longTerm);
-        if (a.ValueKind == JsonValueKind.Object && a.TryGetProperty("share", out var share) && share.ValueKind == JsonValueKind.True)
-            sb.AppendLine(ShareQuests(mine));
         return sb.ToString().TrimEnd();
-    }
-
-    /// <summary>Posts the player's open quests (and today's board status) to the plan board, as plan_edit would.</summary>
-    private static string ShareQuests(List<Quest> mine)
-    {
-        var parts = new List<string>();
-        foreach (var q in mine.Take(6))
-        {
-            var giver = Peek.Text(q, "target", "npcName");
-            var days = Peek.Int(q, "GetDaysLeft()", "daysLeft");
-            parts.Add($"{q.GetName()}{(giver.Length > 0 ? $" ({giver})" : "")}{(days is > 0 ? $", {days}d left" : "")}");
-        }
-        var text = parts.Count > 0 ? "Open: " + string.Join("; ", parts) + "." : "No open quests.";
-        var board = BoardQuest();
-        if (board != null)
-        {
-            var (state, who) = BoardState(board);
-            text += $" Board: {board.GetName()} - {(state == "open" ? "still free" : state == "mine" ? "I took it" : "taken by " + who)}.";
-        }
-        text = Peek.Clip(text, PlanBoard.MaxText);
-        var section = Peek.Clip($"Quests of {P.Name}", 40);
-        var edit = PlanBoard.Edit(SeatLabel(P), section, text);
-        if (edit == null) return $"Not posted: the plan board already has {PlanBoard.MaxSections} sections. Clear one with plan_edit.";
-        Rt.Log.Add("plan", text: text, args: new { section, edit = edit.Id });
-        return $"Posted to the plan board, section \"{section}\" (edit #{edit.Id}).";
-    }
-
-    /// <summary>
-    /// Lines for the end of plan_read: the open Help Wanted request nobody took, one taken by someone else, and
-    /// accepted requests about to run out. Empty when there is nothing to say (or the world is not loaded).
-    /// </summary>
-    internal static string QuestPlanHint()
-    {
-        try
-        {
-            if (!Context.IsWorldReady) return "";
-            var lines = new List<string>();
-            var board = BoardQuest();
-            if (board != null)
-            {
-                var (state, who) = BoardState(board);
-                var giver = Peek.Text(board, "target", "npcName");
-                var by = giver.Length > 0 ? $"{giver}'s " : "";
-                if (state == "open")
-                    lines.Add($"- {by}Help Wanted request \"{board.GetName()}\" is on the Town board and nobody has taken it (first come, first served; accept_quest).");
-                else if (state == "taken")
-                    lines.Add($"- {by}Help Wanted request \"{board.GetName()}\" was taken by {who}.");
-            }
-            foreach (var f in PlayingFarmers())
-            {
-                foreach (var q in f.questLog)
-                {
-                    if (q == null || q.completed.Value || Peek.Flag(q, "dailyQuest") != true) continue;
-                    var days = Peek.Int(q, "GetDaysLeft()", "daysLeft");
-                    if (days is > 0 and <= 2)
-                        lines.Add($"- {SeatLabel(f)}'s quest \"{q.GetName()}\" ends in {days} day{(days == 1 ? "" : "s")}.");
-                }
-            }
-            return lines.Count == 0 ? "" : "Quests (from the game):\n" + string.Join("\n", lines.Take(5));
-        }
-        catch (Exception)
-        {
-            return "";
-        }
     }
 
     // ------------------------------------------------------------------ accept_quest

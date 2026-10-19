@@ -16,6 +16,7 @@ __pycache__/
 
 # Run output, logs and local settings
 runs/
+runs-*/
 logs/
 *.log
 mod/StardewMCP/config.json

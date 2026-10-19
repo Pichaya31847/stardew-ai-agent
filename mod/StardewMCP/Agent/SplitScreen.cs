@@ -200,6 +200,9 @@ public static class SplitScreen
             for (int i = Game1.onScreenMenus.Count - 1; i >= 0; i--)
                 if (Game1.onScreenMenus[i] is ButtonTutorialMenu)
                     Game1.onScreenMenus.RemoveAt(i);
+            // The thought strip sits top left of each quadrant in OBS: the game's own "pin toolbar" option keeps the
+            // toolbar at the bottom instead of flipping up into it.
+            Game1.options.pinToolbarToggle = true;
         }
 
         if (_config.AutoZoom && Players.SplitScreen)

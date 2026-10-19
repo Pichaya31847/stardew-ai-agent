@@ -47,6 +47,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+import agy_tool_guard
 import briefing
 import game_watchdog
 import language
@@ -99,11 +100,27 @@ def opencode_run_cmd() -> list[str]:
     service and ignores the workdir's opencode.json (no stardew MCP, no tool denials: it could read the repo)."""
     standalone = Path(OPENCODE_CMD[0]).stem.lower() == "opencode-cli"
     return [*OPENCODE_CMD, "run", *(["--standalone"] if standalone else [])]
+
+
+def opencode_env(workdir: Path) -> dict[str, str]:
+    """The environment for opencode in `workdir`. opencode 2.x takes its project folder from PWD, not from the process's
+    working directory: started from a shell in the repo root it skips the workdir's opencode.json (no stardew server)."""
+    env = dict(os.environ)
+    env["PWD"] = str(Path(workdir).resolve())
+    return env
 DEFAULT_OUT = HERE.parent / "runs"
 GUARD = game_watchdog.NullWatchdog()  # replaced in main() unless --no-watchdog
+SESSIONS: dict[str, subprocess.Popen] = {}  # seat -> its running AI CLI; multi-seat kills them all on a game fault or outage
+
+
+class BackendError(SystemExit):
+    """The AI CLI failed before its first tool call (provider down, auth, crash). Single seat: stops the run as before;
+    multi seat: holds the whole world and waits for the provider (multi_runner.hold_for_outage)."""
 DEFAULT_GOAL = (
-    "Build the best farm you can in 100 days. You choose the strategy: what to grow, how to earn money, "
-    "which villagers to befriend and what to upgrade."
+    "Nobody tells you what to live for here, and nobody keeps score. You arrived with a little money, an old farm "
+    "and no plan. What makes this life worth living is yours to find: just getting by from day to day, someone or "
+    "something you come to love, helping other people, winning someone's heart, or simply being happy. It may "
+    "change as you go. When you know what you live for, write it in your `self` note."
 )
 
 
@@ -212,12 +229,12 @@ class NormalizedEvent:
 
 KNOWN_STARDEW_TOOLS = {
     "think", "status", "look", "walk_to", "use_tool", "go_to_bed", "journal", "wait",
-    "interact", "respond", "close_menu", "menu", "say", "whisper", "emote", "give",
+    "interact", "respond", "close_menu", "menu", "say", "emote", "give",
     "farm_summary", "harvest_all", "water_all", "clear_area", "till_area", "plant",
     "craft", "cook", "eat", "quests", "accept_quest", "crack_geode", "watch_tv",
     "ship", "shop_list", "buy", "sell", "calendar", "festival", "crops", "item_info",
     "equip", "special_orders", "fight", "leave_mine", "fish", "build", "upgrade_house",
-    "buy_animal", "animals", "choose_profession", "trash", "chest", "plan_read", "plan_edit"
+    "buy_animal", "animals", "choose_profession", "trash", "chest"
 }
 
 
@@ -240,15 +257,50 @@ def normalize_agy_tool(raw_name: str, arg: dict, server: str = "") -> tuple[str,
     return raw_name, False
 
 
-def agy_own_mcp_file(path: str, server: str) -> bool:
-    """agy keeps each MCP server's instructions under ~/.gemini/antigravity-cli/mcp/<server>/ and reads them with view_file."""
-    if not path or not server:
-        return False
-    root = (Path.home() / ".gemini" / "antigravity-cli" / "mcp" / server).resolve()
-    try:
-        return Path(path).resolve().is_relative_to(root)
-    except (OSError, ValueError):
-        return False
+def check_wallets(state: dict, is_multi: bool) -> None:
+    """Several AIs on one shared wallet spend each other's money unseen (2026-10-19 rehearsal: 500g -> 10g at Pierre's).
+    An older mod build without separateWallets in /api/state is let through."""
+    if is_multi and isinstance(state, dict) and state.get("separateWallets") is False:
+        raise SystemExit(
+            "This farm still has one shared wallet. Switch to separate wallets before day 1: "
+            "POST /api/debug/p1/separate_wallets (EnableDebugApi on), or the ledger in Lewis's house and one night.")
+
+
+def check_log_dir(state: dict, log_dir: Path) -> None:
+    """The mod writes diaries, notes and day logs to its LogDir; this script reads them from <out>/logs.
+
+    A mismatch silently starves the AIs of yesterday's diary and leaves story_export with nothing (2026-10-19 rehearsal).
+    The mod reads LogDir once at startup, so it can only be fixed in its config.json plus a game restart.
+    An older mod build without logDir in /api/state is let through.
+    """
+    mod_dir = state.get("logDir") if isinstance(state, dict) else None
+    if not mod_dir:
+        return
+    same = os.path.normcase(os.path.realpath(mod_dir)) == os.path.normcase(os.path.realpath(log_dir))
+    if not same:
+        raise SystemExit(
+            f"The mod logs to {mod_dir}, but this run reads {log_dir}.\n"
+            f'Set "LogDir": "{log_dir.as_posix()}" in Mods/StardewMCP/config.json and restart the game, '
+            "or pass the --out whose logs folder the mod already uses.")
+
+
+agy_own_mcp_file = agy_tool_guard.readable  # its server's instructions or its own saved tool output
+
+
+def write_agy_guard(workdir: Path, server: str) -> None:
+    """agy has no allowed-tools flag: a workspace PreToolUse hook denies every tool but this seat's server, before it runs.
+
+    agy runs hook commands with `cmd /c` from <workdir>/.agents and escapes quotes in them, so the command is a bare
+    relative .cmd and the paths live inside it. An empty server denies everything (text sessions).
+    shortcut: Windows only (.cmd); a POSIX host needs a .sh twin.
+    """
+    agents = workdir / ".agents"
+    agents.mkdir(parents=True, exist_ok=True)
+    (agents / "stardew_guard.cmd").write_text(
+        f'@"{sys.executable}" "{Path(agy_tool_guard.__file__).resolve()}" {server}\r\n', encoding="utf-8", newline="")
+    (agents / "hooks.json").write_text(json.dumps({"stardew-guard": {"PreToolUse": [
+        {"matcher": "*", "hooks": [{"type": "command", "command": ".\\stardew_guard.cmd", "timeout": 10}]}]}}, indent=2),
+        encoding="utf-8")
 
 
 def normalize_opencode_tool(raw_name: str, arg: dict) -> tuple[str, bool]:
@@ -359,7 +411,7 @@ class ClaudeBackend(Backend):
             "--output-format", "stream-json", "--verbose",
             "--max-turns", str(args.max_turns),
         ]
-        env = dict(os.environ)
+        env = opencode_env(workdir)
         env["MCP_TOOL_TIMEOUT"] = "600000"
         env["MCP_TIMEOUT"] = "60000"
         return cmd, env, transcript, workdir
@@ -412,6 +464,7 @@ class AgyBackend(Backend):
         transcript = out_dir / "logs" / (f"agy_day_{day:03}{seat_suffix}_part{part}" + retry_suffix + ".jsonl")
         workdir = out_dir / (f"workdir_{seat}" if seat != "p1" else "workdir")
         workdir.mkdir(exist_ok=True)
+        write_agy_guard(workdir, getattr(self, "server", "stardew" if seat == "p1" else f"stardew_{seat}"))
 
         cmd = [
             *AGY_CMD, "-p", full_prompt,
@@ -421,7 +474,7 @@ class AgyBackend(Backend):
         ]
         if getattr(args, "print_timeout", 0):
             cmd.extend(["--print-timeout", f"{args.print_timeout}s"])
-        env = dict(os.environ)
+        env = opencode_env(workdir)
         env["MCP_TOOL_TIMEOUT"] = "600000"
         env["MCP_TIMEOUT"] = "60000"
         return cmd, env, transcript, workdir
@@ -518,7 +571,7 @@ class OpenCodeBackend(Backend):
             "--auto",
             full_prompt,
         ]
-        env = dict(os.environ)
+        env = opencode_env(workdir)
         env["MCP_TOOL_TIMEOUT"] = "600000"
         env["MCP_TIMEOUT"] = "60000"
         return cmd, env, transcript, workdir
@@ -580,13 +633,6 @@ def get_backend(name: str) -> Backend:
     raise ValueError(f"Unknown backend: {name}")
 
 
-def copy_args_with_max_turns(args, max_turns: int):
-    d = vars(args).copy() if hasattr(args, "__dict__") else {}
-    new_args = argparse.Namespace(**d)
-    new_args.max_turns = max_turns
-    return new_args
-
-
 def copy_args_with_seat(args, backend_name: str, model: str):
     d = vars(args).copy() if hasattr(args, "__dict__") else {}
     new_args = argparse.Namespace(**d)
@@ -630,6 +676,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
             CTL.watch(proc)  # stop_now / Ctrl+C: ends the session once the running tool call has finished
         assert proc.stdout
         GUARD.attach(proc)
+        SESSIONS[seat] = proc
         for line in proc.stdout:
             tf.write(line)
             tf.flush()
@@ -661,13 +708,18 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                         print(f"  DISALLOWED TOOL: {norm_ev.tool_name}")
                         if hasattr(proc, "kill"):
                             proc.kill()
+                        if tool_calls == 0 and backend.name == "opencode":
+                            # opencode sometimes starts without the workdir's opencode.json (no stardew server, its own
+                            # shell instead): a failed start, retried like a provider error, not a misbehaving model
+                            raise BackendError(f"{backend.display_name} started without the stardew tools "
+                                               f"(first call: {norm_ev.tool_name})")
                         raise SystemExit(f"Disallowed tool call aborted: {norm_ev.tool_name}")
                     tool_calls += 1
                     name = norm_ev.tool_name
                     arg = norm_ev.tool_args
                     short = arg.get("text") or arg.get("reason") or ""
                     print(f"  #{tool_calls} {name} {short[:90]}")
-                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and (backend.name in ("agy", "opencode") or getattr(args, "cap_tool_calls", False)):
+                    if getattr(args, "max_turns", None) and tool_calls >= args.max_turns and backend.name in ("agy", "opencode"):
                         print(f"  result: error_max_turns turns={tool_calls}")
                         if hasattr(proc, "kill"):
                             proc.kill()
@@ -679,11 +731,12 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                     if norm_ev.is_error and tool_calls == 0 and not limit.info:
                         GUARD.explain_failure()  # a dead game makes Claude/agy fail at once: recover instead of stopping
                         err_label = backend.display_name
-                        raise SystemExit(f"{err_label} error, stopping: {norm_ev.error_message}")
+                        raise BackendError(f"{err_label} error, stopping: {norm_ev.error_message}")
             if stopped_by_turn_limit:
                 break
         proc.wait()
         GUARD.detach()
+        SESSIONS.pop(seat, None)
     if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
         raise usage_limit.UsageLimitHit(limit.info, tool_calls)
     row = tracker.row(day, part, game_start, game_state().get("time", ""), time.time() - t_start)
@@ -745,8 +798,8 @@ def agy_text_session(args, out_dir: Path, label: str) -> memory.Session:
     def run(system_prompt: str, prompt: str) -> str:
         full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
         transcript = out_dir / "logs" / f"agy_{label}.jsonl"
-        workdir = out_dir / "workdir"
-        workdir.mkdir(exist_ok=True)
+        workdir = out_dir / "workdir_agy_text"  # not a seat's workdir: its guard allows no tool at all
+        write_agy_guard(workdir, "")
         cmd = [
             *AGY_CMD, "-p", full_prompt,
             "--model", args.model,
@@ -796,7 +849,7 @@ def opencode_text_session(args, out_dir: Path, label: str) -> memory.Session:
         ]
         reply, failed = "", ""
         with transcript.open("a", encoding="utf-8") as tf:
-            proc = subprocess.Popen(cmd, cwd=workdir, env=dict(os.environ), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            proc = subprocess.Popen(cmd, cwd=workdir, env=opencode_env(workdir), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, encoding="utf-8", errors="replace", shell=False)
             assert proc.stdout
             for line in proc.stdout:
@@ -817,13 +870,17 @@ def opencode_text_session(args, out_dir: Path, label: str) -> memory.Session:
     return run
 
 
-def batch_end_memory(args, out_dir: Path, log_dir: Path, current_day: int):
-    """Shorter lessons and notes, a digest per finished week (memory.consolidate_batch), printed one line each."""
+def batch_end_memory(args, out_dir: Path, log_dir: Path, current_day: int, seats: list[tuple[str, str, str]] | None = None):
+    """Shorter lessons and notes, a digest per finished week (memory.consolidate_batch), printed one line each.
+
+    seats: (seat, backend, model) per AI seat, each consolidated by its own backend; default p1 with args.backend."""
     print(f"[{datetime.now():%H:%M:%S}] batch finished: consolidating lessons, notes and weekly digests")
-    backend = get_backend(getattr(args, "backend", "claude"))
-    session = backend.text_session(args, out_dir, f"consolidate_day_{current_day:03}")
-    for result in memory.consolidate_batch(log_dir, current_day, session):
-        print("  " + result.describe())
+    for seat, backend_name, model in seats or [("p1", getattr(args, "backend", "claude"), getattr(args, "model", None))]:
+        seat_args = copy_args_with_seat(args, backend_name, model)
+        label = f"consolidate_day_{current_day:03}" + ("" if seat == "p1" else f"_{seat}")
+        session = get_backend(backend_name).text_session(seat_args, out_dir, label)
+        for result in memory.consolidate_batch(log_dir, current_day, session, player=seat):
+            print(f"  {'' if seat == 'p1' else f'[{seat}] '}{result.describe()}")
 
 
 def backup_save(out_dir: Path, day: int, keep: int = save_backup.DEFAULT_KEEP):
@@ -876,8 +933,9 @@ def main():
     ap.add_argument("--personas-dir", default=None, help="Directory containing {seat}.md persona files")
     ap.add_argument("--emergent-personas", action=argparse.BooleanOptionalAction, default=True,
                     help="Characters emerge from self/people notes written in journal (Issue #48, default: True)")
-    ap.add_argument("--skip-meeting", action="store_true", help="Skip Phase 1 Morning Meeting standup")
-    ap.add_argument("--meeting-turns", type=int, default=5, help="Turns for Morning Meeting standup (default 5)")
+    ap.add_argument("--outage-cap-hours", type=float, default=6,
+                    help="Multi seat: how long the world stays held waiting for a seat's provider (outage or usage limit) "
+                         "before the batch stops for a human (default 6)")
     for s in ("p1", "p2", "p3", "p4"):
         ap.add_argument(f"--{s}-backend", choices=["claude", "agy", "opencode"], default=None, help=f"Backend for seat {s}")
         ap.add_argument(f"--{s}-model", default=None, help=f"Model for seat {s}")
@@ -913,6 +971,7 @@ def main():
     global GUARD
     GUARD = game_watchdog.from_args(args, log_dir, api_get, API)
 
+    CTL.start()  # clears stale stop requests (the last batch ended holding the world); Ctrl+C = stop after the day / after the call / abort
     if not args.skip_smoke:
         wait_ready()
         print("Running smoke tests before the batch (use --skip-smoke to skip)...")
@@ -920,145 +979,152 @@ def main():
             raise SystemExit("Smoke tests failed, not starting the batch. Fix the failing case above, or pass --skip-smoke.")
 
     waiter = usage_limit.LimitWaiter.from_args(args, post=api_post)
-    CTL.start()  # clears stale stop requests; Ctrl+C = stop after the day / after the call / abort
     ready_state = game_state()
+    check_log_dir(ready_state, log_dir)
+    check_wallets(ready_state, is_multi)
     lang = language.resolve(args.language, ready_state)
     print(language.describe(lang, ready_state))
     template = language.fill_prompt(template, lang)
 
     days_played = 0
     stopped_early = False
-    batch_days: list[int] = []
-    while True:
-        if CTL.stop_between_days():
-            print(f"Stopped as requested after {days_played} day(s). Run again to continue.")
-            break
-        CTL.wait_while_paused()
-        state = GUARD.ready(wait_ready)
-        # After a pass-out the mod writes its record once the morning has settled; wait for that so the prompt can use it.
-        if game_state().get("ready"):
-            settled = pass_out.wait_settled(game_state, sleep=time.sleep)
-            if settled.get("ready"):
-                state = settled
-        day = state["day"]
-        if args.until_day and day > args.until_day:
-            break
-        if not args.until_day and days_played >= args.days:
-            break
+    try:
+        batch_days: list[int] = []
+        while True:
+            if CTL.stop_between_days():
+                print(f"Stopped as requested after {days_played} day(s). Run again to continue.")
+                break
+            CTL.wait_while_paused()
+            state = GUARD.ready(wait_ready)
+            # After a pass-out the mod writes its record once the morning has settled; wait for that so the prompt can use it.
+            if game_state().get("ready"):
+                settled = pass_out.wait_settled(game_state, sleep=time.sleep)
+                if settled.get("ready"):
+                    state = settled
+            day = state["day"]
+            if args.until_day and day > args.until_day:
+                break
+            if not args.until_day and days_played >= args.days:
+                break
 
-        # relationships.md is written from game data (not by the AI) once per day, right before the prompt is built.
-        relationships.update(log_dir, lambda: api_get("/api/relationships"))
-        recent_d = recent_diaries(log_dir, day)
+            # relationships.md is written from game data (not by the AI) once per day, right before the prompt is built.
+            relationships.update(log_dir, lambda: api_get("/api/relationships"))
+            recent_d = recent_diaries(log_dir, day)
 
-        if is_multi:
-            system_prompts = {}
-            for s in multi_cfg.seats:
-                sc = multi_cfg.seat_configs[s]
-                seat_backend = get_backend(sc.backend_name)
-                raw_template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
-                raw_template = raw_template.replace("{MODEL_NAME}", seat_backend.display_name)
-                raw_template = language.fill_prompt(raw_template, lang)
-                s_template = personas.customize_system_prompt(
-                    raw_template,
-                    seat=s,
-                    active_seats=multi_cfg.seats,
-                    personas={seat: cfg.persona for seat, cfg in multi_cfg.seat_configs.items()},
-                    model_display=seat_backend.display_name,
-                    language=lang.get("name", "Thai") if isinstance(lang, dict) else "Thai",
-                    emergent=getattr(args, "emergent_personas", True),
-                    self_note=memory.read_self(log_dir, s),
-                    people_note=memory.read_people(log_dir, s),
-                )
-                system_prompts[s] = memory.inject(
-                    s_template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
-                    log_dir, args.goal, recent_d, player=s
-                )
-
-            def play_day(attempt: int) -> dict:
-                return multi_runner.run_multi_day(
-                    args, out_dir, log_dir, day, system_prompts, multi_cfg, api_get, api_post, wait_ready
-                )
-
-            s = GUARD.run_day(day, play_day)
-        else:
-            system_prompt = memory.inject(
-                template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
-                log_dir, args.goal, recent_d
-            )
-            morning = run_stats.morning_for_prompt(log_dir, day)
-
-            def call_session(p: str, part: int, attempt: int):
-                if attempt == 1:
-                    return run_session(args, out_dir, day, p, system_prompt, part)
-                try:
-                    return run_session(args, out_dir, day, p, system_prompt, part, attempt)
-                except TypeError:
-                    return run_session(args, out_dir, day, p, system_prompt, part)
-
-            def play_day(attempt: int) -> dict:
-                cur_state = wait_ready() if attempt > 1 else state
-                parts, planned = sessions.PartCounter(args.max_parts, args.max_breaks), False
-                part = 0
-                while True:
-                    part += 1
-                    if part == 1:
-                        prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir, sleep=time.sleep))
-                        if morning:
-                            prompt += "\n\n" + morning
-                        prompt = memory.with_reminder(prompt, cur_state, log_dir)
-                        prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
-                    else:
-                        prompt = continue_prompt(day, log_dir, planned=planned)
-                    res = usage_limit.run_part(waiter, lambda p, n: call_session(p, part, n),
-                                               prompt, lambda: continue_prompt(day, log_dir, planned=False), day, part,
-                                               day_done=lambda: wait_ready()["day"] > day)
-                    if CTL.stop_now_requested():
-                        return {"ready": True, "day": game_state().get("day", day), "stop_now": True}
-                    planned = res.planned_break if isinstance(res, sessions.PartResult) else False
-                    GUARD.check()
-                    time.sleep(3)
-                    s = wait_ready()
-                    if s["day"] > day:
-                        return s
-                    print(f"  day {day} not finished after part {part}{' (planned session break)' if planned else ''}; continuing")
-                    if not parts.after_part(planned):
-                        return s
-
-            s = GUARD.run_day(day, play_day)
-
-        if s.get("stop_now"):
-            if s.get("day", day) > day:  # the last call was go_to_bed and the day did finish
-                _do_backup(out_dir, day, args.keep_backups)
-                print(f"stop_now: day {day} had finished.")
-            else:
-                print(f"stop_now: the session ended after its last tool call; day {day} is not finished.")
-            print("The game stays frozen until you resume (F8 or run_control.py resume). Run again to continue.")
-            return
-        if not is_multi and s["day"] <= day and game_state().get("ready"):
-            s = pass_out.let_time_run_out(day, game_state, api_post, time.sleep, timeout=args.pass_out_timeout)
-        if s.get("ready") and s["day"] > day:
-            _do_backup(out_dir, day, args.keep_backups)
-            report_failures(log_dir, day)
             if is_multi:
-                for seat in multi_cfg.seats:
-                    seat_csv = out_dir / (f"usage_{seat}.csv" if seat != "p1" else "usage.csv")
-                    if seat_csv.exists():
-                        line = usage_log.day_line(seat_csv, day)
-                        if "no rows" not in line:
-                            print(f"  [{seat}] {line}")
-            else:
-                print(usage_log.day_line(out_dir / "usage.csv", day))
-            days_played += 1
-            batch_days.append(day)
-            run_stats.finish_day(out_dir, log_dir, day, batch_days)
-        else:
-            print(f"Day {day} still not finished after {args.max_parts} sessions and {args.pass_out_timeout}s of released "
-                  "time — stopping for a human to check.")
-            stopped_early = True
-            break
+                system_prompts = {}
+                for s in multi_cfg.seats:
+                    sc = multi_cfg.seat_configs[s]
+                    seat_backend = get_backend(sc.backend_name)
+                    raw_template = (HERE / "system_prompt.md").read_text(encoding="utf-8")
+                    raw_template = raw_template.replace("{MODEL_NAME}", seat_backend.display_name)
+                    raw_template = language.fill_prompt(raw_template, lang)
+                    s_template = personas.customize_system_prompt(
+                        raw_template,
+                        seat=s,
+                        active_seats=multi_cfg.seats,
+                        personas={seat: cfg.persona for seat, cfg in multi_cfg.seat_configs.items()},
+                        language=lang.get("name", "Thai") if isinstance(lang, dict) else "Thai",
+                        emergent=getattr(args, "emergent_personas", True),
+                        self_note=memory.read_self(log_dir, s),
+                        people_note=memory.read_people(log_dir, s),
+                    )
+                    system_prompts[s] = memory.inject(
+                        s_template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
+                        log_dir, args.goal, recent_d, player=s
+                    )
 
-    if days_played and not stopped_early and not args.skip_consolidation:
-        batch_end_memory(args, out_dir, log_dir, wait_ready()["day"])
+                def play_day(attempt: int) -> dict:
+                    return multi_runner.run_multi_day(
+                        args, out_dir, log_dir, day, system_prompts, multi_cfg, api_get, api_post, wait_ready
+                    )
+
+                s = GUARD.run_day(day, play_day)
+            else:
+                system_prompt = memory.inject(
+                    template.replace("{RELATIONSHIPS}", relationships.for_prompt(log_dir)),
+                    log_dir, args.goal, recent_d
+                )
+                morning = run_stats.morning_for_prompt(log_dir, day)
+
+                def call_session(p: str, part: int, attempt: int):
+                    if attempt == 1:
+                        return run_session(args, out_dir, day, p, system_prompt, part)
+                    try:
+                        return run_session(args, out_dir, day, p, system_prompt, part, attempt)
+                    except TypeError:
+                        return run_session(args, out_dir, day, p, system_prompt, part)
+
+                def play_day(attempt: int) -> dict:
+                    cur_state = wait_ready() if attempt > 1 else state
+                    parts, planned = sessions.PartCounter(args.max_parts, args.max_breaks), False
+                    part = 0
+                    while True:
+                        part += 1
+                        if part == 1:
+                            prompt = briefing.morning_prompt(day, briefing.build(api_get, day, "p1", out_dir=out_dir, sleep=time.sleep))
+                            if morning:
+                                prompt += "\n\n" + morning
+                            prompt = memory.with_reminder(prompt, cur_state, log_dir)
+                            prompt = pass_out.with_morning_notice(prompt, cur_state, lambda d: last_actions(log_dir, d))
+                        else:
+                            prompt = continue_prompt(day, log_dir, planned=planned)
+                        res = usage_limit.run_part(waiter, lambda p, n: call_session(p, part, n),
+                                                   prompt, lambda: continue_prompt(day, log_dir, planned=False), day, part,
+                                                   day_done=lambda: wait_ready()["day"] > day)
+                        if CTL.stop_now_requested():
+                            return {"ready": True, "day": game_state().get("day", day), "stop_now": True}
+                        planned = res.planned_break if isinstance(res, sessions.PartResult) else False
+                        GUARD.check()
+                        time.sleep(3)
+                        s = wait_ready()
+                        if s["day"] > day:
+                            return s
+                        print(f"  day {day} not finished after part {part}{' (planned session break)' if planned else ''}; continuing")
+                        if not parts.after_part(planned):
+                            return s
+
+                s = GUARD.run_day(day, play_day)
+
+            if s.get("stop_now"):
+                if s.get("day", day) > day:  # the last call was go_to_bed and the day did finish
+                    _do_backup(out_dir, day, args.keep_backups)
+                    print(f"stop_now: day {day} had finished.")
+                else:
+                    print(f"stop_now: the session ended after its last tool call; day {day} is not finished.")
+                print("The game stays frozen until you resume (F8 or run_control.py resume). Run again to continue.")
+                return
+            if not is_multi and s["day"] <= day and game_state().get("ready"):
+                s = pass_out.let_time_run_out(day, game_state, api_post, time.sleep, timeout=args.pass_out_timeout)
+            if s.get("ready") and s["day"] > day:
+                _do_backup(out_dir, day, args.keep_backups)
+                report_failures(log_dir, day)
+                if is_multi:
+                    for seat in multi_cfg.seats:
+                        seat_csv = out_dir / (f"usage_{seat}.csv" if seat != "p1" else "usage.csv")
+                        if seat_csv.exists():
+                            line = usage_log.day_line(seat_csv, day)
+                            if "no rows" not in line:
+                                print(f"  [{seat}] {line}")
+                else:
+                    print(usage_log.day_line(out_dir / "usage.csv", day))
+                days_played += 1
+                batch_days.append(day)
+                run_stats.finish_day(out_dir, log_dir, day, batch_days)
+            else:
+                print(f"Day {day} still not finished after {args.max_parts} sessions and {args.pass_out_timeout}s of released "
+                      "time — stopping for a human to check.")
+                stopped_early = True
+                break
+
+        if days_played and not stopped_early and not args.skip_consolidation:
+            seats = [(sc.seat, sc.backend_name, sc.model) for sc in multi_cfg.seat_configs.values()] if is_multi else None
+            CTL.request("stop_now")  # hold the world: seats would time out during consolidation and the clock run
+            batch_end_memory(args, out_dir, log_dir, wait_ready()["day"], seats)
+    finally:
+        # Hold the world whenever the runner exits (done, stopped or crashed): otherwise every seat times out and the
+        # game plays and saves whole days with idle farmers. The next run's CTL.start() (clear_stop) lifts it.
+        CTL.request("stop_now")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ Connects to http://localhost:8770/api/events and switches OBS scenes via obs-web
   - "focus-P1", "focus-P2", "focus-P3": cropped focus on the active farmer
 
 Focus rules:
-  - Focus the speaker on `say` and `whisper`
+  - Focus the speaker on `say`
   - Focus the subject on `theft`, `gift` (or `give`), and `caught-slacking`
   - Return to `all-three` (grid) otherwise
   - Hold each focus scene for at least 3 seconds (>= 3s)
@@ -40,7 +40,6 @@ MIN_HOLD_SECONDS = 3.0
 
 FOCUS_EVENT_TYPES = frozenset({
     "say",
-    "whisper",
     "theft",
     "gift",
     "caught-slacking",
@@ -78,7 +77,7 @@ def log(msg: str) -> None:
 
 
 def normalize_event_type(event: dict[str, Any] | None) -> str:
-    """Return canonical event type name (e.g. 'say', 'whisper', 'theft', 'gift', 'caught-slacking')."""
+    """Return canonical event type name (e.g. 'say', 'theft', 'gift', 'caught-slacking')."""
     if not isinstance(event, dict):
         return ""
     raw = (

@@ -129,8 +129,17 @@ def test_opencode_disallowed_tool_aborts(play_opencode):
             "state": {"status": "completed", "input": {"command": "dir"}, "output": ""}
         }
     })
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises(run_days.BackendError) as exc:  # before any game tool: a failed start, retried
         play_opencode(raw_ev)
+    assert "started without the stardew tools" in str(exc.value)
+
+
+def test_opencode_disallowed_tool_after_game_tools_aborts(play_opencode):
+    look = {"type": "tool_use", "part": {"tool": "stardew_look", "state": {"input": {}}}}
+    bash = {"type": "tool_use", "part": {"tool": "bash", "state": {"input": {"command": "dir"}}}}
+    with pytest.raises(SystemExit) as exc:
+        play_opencode(json.dumps(look) + "\n" + json.dumps(bash))
+    assert not isinstance(exc.value, run_days.BackendError)
     assert "Disallowed tool call aborted: bash" in str(exc.value)
 
 
@@ -138,6 +147,15 @@ def test_opencode_max_turns_stops_session(play_opencode):
     s = play_opencode("opencode_stream_day.jsonl", max_turns=3)
     assert s.returned == 3
     assert s.proc.killed is True
+
+
+def test_opencode_project_folder_is_the_workdir(play_opencode, monkeypatch):
+    # opencode 2.x reads its project folder from PWD; from the repo root it would skip the workdir's opencode.json
+    monkeypatch.setenv("PWD", "/c/somewhere/else")
+    s = play_opencode("opencode_stream_day.jsonl", seat="p3")
+    workdir = (s.out_dir / "workdir_p3").resolve()
+    assert Path(s.popen_kwargs["cwd"]).resolve() == workdir
+    assert s.popen_kwargs["env"]["PWD"] == str(workdir)
 
 
 def test_opencode_seat_routing(play_opencode):

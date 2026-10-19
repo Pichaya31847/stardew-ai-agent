@@ -269,7 +269,7 @@ Rewrite them as one shorter list of facts for your future self:
 Reply with only the list."""
 
 DIGEST_TASK = """\
-Below are your diaries from week {week} of the challenge (days {first}-{last}).
+Below are your diaries from week {week} (days {first}-{last}).
 
 {text}
 

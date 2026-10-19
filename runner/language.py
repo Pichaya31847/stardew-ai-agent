@@ -76,9 +76,9 @@ def first_prompt(lang: str, day: int) -> str:
     """First message of a day."""
     lang = normalize(lang)
     if lang.lower() in ("thai", "th"):
-        return (f"วันนี้คือวันที่ {day} ของชาเลนจ์ 100 วัน เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
+        return (f"วันนี้คือวันที่ {day} ของคุณในหุบเขานี้ เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
                 "จากนั้นเล่นทั้งวันจนเข้านอนด้วย go_to_bed")
-    return (f"Today is day {day} of the 100-day challenge. Start with status and look, then think your plan for the day "
+    return (f"Today is your day {day} in the valley. Start with status and look, then think your plan for the day "
             f"in {_pack(lang)['name']}. Then play the whole day until you go to bed with go_to_bed")
 
 

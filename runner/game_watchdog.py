@@ -311,8 +311,8 @@ def kill_tree(proc, run: Callable = subprocess.run, windows: bool = IS_WINDOWS) 
 # Files the game writes per in-game day (Agent/AgentLog.cs): the log, and the diaries of every seat. A journal
 # file with the same shape is handled too. Names that already carry "_attemptN" do not match.
 _DAY_FILE = re.compile(r"^(?P<stem>(?:day|diary|journal)_(?P<day>\d+)(?:_p\d+)?)(?P<ext>\.[A-Za-z0-9]+)$")
-# The runner's own transcript of one AI session (run_days.py).
-_TRANSCRIPT = re.compile(r"^claude_day_(?P<day>\d+)_part(?P<part>\d+)(?P<ext>\.jsonl)$")
+# The runner's own transcript of one AI session (run_days.py), for every backend and seat.
+_TRANSCRIPT = re.compile(r"^(?P<cli>claude|agy|opencode)_day_(?P<day>\d+)(?P<seat>_p\d+)?_part(?P<part>\d+)(?P<ext>\.jsonl)$")
 
 
 @dataclass
@@ -342,7 +342,7 @@ def quarantine(log_dir: Path, from_day: int, attempt: int, stamp: Optional[str] 
         t = _TRANSCRIPT.match(f.name)
         if t and int(t["day"]) >= from_day:
             plan.append((f, int(t["day"]), lambda tag, t=t, f=f:
-                         f"claude_day_{t['day']}_{tag}_part{t['part']}{t['ext']}"))
+                         f"{t['cli']}_day_{t['day']}{t['seat'] or ''}_{tag}_part{t['part']}{t['ext']}"))
     if not plan:
         return []
 

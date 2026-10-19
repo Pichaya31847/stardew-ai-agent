@@ -90,6 +90,14 @@ public class ScreenState
     /// <summary>How many gift tastes this player has found out (they are discovered by gifting, not known from the start).</summary>
     public int KnownTastes { get; init; }
 
+    /// <summary>The map this screen shows (unique: every cabin is "Cabin") and the world pixels in view: who sees whom, for say.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public string? Map { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public Microsoft.Xna.Framework.Rectangle View { get; init; }
+
+    /// <summary>This screen shows <paramref name="who"/> (same map, inside the view).</summary>
+    public bool Sees(Farmer who) =>
+        Map != null && who.currentLocation?.NameOrUniqueName == Map && View.Contains(who.StandingPixel);
+
     /// <summary>Must run on the game thread during that screen's update.</summary>
     public static ScreenState Capture()
     {
@@ -109,7 +117,9 @@ public class ScreenState
             MaxEnergy = p.MaxStamina,
             Menu = menu?.GetType().Name,
             Dialogue = menu is StardewValley.Menus.DialogueBox box ? box.characterDialogue?.speaker?.displayName ?? "" : null,
-            KnownTastes = NpcKnowledge.Count(p)
+            KnownTastes = NpcKnowledge.Count(p),
+            Map = Game1.currentLocation?.NameOrUniqueName,
+            View = new Microsoft.Xna.Framework.Rectangle(Game1.viewport.X, Game1.viewport.Y, Game1.viewport.Width, Game1.viewport.Height)
         };
     }
 }

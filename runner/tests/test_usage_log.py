@@ -209,3 +209,13 @@ def test_command_line(tmp_path, capsys):
     (tmp_path / "usage.csv").write_text(
         (tmp_path / "usage.csv").read_text(encoding="utf-8").replace(",85,", ",86,"), encoding="utf-8")
     assert usage_log.main(["check", "--out", str(tmp_path)]) == 1
+
+
+def test_opencode_steps_are_summed_into_the_token_totals():
+    t = usage_log.UsageTracker()
+    for i in (1, 2):
+        t.feed({"type": "step_finish", "part": {"id": f"s{i}", "reason": "tool-calls" if i == 1 else "stop",
+                                                "tokens": {"input": 100, "output": 20, "cache": {"read": 900, "write": 5}}}})
+    row = t.row(1, 1)
+    assert (row["input_tokens"], row["output_tokens"], row["cache_read_input_tokens"]) == (200, 40, 1800)
+    assert row["total_tokens"] == 2050

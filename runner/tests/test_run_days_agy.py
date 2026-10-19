@@ -175,7 +175,7 @@ def _agy_call(server: str, tool: str) -> dict:
 def test_agy_call_mcp_tool_to_own_seat_server_counts_as_game_tool():
     b = run_days.AgyBackend()
     b.server = "stardew_p2"
-    assert [(e.tool_name, e.is_disallowed) for e in b.parse_event(_agy_call("stardew_p2", "plan_read"))] == [("plan_read", False)]
+    assert [(e.tool_name, e.is_disallowed) for e in b.parse_event(_agy_call("stardew_p2", "look"))] == [("look", False)]
 
 
 def test_agy_call_mcp_tool_to_another_seat_or_server_is_disallowed():
@@ -203,3 +203,72 @@ def test_agy_view_file_elsewhere_is_disallowed():
     mcp = Path.home() / ".gemini" / "antigravity-cli" / "mcp"
     for path in (mcp / "stardew_p1" / "instructions.md", mcp / "stardew_p2" / ".." / "blender" / "x.md", Path("CLAUDE.md").resolve()):
         assert b.parse_event(_agy_view(str(path)))[0].is_disallowed, path
+
+
+def test_agy_launch_writes_the_tool_guard_before_starting(play_agy):
+    seen = {}
+    orig = run_days.subprocess.Popen
+
+    def popen(cmd, **kwargs):
+        hooks = Path(kwargs["cwd"]) / ".agents" / "hooks.json"
+        seen["hooks"] = json.loads(hooks.read_text(encoding="utf-8")) if hooks.exists() else None
+        seen["cmd"] = (hooks.parent / "stardew_guard.cmd").read_text(encoding="utf-8") if hooks.exists() else ""
+        return orig(cmd, **kwargs)
+
+    run_days.subprocess.Popen = popen
+    try:
+        play_agy("agy_stream_day.jsonl")
+    finally:
+        run_days.subprocess.Popen = orig
+    hook = seen["hooks"]["stardew-guard"]["PreToolUse"][0]
+    assert hook["matcher"] == "*" and hook["hooks"][0]["command"] == r".\stardew_guard.cmd"
+    assert "agy_tool_guard.py" in seen["cmd"] and seen["cmd"].rstrip().endswith(" stardew")
+
+
+def test_agy_text_session_guard_allows_no_tool(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    (out_dir / "logs").mkdir(parents=True)
+    stream = json.dumps({"event": "result", "result": {"status": "SUCCESS", "response": "OK"}}) + "\n"
+    cwds = []
+    monkeypatch.setattr(run_days.subprocess, "Popen", lambda *a, **kw: cwds.append(kw["cwd"]) or FakeProc(stream))
+    run_days.agy_text_session(SimpleNamespace(model="m"), out_dir, "probe")("s", "p")
+    guard = (Path(cwds[0]) / ".agents" / "stardew_guard.cmd").read_text(encoding="utf-8")
+    assert Path(cwds[0]).name == "workdir_agy_text" and guard.rstrip().endswith('agy_tool_guard.py"')
+
+
+def _guard(call: dict, server: str = "stardew_p2") -> dict:
+    # the real stdin/stdout contract agy uses (verified with agy 2026-10-19)
+    script = Path(run_days.agy_tool_guard.__file__)
+    res = subprocess.run([run_days.sys.executable, str(script), server], input=json.dumps({"toolCall": call}),
+                         capture_output=True, text=True, check=True)
+    return json.loads(res.stdout)
+
+
+def test_agy_guard_allows_only_the_seats_own_server():
+    own = Path.home() / ".gemini" / "antigravity-cli" / "mcp" / "stardew_p2" / "look.json"
+    assert _guard({"name": "call_mcp_tool", "args": {"ServerName": "stardew_p2", "ToolName": "look"}}) == {"decision": "allow"}
+    assert _guard({"name": "view_file", "args": {"AbsolutePath": str(own)}}) == {"decision": "allow"}
+    for call in ({"name": "run_command", "args": {"CommandLine": "dir"}},
+                 {"name": "write_to_file", "args": {"TargetFile": "x.txt"}},
+                 {"name": "call_mcp_tool", "args": {"ServerName": "stardew_p1", "ToolName": "travel_to"}},
+                 {"name": "view_file", "args": {"AbsolutePath": str(own.parent.parent / "stardew_p1" / "look.json")}}):
+        out = _guard(call)
+        assert out["decision"] == "deny" and "Stardew" in out["reason"], call
+
+
+def test_agy_may_read_back_its_own_saved_tool_output():
+    brain = Path.home() / ".gemini" / "antigravity-cli" / "brain"
+    out = brain / "c1702e34" / ".system_generated" / "steps" / "36" / "output.txt"  # seen in the 2026-10-19 rehearsal
+    assert _guard({"name": "view_file", "args": {"AbsolutePath": str(out)}}) == {"decision": "allow"}
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    assert b.parse_event(_agy_view(str(out))) == []
+    for path in (brain / "c1702e34" / "notes.md", brain / "c1702e34" / ".system_generated" / ".." / ".." / ".." / "settings.json"):
+        assert _guard({"name": "view_file", "args": {"AbsolutePath": str(path)}})["decision"] == "deny", path
+
+
+def test_agy_guard_with_no_server_or_bad_input_denies():
+    assert _guard({"name": "call_mcp_tool", "args": {"ServerName": "stardew"}}, server="")["decision"] == "deny"
+    script = Path(run_days.agy_tool_guard.__file__)
+    res = subprocess.run([run_days.sys.executable, str(script), "stardew"], input="not json", capture_output=True, text=True)
+    assert json.loads(res.stdout)["decision"] == "deny"

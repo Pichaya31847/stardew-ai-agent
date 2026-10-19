@@ -170,3 +170,9 @@ def test_main_asks_before_replacing_the_save(farm, monkeypatch):
 
 def test_game_is_running_is_false_when_nothing_listens():
     assert restore_day.game_is_running("http://127.0.0.1:9") is False
+
+
+def test_every_backend_transcript_is_a_day_file():
+    for name in ("agy_day_007_p2_part1.jsonl", "opencode_day_007_p3_part0.jsonl", "claude_day_007_part1.jsonl"):
+        assert restore_day.DAY_FILE_RE.match(name).group(1) == "007"
+    assert not restore_day.DAY_FILE_RE.match("agy_probe_p2.jsonl")

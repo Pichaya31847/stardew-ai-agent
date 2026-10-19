@@ -1542,23 +1542,11 @@ def cook():
 
 @case("quests")
 def quests():
-    """quests lists the journal and the Help Wanted board; share=true posts the journal to the plan board."""
+    """quests lists the journal and the Help Wanted board."""
     reset("Farm")
     text = ok("quests")
     if "Your journal (" not in text or "Help Wanted board (Town)" not in text:
         raise Smoke(f"quests does not show the journal and the board:\n{text[:500]}")
-    section = None
-    try:
-        text = ok("quests", share=True)
-        m = re.search(r'Posted to the plan board, section "(.+?)"', text)
-        if not m:
-            raise Smoke(f"share=true did not post to the plan board:\n{text[-300:]}")
-        section = m.group(1)
-        if section not in ok("plan_read"):
-            raise Smoke(f"plan_read does not show the section {section!r}")
-    finally:
-        if section:
-            call("plan_edit", section=section, text="")
 
 
 @case("accept_quest")
@@ -1898,9 +1886,6 @@ def joja_membership():
             raise Smoke(f"the bundles should be closed after the membership: {text[:200]}")
         if call("joja", action="membership", confirm=True, reason="smoke test")[0]:
             raise Smoke("a second membership was sold")
-        board = ok("plan_read")
-        if "Community Center vs Joja" not in board or "Joja membership" not in board:
-            raise Smoke(f"the plan board has no decision section:\n{board[:500]}")
         feed = _request("/api/feed")["entries"]
         if not any(e.get("kind") == "joja_membership" for e in feed):
             raise Smoke("the feed has no joja_membership event")
@@ -2025,10 +2010,16 @@ def social(fn):
 @case("chat")
 @social
 def chat():
+    """say reaches only the players whose screen shows the speaker: p2 next to p1 hears it, p3 in town does not."""
     reset("Farm")
+    loc, px, py = p1_tile()
+    unfreeze()
+    debug_seat("p2", "warp", location=loc, x=px + 2, y=py)
+    debug_seat("p3", "warp", location="Town", x=10, y=10)
+    time.sleep(1)  # each screen's view is captured on its own tick
     text = ok_seat("p1", "say", text="hello from p1 SMOKE1")
-    if "other player" not in text:
-        raise Smoke(f"say did not report listeners: {text.splitlines()[0]}")
+    if "Heard by" not in text or "(p2)" not in text or "(p3)" in text:
+        raise Smoke(f"say should be heard by p2 only: {text.splitlines()[0]}")
     wait_chat("p1", "SMOKE1")
     wait_chat("p2", "SMOKE1")  # the real in-game chat box on the other screen
     heard = hear("p2")
@@ -2036,61 +2027,20 @@ def chat():
         raise Smoke(f"p2's next result lacks p1's line:\n{heard}")
     if "SMOKE1" in hear("p2"):
         raise Smoke("p2 got the same chat line twice")
+    if "SMOKE1" in hear("p3") + chat_lines("p3"):
+        raise Smoke("p3 heard p1 from town")
 
     ok_seat("p2", "say", text="hi p1, p2 here SMOKE2")
     back = hear("p1", "inventory")
     if "SMOKE2" not in back or "(p2)" not in back:
         raise Smoke(f"p1's next result lacks p2's reply:\n{back}")
 
+    if "nobody was close enough" not in ok_seat("p3", "say", text="anyone here SMOKE3"):
+        raise Smoke("p3 alone in town should be told nobody heard it")
+
     for bad in ({"text": "  "}, {}):
         if call_seat("p1", "say", bad)[0]:
             raise Smoke(f"say accepted {bad}")
-
-
-@case("whisper")
-@social
-def whisper():
-    reset("Farm")
-    ok_seat("p3", "status")  # p3 is connected but must never learn about this
-    ok_seat("p1", "whisper", to="p2", text="the WSECRET is under the rock")
-    heard = hear("p2")
-    if "whispers" not in heard or "WSECRET" not in heard or "(p1)" not in heard:
-        raise Smoke(f"p2 did not get the whisper:\n{heard}")
-    p3 = hear("p3") + hear("p3", "inventory")
-    if "WSECRET" in p3 or "whisper" in p3.lower():
-        raise Smoke("p3 got a hint of a whisper meant for p2")
-    time.sleep(1)
-    for seat in ("p1", "p2", "p3"):
-        if "WSECRET" in chat_lines(seat):
-            raise Smoke(f"whisper text reached {seat}'s game chat box")
-    feed = _request("/api/feed")["entries"]
-    seen = [e for e in feed if e.get("kind") == "whisper" and e.get("player") == "p1" and (e.get("args") or {}).get("to") == "p2"]
-    if not seen or "WSECRET" not in seen[-1].get("text", ""):
-        raise Smoke("viewers' feed has no whisper entry p1 -> p2")
-    for bad in ({"to": "p1", "text": "x"}, {"to": "nobody", "text": "x"}, {"to": "p2", "text": ""}):
-        if call_seat("p1", "whisper", bad)[0]:
-            raise Smoke(f"whisper accepted {bad}")
-
-
-@case("plan_board")
-@social
-def plan_board():
-    ok_seat("p1", "plan_edit", section="Smoke crops", text="p1 plans parsnips")
-    ok_seat("p2", "plan_edit", section="Smoke water", text="p2 waters at noon")
-    ok_seat("p2", "plan_edit", section="Smoke crops", text="p2 changed it to potatoes")
-    board = ok_seat("p3", "plan_read", history=20)
-    for needle in ("p2 changed it to potatoes", "p2 waters at noon"):
-        if needle not in board:
-            raise Smoke(f'plan_read lacks "{needle}":\n{board}')
-    hist = [ln for ln in board.splitlines() if re.match(r"\s+#\d+ day \d+ \S+ ", ln) and "Smoke crops" in ln]
-    if not any("(p1)" in ln for ln in hist) or not any("(p2)" in ln for ln in hist):
-        raise Smoke(f'history should show p1 and p2 editing "Smoke crops":\n{board}')
-    if not any(s.get("section") == "Smoke crops" for s in fresh_state()["plan"]["sections"]):
-        raise Smoke("/api/state has no plan board")
-    for section in ("Smoke crops", "Smoke water"):
-        ok_seat("p1", "plan_edit", section=section, text="")
-    if "p2 waters at noon" in ok_seat("p1", "plan_read", history=0):
-        raise Smoke("cleared section is still on the board")
 
 
 @case("journal_seats")
@@ -2402,14 +2352,12 @@ def send_money():
 @social
 def caught_slacking():
     """
-    p2 says and writes on the plan board that it is watering, then stands in a long wait. p1's look shows what p2 is
-    actually doing next to those claims. A plain say leaves the wait alone; an @mention stops it and hands p2 the message.
+    p2 says it is watering, then stands in a long wait. p1's look shows what p2 is actually doing next to that claim. A plain say leaves the wait alone; an @mention stops it and hands p2 the message.
     """
     reset("Farm")
     loc, px, py = p1_tile()
     unfreeze()
     debug_seat("p2", "warp", location=loc, x=px + 2, y=py)
-    ok_seat("p2", "plan_edit", section="Smoke work", text="p2 waters the parsnips all morning")
     ok_seat("p2", "say", text="SLACK1 off to water the parsnips")
 
     outcome: dict = {}
@@ -2433,7 +2381,7 @@ def caught_slacking():
         if "Other players in view" not in look or not line:
             raise Smoke(f"p1's look does not list p2 with what it is doing:\n{look[-600:]}")
         for needle, what in (("wait 120 min (standing still)", "the running tool"), ("napping", "its reason"),
-                             ("SLACK1 off to water", "its last say"), ("waters the parsnips all morning", "its plan board section")):
+                             ("SLACK1 off to water", "its last say")):
             if needle not in line:
                 raise Smoke(f"the line about p2 lacks {what} ({needle}):\n{line}")
         if "Other players in view" not in ok_seat("p1", "status"):
@@ -2465,10 +2413,6 @@ def caught_slacking():
         except Exception:
             pass
         debug("perception", interrupts=0, clear=1)
-        try:
-            ok_seat("p2", "plan_edit", section="Smoke work", text="")
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------- romance and naming (#53)

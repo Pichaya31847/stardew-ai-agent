@@ -100,4 +100,8 @@ public class ModConfig
 
     /// <summary>Key (an XNA <c>Keys</c> name, e.g. "F8") that toggles pause / resume while the game window has focus. Empty = no hotkey.</summary>
     public string PauseKey { get; set; } = "F8";
+
+    /// <summary>Longest time in seconds an AI's `say` stays up: the bubble above its head and its line in the chat box
+    /// (the game keeps chat lines 10 s, too long next to the other players' talk).</summary>
+    public int ChatSeconds { get; set; } = 5;
 }

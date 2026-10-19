@@ -42,11 +42,11 @@ public static class JournalTools
         new()
         {
             Name = "journal",
-            Description = "Write your journal: your memory across days. A diary for the viewers, the lessons you learned today and your plan. " +
+            Description = "Write your journal: your memory across days. A diary, the lessons you learned today and your plan. " +
                           "At the start of every later day you get your lessons, plan and notes back, so write what future you needs to know. " +
                           "Costs no game time. Call it any time, and at the latest before go_to_bed, which refuses until today's journal is written. " +
                           "Calling it again the same day replaces that day's diary and lessons and updates the plan. " +
-                          "Multi-AI emergent personas (#48): write optional self and people to record who you are becoming and your stance on other players.",
+                          "Write optional self and people to record who you are becoming and what you think of the others on the farm.",
             Schema = AgentTools.Obj(new
             {
                 diary = AgentTools.Str($"Today's diary in {Lang}, 3-8 sentences, written as yourself: what you did, what went well or badly"),
@@ -56,8 +56,8 @@ public static class JournalTools
                                       "a section you leave out keeps its old text, a heading with nothing under it clears that section"),
                 notes = AgentTools.Str("Optional facts you found out, one per line, e.g. \"shops: Pierre is closed on Wednesday\". " +
                                        $"Start a line with a topic and colon ({string.Join(", ", NoteTopics)}) to file it. They are added to your facts list"),
-                self = AgentTools.Str($"Optional emergent character identity note (#48) in {Lang}: who you are becoming, max ~150 words. Overwritten each evening; cite today's events as evidence."),
-                people = AgentTools.Str($"Optional notes on fellow players (#48) in {Lang}: one line per other player (current stance + latest evidence + day)."),
+                self = AgentTools.Str($"Optional note in {Lang} on who you are and what you live for, max ~150 words. Overwritten each evening; cite today's events as evidence."),
+                people = AgentTools.Str($"Optional notes in {Lang} on the others on the farm: one line per person (current stance + latest evidence + day)."),
                 day = AgentTools.Int("Optional farm day to write this journal for, from 1 to today. Only for catching up a day you did not write (for example after passing out). Default: today")
             }, "diary", "lessons", "plan"),
             Instant = true, AppendStatus = false, Run = Journal
@@ -128,7 +128,7 @@ public static class JournalTools
         });
 
         var sb = new StringBuilder($"Journal saved for farm day {day}{(day == today ? "" : " (a day you had missed)")}.");
-        sb.Append($"\n- diary: {diary.Length} characters, shown to the viewers");
+        sb.Append($"\n- diary: {diary.Length} characters");
         sb.Append($"\n- lessons: {lessons.Count} added to your lessons list ({lessonLines} lines in all)");
         if (lessonsDropped > 0) sb.Append($"; only the first {MaxLessonLines} lines were kept, so make each lesson count");
         if (notes.Count > 0) sb.Append($"\n- notes: {notesAdded} new fact{(notesAdded == 1 ? "" : "s")} added ({noteLines} lines in all)");

@@ -2,13 +2,19 @@
 
 The mod freezes game time while the model thinks (`frozen` in /api/state). This script watches that flag
 and pauses the OBS recording while the game is frozen, so the video only contains gameplay. When the AI
-posts a `think` (or the diary), recording resumes for a few seconds so the thought typed on the overlay
-is in the video.
+posts a `think`, `say`, diary or `self` note, recording resumes for a few seconds so the text
+shown on the overlay is in the video. Each farm day gets its own OBS file.
+
+With `--out DIR`, every start / pause / resume / stop is appended to `DIR/video_map.jsonl` as
+`{ts, ev, video_ms, path}` (ts = local time like the mod's log, video_ms = OBS's own outputDuration,
+path only on stop), so log timestamps can be mapped to positions in the video files.
 
 Usage (OBS open with obs-websocket enabled, game running with the mod):
 
     py runner/obs_recorder.py                      # starts recording if needed, Ctrl+C to quit
     py runner/obs_recorder.py --hold 3 --stop-on-exit
+    py runner/obs_recorder.py --out runs/run1      # also writes runs/run1/video_map.jsonl
+    py runner/obs_recorder.py --no-pause --out runs/run1   # no pauses; cut the still time afterwards
 
 Only the standard library is used (a tiny WebSocket client for obs-websocket v5).
 """
@@ -20,6 +26,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import socket
 import struct
 import time
@@ -27,7 +34,7 @@ import urllib.request
 from datetime import datetime
 
 API = "http://localhost:8770"
-TYPE_SECONDS_PER_CHAR = 0.022  # overlay.html types thoughts at 22 ms per character
+READ_SECONDS_PER_CHAR = 0.022  # overlay.html shows a thought whole at once; this is time to read it
 OVERLAY_POLL_SECONDS = 0.5     # overlay.html polls /api/feed every 400 ms
 
 
@@ -83,6 +90,8 @@ class Obs:
             if msg.get("op") == 7 and msg["d"].get("requestId") == rid:
                 status = msg["d"]["requestStatus"]
                 if not status.get("result"):
+                    if status.get("code") == 207:  # OBS is still starting up: retried like a refused connection
+                        raise ConnectionError(f"{request_type}: OBS is not ready yet")
                     raise RuntimeError(f"{request_type} failed: {status.get('code')} {status.get('comment', '')}")
                 return msg["d"].get("responseData") or {}
 
@@ -145,11 +154,50 @@ class Obs:
 
 # ---------------------------------------------------------------- recorder loop
 
+STRIP_KINDS = ("think", "diary")  # shown at once and stacked in the player's overlay strip
+
+
+def is_self_note(entry: dict) -> bool:
+    return entry.get("tool") == "journal" and bool(((entry.get("args") or {}).get("self") or "").strip())
+
+
+def hold_text(entry: dict) -> str:
+    return entry["args"]["self"] if is_self_note(entry) else (entry.get("text") or "")
+
+
 def hold_seconds(entry: dict, args) -> float:
-    text = entry.get("text") or ""
-    base = args.diary_hold if entry.get("kind") == "diary" else args.hold
-    # Keep the clip long enough for the overlay to finish typing the text, then read it.
-    return OVERLAY_POLL_SECONDS + max(base, len(text) * TYPE_SECONDS_PER_CHAR + args.read_time)
+    if entry.get("kind") != "diary" and not is_self_note(entry):
+        # a thought stays on the strip into the live footage after it, so a short frozen beat is enough
+        return OVERLAY_POLL_SECONDS + args.hold
+    return OVERLAY_POLL_SECONDS + max(args.diary_hold, len(hold_text(entry)) * READ_SECONDS_PER_CHAR + args.read_time)
+
+
+def add_hold(until: dict, entry: dict, now: float, args) -> bool:
+    """Extend the entry's player's hold. The strip shows each text at once (no queue), so holds overlap like `say`."""
+    p = entry.get("player") or ""
+    if entry.get("kind") not in STRIP_KINDS + ("say",) and not is_self_note(entry):
+        return False
+    until[p] = max(until.get(p, 0.0), now + hold_seconds(entry, args))
+    return True
+
+
+def feed_day(entries: list, state: dict):
+    """Farm day the feed shows: the latest "New day: farm day N" line, else state.day (None while loading)."""
+    day = state.get("day")
+    for e in entries:
+        m = re.match(r"New day: farm day (\d+)", e.get("text") or "") if e.get("kind") == "system" else None
+        if m:
+            day = max(day or 0, int(m[1]))
+    return day
+
+
+def map_line(ev: str, video_ms, path: str | None = None, ts: datetime | None = None) -> str:
+    """One video_map.jsonl line; ts matches the mod's log ts (yyyy-MM-ddTHH:mm:ss.fffzzz)."""
+    line = {"ts": (ts or datetime.now()).astimezone().isoformat(timespec="milliseconds"),
+            "ev": ev, "video_ms": int(video_ms or 0)}
+    if path is not None:
+        line["path"] = path
+    return json.dumps(line, ensure_ascii=False)
 
 
 def refresh_overlays(obs: Obs):
@@ -165,13 +213,41 @@ def refresh_overlays(obs: Obs):
 def run(args):
     obs = Obs(args.host, args.port, args.password)
     log(f"connected to OBS at {args.host}:{args.port}")
+    map_path = os.path.join(args.out, "video_map.jsonl") if args.out else None
+    if map_path:
+        os.makedirs(args.out, exist_ok=True)
+
+    def write_map(ev: str, video_ms=None, path: str | None = None):
+        if not map_path:
+            return
+        if video_ms is None:
+            video_ms = obs.request("GetRecordStatus").get("outputDuration", 0)
+        with open(map_path, "a", encoding="utf-8") as f:
+            f.write(map_line(ev, video_ms, path) + "\n")
+
+    def wait_active(want: bool):
+        for _ in range(100):  # StartRecord / StopRecord take a moment to settle
+            if bool(obs.request("GetRecordStatus").get("outputActive")) == want:
+                return
+            time.sleep(0.1)
+        raise ConnectionError(f"OBS recording did not {'start' if want else 'stop'}")
+
+    def start_record():
+        obs.request("StartRecord")
+        wait_active(True)
+        write_map("start", 0)
+
     status = obs.request("GetRecordStatus")
     if not status.get("outputActive"):
         if args.no_start:
             raise SystemExit("OBS is not recording (start it, or drop --no-start).")
-        obs.request("StartRecord")
+        start_record()
         log("recording started")
         status = {"outputActive": True, "outputPaused": False}
+    else:
+        write_map("start", status.get("outputDuration", 0))  # attached: anchor to where the file is now
+        if status.get("outputPaused"):
+            write_map("pause", status.get("outputDuration", 0))
     paused = bool(status.get("outputPaused"))
 
     while True:
@@ -182,11 +258,12 @@ def run(args):
             log(f"waiting for the game API at {API} …")
             time.sleep(3)
     seq = max((e.get("seq", 0) for e in feed.get("entries", [])), default=0)
+    file_day = feed.get("state", {}).get("day")
     if not args.no_refresh_overlay:
         refresh_overlays(obs)
     api_down = False
 
-    hold_until = 0.0
+    hold_until: dict[str, float] = {}
     frozen_since: float | None = None
     t_start = time.monotonic()
     paused_total = 0.0
@@ -206,6 +283,7 @@ def run(args):
             if bool(st.get("outputPaused")) != want:
                 raise
         paused = want
+        write_map("pause" if want else "resume")
         now = time.monotonic()
         if want:
             paused_at = now
@@ -215,32 +293,58 @@ def run(args):
         if args.verbose:
             log(("⏸ pause" if want else "⏺ resume") + f" ({why})")
 
+    def stop_record() -> str:
+        nonlocal paused, paused_at, paused_total
+        video_ms = obs.request("GetRecordStatus").get("outputDuration", 0)
+        path = obs.request("StopRecord").get("outputPath", "")
+        write_map("stop", video_ms, path)
+        if paused_at is not None:
+            paused_total += time.monotonic() - paused_at
+        paused, paused_at = False, None
+        return path
+
+    def new_file(why: str):
+        path = stop_record()
+        wait_active(False)
+        start_record()
+        log(f"new recording file ({why}); previous → {path}")
+
     try:
         while True:
             now = time.monotonic()
             try:
                 feed = api_get(f"/api/feed?after={seq}")
             except OSError:
-                api_down = True
-                time.sleep(1)  # game restarting / loading: leave OBS as it is
+                if not api_down:
+                    api_down = True
+                    set_paused(True, "game API down")  # game restarting / loading
+                time.sleep(1)
                 continue
+            entries, state = feed.get("entries", []), feed.get("state", {})
             if api_down:
                 api_down = False
+                new_file("game API back")
+                file_day = None
                 if not args.no_refresh_overlay:
                     refresh_overlays(obs)
-            for e in feed.get("entries", []):
+            day = feed_day(entries, state)
+            if day is not None:
+                if file_day is not None and day != file_day:
+                    new_file(f"farm day {day}")
+                file_day = day
+            for e in entries:
                 seq = max(seq, e.get("seq", 0))
-                if e.get("kind") in ("think", "diary"):
-                    hold_until = max(hold_until, now + hold_seconds(e, args))
-                    if args.verbose:
-                        log(f"{e['kind']}: {(e.get('text') or '')[:60]}")
+                if add_hold(hold_until, e, now, args) and args.verbose:
+                    log(f"{e.get('player')} {e.get('tool') or e['kind']}: {hold_text(e)[:60]}")
 
-            frozen = bool(feed.get("state", {}).get("frozen"))
+            frozen = bool(state.get("frozen"))
             frozen_since = (frozen_since or now) if frozen else None
             waiting = frozen_since is not None and now - frozen_since >= args.min_pause
 
-            if now < hold_until:
-                set_paused(False, "showing thought")
+            if args.no_pause:
+                set_paused(False, "continuous")  # still stretches are cut afterwards (docs/recording.md, auto-editor)
+            elif any(now < t for t in hold_until.values()):
+                set_paused(False, "showing text")
             elif waiting:
                 set_paused(True, "waiting for the AI")
             else:
@@ -260,9 +364,9 @@ def run(args):
         try:
             if paused:
                 obs.request("ResumeRecord")
+                write_map("resume")
             if args.stop_on_exit:
-                out = obs.request("StopRecord")
-                log(f"recording stopped → {out.get('outputPath', '')}")
+                log(f"recording stopped → {stop_record()}")
             else:
                 log("left OBS recording (resumed). Stop it in OBS when done.")
         finally:
@@ -274,12 +378,14 @@ def main():
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=4455)
     ap.add_argument("--password", default=os.environ.get("OBS_WS_PASSWORD", ""))
-    ap.add_argument("--hold", type=float, default=3.0, help="Minimum seconds of video kept for each thought")
+    ap.add_argument("--hold", type=float, default=1.5, help="Seconds of frozen video kept for each thought or say")
     ap.add_argument("--diary-hold", type=float, default=6.0, help="Minimum seconds kept for the end-of-day diary")
     ap.add_argument("--read-time", type=float, default=1.5,
-                    help="Extra seconds after the overlay finishes typing a long thought")
+                    help="Extra seconds to read a long diary or self note")
     ap.add_argument("--min-pause", type=float, default=0.8,
                     help="Only pause after the game has been frozen this long (avoids tiny cuts between tool calls)")
+    ap.add_argument("--no-pause", action="store_true",
+                    help="Record continuously (one file per day) and cut the frozen time afterwards with auto-editor")
     ap.add_argument("--interval", type=float, default=0.2, help="Polling interval in seconds")
     ap.add_argument("--report-every", type=float, default=300, help="Seconds between progress lines")
     ap.add_argument("--max-minutes", type=float, default=0,
@@ -288,6 +394,8 @@ def main():
     ap.add_argument("--stop-on-exit", action="store_true", help="Stop the OBS recording when this script exits")
     ap.add_argument("--no-refresh-overlay", action="store_true",
                     help="Don't reload the overlay browser source in OBS when the game API comes up")
+    ap.add_argument("--out", default="",
+                    help="Run folder for video_map.jsonl (log time to video position). Without it no map is written")
     ap.add_argument("-v", "--verbose", action="store_true", help="Log every pause/resume")
     args = ap.parse_args()
 

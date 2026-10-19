@@ -132,3 +132,46 @@ def test_keep_backups_is_passed_on(monkeypatch, tmp_path):
     h.on_session = lambda day, part: h.go_to_bed()
     run_days.main()
     assert seen == [4]
+
+
+def test_the_world_is_held_when_the_batch_ends(monkeypatch, tmp_path):
+    h = Harness(monkeypatch, tmp_path, ["--days", "2", "--skip-consolidation"])
+    h.on_session = lambda day, part: h.go_to_bed()
+    run_days.main()
+    assert h.mod.posts[0] == "clear_stop" and h.mod.posts[-1] == "stop_now"  # idle farmers must not play on
+
+
+def test_the_world_is_held_when_the_runner_crashes(monkeypatch, tmp_path):
+    h = Harness(monkeypatch, tmp_path, ["--days", "2"])
+
+    def crash(day, part):
+        raise RuntimeError("runner bug")
+
+    h.on_session = crash
+    try:
+        run_days.main()
+    except RuntimeError:
+        pass
+    assert h.mod.posts[-1] == "stop_now"
+
+
+def test_batch_end_consolidates_every_seat_with_its_own_backend(monkeypatch, tmp_path):
+    seen = []
+
+    class Backend:
+        def __init__(self, name):
+            self.name = name
+
+        def text_session(self, args, out_dir, label):
+            seen.append((self.name, args.model, label))
+            return lambda system, prompt: ""
+
+    monkeypatch.setattr(run_days, "get_backend", Backend)
+    monkeypatch.setattr(run_days.memory, "consolidate_batch",
+                        lambda log_dir, day, session, player="p1": seen.append(("consolidate", player)) or [])
+    args = run_days.argparse.Namespace(backend="claude", model="haiku")
+    run_days.batch_end_memory(args, tmp_path, tmp_path, 11,
+                              [("p1", "claude", "haiku"), ("p2", "agy", "flash"), ("p3", "opencode", "luna")])
+    assert seen == [("claude", "haiku", "consolidate_day_011"), ("consolidate", "p1"),
+                    ("agy", "flash", "consolidate_day_011_p2"), ("consolidate", "p2"),
+                    ("opencode", "luna", "consolidate_day_011_p3"), ("consolidate", "p3")]

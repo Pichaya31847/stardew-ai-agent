@@ -31,6 +31,10 @@ public static class DebugApi
     private static bool Has(JsonElement a, string name) =>
         a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number;
 
+    private static bool? B(JsonElement a, string name) =>
+        a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? v.GetBoolean() : null;
+
     public static Dictionary<string, ToolDef> All()
     {
         ToolDef Op(string name, ToolRunner run, bool needsWorld = true) =>
@@ -56,12 +60,17 @@ public static class DebugApi
             Op("place_object", PlaceObject),
             Op("set_mine_level", SetMineLevel),
             Op("separate_wallets", SeparateWallets),
+            Op("makeover", Makeover),
+            Op("look", LookOp),
+            Op("set_look", SetLook),
             Op("set_friendship", RomanceDebug.SetFriendship),
             Op("open_naming", RomanceDebug.OpenNaming),
             Op("last_named", RomanceDebug.LastNamed),
             Op("resolve_naming", RomanceDebug.ResolveNaming),
             Op("load_save", LoadSave, needsWorld: false),
             Op("build_cabins", BuildCabins),
+            Op("starting_cabins", StartingCabins),
+            Op("save", SaveNow),
             Op("place_chest", PlaceChest),
             Op("grow_crops", GrowCrops),
             Op("capture", Capture, needsWorld: false),
@@ -274,6 +283,92 @@ public static class DebugApi
         yield break;
     }
 
+    private static Func<bool>? _makeoverOpen;
+    private static Action? _makeoverDone;
+
+    /// <summary>Open the full character creator (the farmhand one: shirts and pants included, no farm options) on P1's
+    /// screen for a human, with the mouse and keyboard unlocked until it closes (Tick puts the lock back). Name and
+    /// favourite thing are restored then, so only the look changes. Farmhands can't take mouse input, so their look is
+    /// made here, read with look and given to them with set_look.</summary>
+    private static IEnumerator Makeover(JsonElement a, CallContext c)
+    {
+        if (Context.ScreenId != 0) { c.Fail("makeover only works on p1 (the only screen with a mouse); then look + set_look to the farmhand"); yield break; }
+        if (_makeoverDone != null) { c.Fail("the creator is already open on p1"); yield break; }
+        var p = Game1.player;
+        var cfg = AgentTools.Config;
+        (string name, string fav, bool locked, bool clean) saved = (p.Name, p.favoriteThing.Value, cfg.LockHostInput, cfg.CleanFrames);
+        if (string.IsNullOrEmpty(p.favoriteThing.Value)) p.favoriteThing.Value = "-"; // OK refuses an empty favourite thing
+        cfg.LockHostInput = false;
+        cfg.CleanFrames = false;
+        var menu = new CharacterCustomization(CharacterCustomization.Source.NewFarmhand);
+        Game1.activeClickableMenu = menu;
+        _makeoverOpen = () => Game1.activeClickableMenu == menu;
+        _makeoverDone = () =>
+        {
+            p.Name = saved.name;
+            p.displayName = saved.name;
+            p.favoriteThing.Value = saved.fav;
+            p.ConvertClothingOverrideToClothesItems();
+            cfg.LockHostInput = saved.locked;
+            cfg.CleanFrames = saved.clean;
+        };
+        c.Result = "Character creator open on P1's screen: mouse unlocked until OK";
+    }
+
+    /// <summary>This seat's look as JSON that set_look takes back, so a look made with makeover survives restarts and save
+    /// restores (the game only writes looks at the end of a day).</summary>
+    private static IEnumerator LookOp(JsonElement a, CallContext c)
+    {
+        var p = Game1.player;
+        c.Result = JsonSerializer.Serialize(new
+        {
+            female = !p.IsMale, hair = p.hair.Value, hairColor = Hex(p.hairstyleColor.Value), skin = p.skin.Value,
+            eyeColor = Hex(p.newEyeColor.Value), accessory = p.accessory.Value,
+            shirt = p.shirtItem.Value?.ItemId, shirtColor = p.shirtItem.Value is { } s ? Hex(s.clothesColor.Value) : null,
+            pants = p.pantsItem.Value?.ItemId, pantsColor = p.pantsItem.Value is { } t ? Hex(t.clothesColor.Value) : null,
+        });
+        yield break;
+    }
+
+    /// <summary>Apply a look from the look op (every field optional): {"female","hair","hairColor","skin","eyeColor",
+    /// "accessory","shirt","shirtColor","pants","pantsColor"}, colours as #RRGGBB.</summary>
+    private static IEnumerator SetLook(JsonElement a, CallContext c)
+    {
+        var p = Game1.player;
+        if (B(a, "female") is bool female) p.changeGender(!female);
+        if (Has(a, "hair")) p.changeHairStyle(I(a, "hair", 0));
+        if (Color(a, "hairColor") is { } hair) p.changeHairColor(hair);
+        if (Has(a, "skin")) p.changeSkinColor(I(a, "skin", 0), force: true);
+        if (Color(a, "eyeColor") is { } eyes) p.changeEyeColor(eyes);
+        if (Has(a, "accessory")) p.changeAccessory(I(a, "accessory", -1));
+        if (S(a, "shirt") is { Length: > 0 } shirt)
+        {
+            if (!ItemRegistry.Exists("(S)" + shirt)) { c.Fail($"unknown shirt {shirt}"); yield break; }
+            p.Equip(new StardewValley.Objects.Clothing(shirt), p.shirtItem);
+            p.shirt.Value = "-1";
+        }
+        if (Color(a, "shirtColor") is { } sc && p.shirtItem.Value is { } worn) worn.clothesColor.Value = sc;
+        if (S(a, "pants") is { Length: > 0 } pants)
+        {
+            if (!ItemRegistry.Exists("(P)" + pants)) { c.Fail($"unknown pants {pants}"); yield break; }
+            p.Equip(new StardewValley.Objects.Clothing(pants), p.pantsItem);
+            p.pants.Value = "-1";
+        }
+        if (Color(a, "pantsColor") is { } pc) p.changePantsColor(pc);
+        p.FarmerRenderer.MarkSpriteDirty();
+        c.Result = $"{p.Name}: {(p.IsMale ? "male" : "female")}, hairstyle {p.hair.Value}, shirt {p.shirtItem.Value?.Name ?? "none"}, " +
+                   $"pants {p.pantsItem.Value?.Name ?? "none"}";
+    }
+
+    private static string Hex(Microsoft.Xna.Framework.Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    private static Microsoft.Xna.Framework.Color? Color(JsonElement a, string name)
+    {
+        string hex = S(a, name).TrimStart('#');
+        return hex.Length == 6 && int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int rgb)
+            ? new Microsoft.Xna.Framework.Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF) : null;
+    }
+
     private static IEnumerator SetStamina(JsonElement a, CallContext c)
     {
         if (!Has(a, "n")) { c.Fail("n is required"); yield break; }
@@ -370,6 +465,54 @@ public static class DebugApi
         c.Result = $"Built {built.Count} cabins at {string.Join(" ", built)}";
     }
 
+    /// <summary>Turn a farm made without starting cabins into a co-op farm, through the game's own new-game builder:
+    /// the farm map's starting-cabin spots (Paths tiles 29 close / 30 separate with an Order up to n), then
+    /// <see cref="GameLocation.BuildStartingCabins"/>, then a farmhand slot in each. Saved with the farm at the end of the day.</summary>
+    private static IEnumerator StartingCabins(JsonElement a, CallContext c)
+    {
+        if (!Context.IsMainPlayer) { c.Fail("Run starting_cabins on p1 (the host)"); yield break; }
+        var farm = Game1.getFarm();
+        if (farm.buildings.Any(b => b.GetIndoors() is StardewValley.Locations.Cabin)) { c.Fail("The farm already has cabins"); yield break; }
+        int want = Math.Clamp(I(a, "n", 3), 1, 3);
+        bool separate = B(a, "separate") ?? false;
+        var paths = farm.map.GetLayer("Paths");
+        var spots = (List<Microsoft.Xna.Framework.Vector2>)typeof(GameLocation)
+            .GetField("_startingCabinLocations", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(farm)!;
+        spots.Clear();
+        for (int y = 0; paths != null && y < paths.LayerHeight; y++)
+            for (int x = 0; x < paths.LayerWidth; x++)
+            {
+                var tile = paths.Tiles[x, y];
+                if (tile != null && tile.TileIndex == (separate ? 30 : 29) && tile.Properties.TryGetValue("Order", out var order)
+                    && int.TryParse(order.ToString(), out int n) && n <= want)
+                    spots.Add(new Microsoft.Xna.Framework.Vector2(x, y));
+            }
+        if (spots.Count < want) { c.Fail($"This farm map marks only {spots.Count} starting-cabin spot(s) for {want}"); spots.Clear(); yield break; }
+        Game1.startingCabins = want;
+        Game1.cabinsSeparate = separate;
+        farm.BuildStartingCabins();
+        var built = new List<string>();
+        foreach (var b in farm.buildings)
+            if (b.GetIndoors() is StardewValley.Locations.Cabin cabin)
+            {
+                if (!cabin.HasOwner) cabin.CreateFarmhand();
+                built.Add($"({b.tileX.Value},{b.tileY.Value})");
+            }
+        c.Result = $"Built {built.Count} starting cabins at {string.Join(" ", built)}; split-screen joins P2-P4 next";
+        yield break;
+    }
+
+    /// <summary>Write the save now (the game itself saves only overnight): cabins, wallets and looks set up before day 1 stay.
+    /// Loading it starts this same day at 6:00. Host only.</summary>
+    private static IEnumerator SaveNow(JsonElement a, CallContext c)
+    {
+        if (!Context.IsMainPlayer) { c.Fail("Run save on p1 (the host)"); yield break; }
+        var steps = SaveGame.Save();
+        while (steps.MoveNext()) yield return null;
+        c.Result = $"Saved {Constants.SaveFolderName} (day {Game1.Date.TotalDays + 1}, {Game1.timeOfDay})";
+    }
+
     /// <summary>Place a chest owned by this seat on the tile (x, y) of its current map, holding 3 Parsnips.</summary>
     private static IEnumerator PlaceChest(JsonElement a, CallContext c)
     {
@@ -457,6 +600,13 @@ public static class DebugApi
             int seconds = _hangSeconds;
             _hangSeconds = 0;
             System.Threading.Thread.Sleep(TimeSpan.FromSeconds(seconds));
+        }
+
+        if (_makeoverDone != null && Context.ScreenId == 0 && !_makeoverOpen!())
+        {
+            _makeoverDone();
+            _makeoverDone = null;
+            _makeoverOpen = null;
         }
 
         if (_pendingLoad == null) return;

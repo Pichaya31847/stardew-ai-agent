@@ -1,9 +1,9 @@
 """Multi-AI concurrent session coordinator and day phase manager (Issue #41).
 
 Manages split-screen co-op sessions across seats (p1, p2, p3) with day phases:
-  Phase 1: Morning Meeting (world frozen, chat + plan board)
-  Phase 2: Free Play (concurrent sessions, independent continuation if one stops early)
-  Phase 3: Evening Private Diary & Bedtime (journal before bed, all in bed advances the day)
+  Day: Free Play from 6:00 (concurrent sessions, independent continuation if one stops early). There is no
+       meeting: the farmers find each other, and `say` reaches only those who can see the speaker.
+  Evening: Private Diary & Bedtime (journal before bed, all in bed advances the day)
 
 Standard library only.
 """
@@ -17,11 +17,18 @@ from pathlib import Path
 from typing import Callable
 
 import briefing
+import game_watchdog
 import memory
 import pass_out
 import personas
 import run_days
 import sessions
+import usage_limit
+
+PROBE_EVERY = 600     # s between health probes of a seat whose CLI is alive but stopped holding the world (timed out)
+HOLD_AFTER_KILL = 600  # s the world stays paused after ending sessions: the mod drops their held calls at 540 s
+HELD_TIMEOUT = 420    # s to wait for running actions to finish before the pause really freezes (actions cap at 6 min)
+OUTAGE_RETRY = 300    # s between retries when the provider is down without a usage-limit reset time
 
 
 @dataclass
@@ -36,8 +43,6 @@ class SeatConfig:
 class MultiConfig:
     seats: list[str] = field(default_factory=lambda: ["p1", "p2", "p3"])
     seat_configs: dict[str, SeatConfig] = field(default_factory=dict)
-    meeting_turns: int = 5
-    skip_meeting: bool = False
 
 
 def is_in_bed(state: dict, seat: str) -> bool:
@@ -104,29 +109,20 @@ def parse_multi_config(args, personas_dir: Path | None = None) -> MultiConfig:
     return MultiConfig(
         seats=seats,
         seat_configs=seat_configs,
-        meeting_turns=getattr(args, "meeting_turns", 5),
-        skip_meeting=getattr(args, "skip_meeting", False),
     )
 
 
-def morning_meeting_prompt(day: int, seat: str, persona: personas.Persona, briefing_text: str, turns: int) -> str:
+def free_play_prompt(day: int, seat: str, persona: personas.Persona, briefing_text: str) -> str:
+    if day <= 1:
+        first = ("This is your first morning here. The other newcomers are strangers to you: you only know their names "
+                 "from Mayor Lewis's letter. They live in the cabins near yours on this farm.\n")
+    else:
+        first = ""
     return (
         f"{briefing_text}\n\n"
-        f"[Phase 1: Morning Meeting]\n"
-        f"It is 6:00 AM on day {day}. The world is frozen while you talk with your fellow farmers.\n"
-        f"Hold a quick morning standup:\n"
-        f"- Use `say` to speak in in-game chat (or `whisper` to talk privately).\n"
-        f"- Use `plan_read` to see what needs doing and `plan_edit` to claim or coordinate tasks.\n"
-        f"- Agree on who waters crops, who forages, who fishes, or who goes to town.\n"
-        f"- Keep it brief (under {turns} turns). When tasks are agreed, end your turn so free play can begin."
-    )
-
-
-def free_play_prompt(day: int, seat: str, persona: personas.Persona) -> str:
-    return (
-        f"[Phase 2: Free Play]\n"
-        f"Morning meeting is adjourned. Head out and begin your day {day} work!\n"
-        f"Execute your tasks: farm, forage, fish, mine, or trade. Coordinate via `say` or `whisper` when needed.\n"
+        f"[Day {day}]\n"
+        f"{first}"
+        f"Spend the day as you choose. `say` is heard only by people who can see you, so to talk with someone, go where they are.\n"
         f"When your work is done or evening approaches, write your private journal with `journal` "
         f"(including your evolving `self` identity and notes on other `people`), then call `go_to_bed`."
     )
@@ -144,41 +140,82 @@ class MultiDayRunner:
         self.api_post = api_post_fn
         self.wait_ready = wait_ready_fn
 
-    def run_meeting_phase(self, day: int, system_prompts: dict[str, str]) -> None:
-        if self.cfg.skip_meeting or len(self.cfg.seats) <= 1:
-            return
+    # ------------------------------------------------------------------ outages
 
-        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] Day {day}: Starting Morning Meeting ({', '.join(self.cfg.seats)})")
-        threads = []
-        for seat in self.cfg.seats:
-            sc = self.cfg.seat_configs[seat]
-            brief_text = briefing.morning_prompt(day, briefing.build(self.api_get, day, seat=seat, out_dir=self.out_dir))
-            prompt = morning_meeting_prompt(day, seat, sc.persona, brief_text, self.cfg.meeting_turns)
-            sys_prompt = system_prompts[seat]
+    def probe(self, seat: str) -> str | None:
+        """Ask the seat's provider for a one-word reply: None when it answers, else the error text."""
+        sc = self.cfg.seat_configs[seat]
+        seat_args = run_days.copy_args_with_seat(self.args, sc.backend_name, sc.model)
+        try:
+            run_days.get_backend(sc.backend_name).text_session(seat_args, self.out_dir, f"probe_{seat}")(
+                "You are a health check.", "Reply with the single word OK.")
+            return None
+        except Exception as e:
+            return str(e) or type(e).__name__
 
-            def run_seat_meeting(s=seat, p=prompt, sp=sys_prompt):
-                meeting_args = run_days.copy_args_with_max_turns(self.args, self.cfg.meeting_turns)
-                meeting_args.cap_tool_calls = True  # claude's --max-turns counts turns, not calls: Haiku ran farm work here
-                setattr(meeting_args, "backend", self.cfg.seat_configs[s].backend_name)
-                setattr(meeting_args, "model", self.cfg.seat_configs[s].model)
-                try:
-                    run_days.run_session(meeting_args, self.out_dir, day, p, sp, part=0, seat=s)
-                except SystemExit as e:  # a thread would swallow it silently
-                    print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {s} meeting stopped: {e}")
-                # done talking: stop holding the world still, or a seat still in its meeting that started an action
-                # waits forever (the seat's next MCP call takes the release back)
-                try:
-                    self.api_post("/api/release_freeze", {"seat": s, "on": True})
-                except Exception:
-                    pass
+    def hold_for_outage(self, day: int, seat: str, error, alive: dict[str, threading.Thread]) -> list[str] | None:
+        """The seat's provider is down or over its usage limit: freeze the whole world (run-control pause, so the
+        recorder cuts the time too), end the other sessions cleanly and wait until the provider answers.
 
-            t = threading.Thread(target=run_seat_meeting, name=f"meeting_{seat}")
-            threads.append(t)
-            t.start()
+        Returns the seats whose sessions were ended, to relaunch with the "continue" prompt, or None when the
+        provider answers at once (not an outage: the part counts as usual, so a broken CLI can't loop). Raises SystemExit
+        (world still held) when the outage lasts longer than --outage-cap-hours.
+        """
+        info = error.info if isinstance(error, usage_limit.UsageLimitHit) else None
+        if info is None:
+            err = self.probe(seat)
+            if err is None:
+                return None
+            info = _limit_info(str(error) if error else err)
+        cap = float(getattr(self.args, "outage_cap_hours", 6)) * 3600
+        deadline = time.time() + cap
+        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} provider down ({info.message[:120]}): holding the world")
+        self._control("pause")
+        t0 = time.time()
+        while time.time() - t0 < HELD_TIMEOUT and not (self._get_quiet("/api/control") or {}).get("held"):
+            time.sleep(2)
+        state = self._get_quiet("/api/state") or {}
+        killed = [s for s, t in alive.items() if t.is_alive() and not is_in_bed(state, s)]
+        for s in killed:
+            game_watchdog.kill_tree(run_days.SESSIONS.get(s))
+        for s in killed:
+            alive[s].join(timeout=30)
+        killed_at = time.time()
 
-        for t in threads:
-            t.join()
-        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] Day {day}: Morning Meeting finished.")
+        unknown_reset = info.reset_at is None and not usage_limit.looks_like_limit(info.message)
+        retry = OUTAGE_RETRY if unknown_reset else 60 * float(getattr(self.args, "limit_retry_minutes", usage_limit.DEFAULT_RETRY_MINUTES))
+        margin = float(getattr(self.args, "limit_margin_seconds", usage_limit.DEFAULT_MARGIN_SECONDS))
+        waiter = usage_limit.LimitWaiter(self.api_post, retry_seconds=retry, margin_seconds=margin, max_waits=10 ** 9)
+        attempt = 1
+        while True:
+            plan = usage_limit.plan_wait(info, usage_limit._now(), retry, margin)
+            if plan.until.timestamp() > deadline:
+                raise SystemExit(
+                    f"{seat}: provider still down after the {cap / 3600:g} h outage cap; the world stays held. Day {day} "
+                    f"was not finished: close the game without saving, run `py runner/restore_day.py --day {day - 1} "
+                    f"--out {self.out_dir}`, then run the same command again.")
+            waiter.wait(usage_limit.UsageLimitHit(info), day, 0, attempt)
+            err = self.probe(seat)
+            if err is None:
+                break
+            info, attempt = _limit_info(err), attempt + 1
+        if killed:
+            time.sleep(max(0.0, HOLD_AFTER_KILL - (time.time() - killed_at)))
+        self._control("resume")
+        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} provider is back: resuming day {day}")
+        return killed
+
+    def _control(self, action: str) -> None:
+        try:
+            self.api_post("/api/control", {"action": action})
+        except Exception:
+            pass
+
+    def _get_quiet(self, path: str) -> dict | None:
+        try:
+            return self.api_get(path)
+        except Exception:
+            return None
 
     def run_free_play_phase(self, day: int, system_prompts: dict[str, str]) -> dict:
         print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] Day {day}: Starting Free Play for {', '.join(self.cfg.seats)}")
@@ -189,15 +226,24 @@ class MultiDayRunner:
         active_threads: dict[str, threading.Thread] = {}
         seat_results: dict[str, sessions.PartResult] = {}
         stopped: set[str] = set()  # seats whose session raised SystemExit: not relaunched
+        trouble: dict[str, object] = {}  # seat -> UsageLimitHit / BackendError of its last part: hold the world
+        probed: dict[str, float] = {}
+        prompts: dict[str, str] = {}  # seat -> prompt of its last part, repeated when that part never got going
 
         def launch_seat_session(seat: str, prompt: str, part: int):
+            prompts[seat] = prompt
             sc = self.cfg.seat_configs[seat]
             seat_args = run_days.copy_args_with_seat(self.args, sc.backend_name, sc.model)
 
             def worker():
+                seat_results.pop(seat, None)
                 try:
                     seat_results[seat] = run_days.run_session(seat_args, self.out_dir, day, prompt, system_prompts[seat], part=part, seat=seat)
-                except SystemExit as e:  # disallowed tool / backend error; a thread would swallow it and get relaunched
+                except (usage_limit.UsageLimitHit, run_days.BackendError) as e:  # provider down: the loop holds the world
+                    trouble[seat] = e
+                except game_watchdog.GameFault as e:  # the loop's GUARD.check() recovers
+                    print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} ended by a game fault: {e}")
+                except SystemExit as e:  # disallowed tool; a thread would swallow it and get relaunched
                     print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} stopped: {e}")
                     stopped.add(seat)
 
@@ -207,18 +253,34 @@ class MultiDayRunner:
 
         # Initial launch for all seats
         for seat in self.cfg.seats:
-            prompt = free_play_prompt(day, seat, self.cfg.seat_configs[seat].persona)
+            brief_text = briefing.morning_prompt(day, briefing.build(self.api_get, day, seat=seat, out_dir=self.out_dir))
+            prompt = free_play_prompt(day, seat, self.cfg.seat_configs[seat].persona, brief_text)
             launch_seat_session(seat, prompt, cur_part[seat])
+
+        def relaunch(seats_to_go: list[str]):
+            for s in seats_to_go:
+                if s in done_seats or s in stopped:
+                    continue
+                trouble.pop(s, None)  # the ended session's own error is part of the outage
+                cur_part[s] += 1  # planned: an outage never counts toward --max-parts
+                launch_seat_session(s, run_days.continue_prompt(day, self.log_dir, planned=True, player=s), cur_part[s])
 
         while True:
             time.sleep(1.0)
-            state = self.api_get("/api/state")
+            run_days.GUARD.check()
+            try:
+                state = self.api_get("/api/state")
+            except OSError:  # the game stopped answering: wait for it (raises GameFault for the watchdog)
+                state = self.wait_ready()
             if not state.get("ready"):
                 continue
 
             # Day rollover detected!
             if state.get("day", day) > day:
                 print(f"[Multi-AI] Day rollover detected! Day {state.get('day')} started.")
+                for s, t in active_threads.items():  # a CLI still running must not drive tomorrow's farmer
+                    if t.is_alive():
+                        game_watchdog.kill_tree(run_days.SESSIONS.get(s))
                 return state
 
             # stop_now: each session ends after its running tool call; launch nothing new, keep the world frozen
@@ -233,10 +295,26 @@ class MultiDayRunner:
                     continue
 
                 thread = active_threads.get(seat)
+                if thread and thread.is_alive():
+                    # alive but no longer holding the world: its CLI may hang on a dead provider
+                    timed_out = any(p.get("id") == seat and p.get("timedOut") for p in state.get("players", []))
+                    if timed_out and time.time() - probed.get(seat, 0) > PROBE_EVERY:
+                        probed[seat] = time.time()
+                        err = self.probe(seat)
+                        if err is not None:
+                            relaunch(self.hold_for_outage(day, seat, run_days.BackendError(err), active_threads) or [])
+                    continue
                 if thread and not thread.is_alive():
                     # Thread finished
                     thread.join()
                     in_bed = is_in_bed(state, seat)
+                    error, res = trouble.pop(seat, None), seat_results.get(seat)
+                    empty = isinstance(res, sessions.PartResult) and res.tool_calls == 0
+                    if not in_bed and seat not in stopped and (error is not None or empty):
+                        killed = self.hold_for_outage(day, seat, error, active_threads)
+                        if killed is not None:
+                            relaunch([seat] + [s for s in killed if s != seat])
+                            continue
                     if in_bed:
                         print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} ({self.cfg.seat_configs[seat].persona.name}) is in bed.")
                         card = memory.bedtime_persona_card(self.log_dir, seat)
@@ -254,7 +332,8 @@ class MultiDayRunner:
                     if has_more and seat not in stopped:
                         cur_part[seat] += 1
                         print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} continuing with part {cur_part[seat]}{' (planned break)' if planned else ''}")
-                        cont_p = run_days.continue_prompt(day, self.log_dir, planned=planned, player=seat)
+                        cont_p = (prompts[seat] if error is not None or empty  # it never got going: same prompt again
+                                  else run_days.continue_prompt(day, self.log_dir, planned=planned, player=seat))
                         launch_seat_session(seat, cont_p, cur_part[seat])
                     else:
                         print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} {'was stopped' if seat in stopped else f'used all {self.args.max_parts} sessions'}: releasing freeze.")
@@ -275,6 +354,12 @@ class MultiDayRunner:
                 return s
 
 
+def _limit_info(text: str) -> usage_limit.LimitInfo:
+    """An outage error as a LimitInfo: the reset time only when the text reads like a usage limit."""
+    reset, source = usage_limit.parse_reset(text) if usage_limit.looks_like_limit(text) else (None, "none")
+    return usage_limit.LimitInfo(text or "no reply", reset, source)
+
+
 def run_multi_day(
     args,
     out_dir: Path,
@@ -287,7 +372,10 @@ def run_multi_day(
     wait_ready_fn,
 ) -> dict:
     runner = MultiDayRunner(args, out_dir, log_dir, multi_cfg, api_get_fn, api_post_fn, wait_ready_fn)
-    runner.run_meeting_phase(day, system_prompts)
-    if run_days.CTL.stop_now_requested():
-        return {"ready": True, "day": day, "stop_now": True}
-    return runner.run_free_play_phase(day, system_prompts)
+    try:
+        return runner.run_free_play_phase(day, system_prompts)
+    except game_watchdog.GameFault:
+        # the watchdog keeps one session slot: end every seat's CLI before it relaunches the game and replays the day
+        for proc in list(run_days.SESSIONS.values()):
+            game_watchdog.kill_tree(proc)
+        raise

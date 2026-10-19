@@ -36,8 +36,9 @@ def test_template_has_no_hardcoded_thai_and_only_known_placeholders():
 
 def test_thai_system_prompt_keeps_the_old_wording():
     text = filled("Thai")
-    assert text.startswith("You are **{MODEL_NAME}**, playing Stardew Valley by yourself in a 100-day challenge. Thai YouTube viewers watch")
-    assert "# Thai output (viewers read this)" in text
+    assert text.startswith("You are **{MODEL_NAME}**, a newcomer who has just moved to a run-down farm in Stardew Valley.")
+    assert "viewer" not in text.lower() and "youtube" not in text.lower()
+    assert "# Thai and your thoughts" in text
     assert "must be **in Thai**, natural and a little playful, first person (\"ผม\")." in text
     assert 'e.g. "ถางหญ้ารอบบ้านเพื่อเปิดพื้นที่ปลูกผัก".' in text
     assert 'reply with "จบวัน" and stop' in text
@@ -46,7 +47,7 @@ def test_thai_system_prompt_keeps_the_old_wording():
 
 def test_thai_day_prompts_are_unchanged():
     assert language.first_prompt("Thai", 3) == (
-        "วันนี้คือวันที่ 3 ของชาเลนจ์ 100 วัน เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
+        "วันนี้คือวันที่ 3 ของคุณในหุบเขานี้ เริ่มจาก status และ look แล้ว think แผนของวันเป็นภาษาไทย "
         "จากนั้นเล่นทั้งวันจนเข้านอนด้วย go_to_bed")
     assert language.continue_prompt("Thai", 3, "A\nB") == (
         "เล่นวันที่ 3 ต่อจากเดิม (session ก่อนหน้าหยุดก่อนเข้านอน) นี่คือสิ่งที่เพิ่งทำไป:\n"
@@ -56,7 +57,7 @@ def test_thai_day_prompts_are_unchanged():
 def test_english_has_no_thai_anywhere():
     for text in (filled("English"), language.first_prompt("English", 2), language.continue_prompt("English", 2, "x")):
         assert not THAI.search(text)
-    assert "# English output (viewers read this)" in filled("English")
+    assert "# English and your thoughts" in filled("English")
     assert "**in English**" in filled("English")
     assert "English" in language.first_prompt("English", 2)
 
@@ -64,7 +65,7 @@ def test_english_has_no_thai_anywhere():
 def test_language_without_texts_names_the_language_and_has_no_thai():
     text = filled("Japanese")
     assert not THAI.search(text)
-    assert "# Japanese output (viewers read this)" in text
+    assert "# Japanese and your thoughts" in text
     assert "**in Japanese**" in text
     assert not any(ph in text for ph in language.PLACEHOLDERS)
     assert "in Japanese" in language.first_prompt("Japanese", 1)

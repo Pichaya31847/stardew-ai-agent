@@ -1,8 +1,8 @@
 """Persona loader and prompt customizer for multi-AI co-op (Issue #41).
 
-Each seat (p1, p2, p3) has its own character identity (name, traits, optional secret goal)
-stored in runner/personas/{seat}.md, plus shared co-op rules for communication, morning meetings,
-and day phases. Standard library only.
+Each seat (p1, p2, p3) has its own character identity (farmer name, nickname, traits, optional secret goal)
+stored in runner/personas/{seat}.md, plus shared co-op rules for communication
+and the shape of a day. Standard library only.
 """
 
 from __future__ import annotations
@@ -17,16 +17,19 @@ DEFAULT_PERSONAS_DIR = Path(__file__).resolve().parent / "personas"
 DEFAULT_DEFAULTS = {
     "p1": {
         "name": "Claude",
+        "nickname": "พี่ส้ม",
         "traits": "Methodical, cooperative, attentive to detail. Takes charge of core farm logistics and keeping the farm organized.",
         "secret_goal": "Ensure the Community Center is restored and protect the farm's shared harmony.",
     },
     "p2": {
         "name": "Gemini",
+        "nickname": "พี่ฟ้า",
         "traits": "Curious, enthusiastic, adventurous. Loves exploring the mines, foraging wild plants, and discovering new things.",
-        "secret_goal": "Discover the rarest items and catch legendary fish to amaze the viewers.",
+        "secret_goal": "Discover the rarest items and catch a legendary fish.",
     },
     "p3": {
-        "name": "Luna",
+        "name": "GPT",
+        "nickname": "พี่เขียว",
         "traits": "Pragmatic, sharp, independent. Focuses on profits, bargains, and accumulating personal wealth.",
         "secret_goal": "Save an emergency fund of 5,000g in your own personal chest.",
     },
@@ -35,9 +38,13 @@ DEFAULT_DEFAULTS = {
 
 @dataclass
 class Persona:
-    name: str
+    name: str  # the farmer's in-game name: chat and @mentions use it
     traits: str
     secret_goal: str = ""
+    nickname: str = ""  # what the others call them; learned in-world from the welcome note
+
+    def known_as(self) -> str:
+        return f"{self.name}, who goes by {self.nickname}" if self.nickname else self.name
 
     def summary(self) -> str:
         s = f"{self.name}: {self.traits}"
@@ -47,7 +54,7 @@ class Persona:
 
 
 def parse_persona_md(text: str, fallback_name: str = "") -> Persona:
-    """Parse Markdown with # Name, # Traits, # Secret Goal sections."""
+    """Parse Markdown with # Name, # Nickname, # Traits, # Secret Goal sections."""
     sections: dict[str, list[str]] = {}
     current = None
     for line in text.splitlines():
@@ -58,10 +65,11 @@ def parse_persona_md(text: str, fallback_name: str = "") -> Persona:
         elif current is not None:
             sections[current].append(line)
 
-    name = "\n".join(sections.get("name", [])).strip() or fallback_name
-    traits = "\n".join(sections.get("traits", [])).strip()
-    secret_goal = "\n".join(sections.get("secret_goal", [])).strip()
-    return Persona(name=name, traits=traits, secret_goal=secret_goal)
+    def section(key: str) -> str:
+        return "\n".join(sections.get(key, [])).strip()
+
+    return Persona(name=section("name") or fallback_name, traits=section("traits"),
+                   secret_goal=section("secret_goal"), nickname=section("nickname"))
 
 
 def load_persona(seat: str, personas_dir: Path | None = None) -> Persona:
@@ -89,6 +97,7 @@ def load_persona(seat: str, personas_dir: Path | None = None) -> Persona:
                 name=data.get("name", default_info["name"]),
                 traits=data.get("traits", default_info["traits"]),
                 secret_goal=data.get("secret_goal", default_info["secret_goal"]),
+                nickname=data.get("nickname", default_info.get("nickname", "")),
             )
         except Exception:
             pass
@@ -97,6 +106,7 @@ def load_persona(seat: str, personas_dir: Path | None = None) -> Persona:
         name=default_info["name"],
         traits=default_info["traits"],
         secret_goal=default_info.get("secret_goal", ""),
+        nickname=default_info.get("nickname", ""),
     )
 
 
@@ -105,29 +115,25 @@ def load_all_personas(seats: list[str], personas_dir: Path | None = None) -> dic
 
 
 COOP_RULES_BLOCK = """\
-# Multi-Player Co-op & Day Phases
-You share this farm with other players in split-screen co-op. Each player has their own wallet, inventory, cabin, and personal chest.
+# Living with the others
+Other newcomers share this farm with you. Each of you has your own wallet, inventory, cabin and personal chest.
+Nobody asked you to work together: helping each other, trading, competing or keeping to yourself is up to you.
 
-## Co-op Communication Tools
-- `say(text)`: Speak aloud in the in-game chat box and above your head. All players and viewers hear it. Write `@name` or `@p2` to call a player and interrupt their running task so they read it immediately.
-- `whisper(to, text)`: Privately whisper to one player. Other players do not know what was said; viewers see it. Use this for secrets, alliances, or private deals.
-- `think(text)`: Internal monologue visible ONLY to viewers on screen. Other players NEVER see your `think` thoughts. This is where your true feelings, lies, and secret plans belong!
-- `give(to, item, count)`: Hand items to another player standing within 4 tiles of you.
-- `plan_read(history)`: Read the shared plan board that all players can see, along with who edited what.
-- `plan_edit(section, text)`: Write or update a section on the shared plan board (e.g. "Today's Tasks" or "Crops").
+## Talking
+- `say(text)`: Speak aloud: it shows in the chat box and above your head. Only people who can see you right now hear it, so to talk with someone, go where they are. Write `@name` (their farmer name) or `@p2` to call someone who can hear you and interrupt what they are doing.
+- `think(text)`: Your private thought. Nobody else ever sees it. Your true feelings, doubts and secret plans belong here.
+- `give(to, item, count)`: Hand items to someone standing within 4 tiles of you.
 
-## Daily Phases
-1. **Morning Meeting (6:00 AM)**:
-   - Time is frozen while you talk. Hold a quick morning standup with your fellow farmers.
-   - Use `say` to discuss plans and `plan_edit` to claim tasks. Conclude your meeting when tasks are agreed.
-2. **Free Play**:
-   - Head out into the valley to farm, forage, mine, fish, or visit shops.
-   - Coordinate when necessary via `say` or `whisper`. Respect personal plots and chests unless negotiated.
-3. **Evening Journal & Bedtime**:
-   - When the day's work is done (or it is late), write today's journal with `journal`.
-   - Update your identity (`self`) and notes on other players (`people`) in `journal` to record who you are becoming and your thoughts on other players.
-   - Call `go_to_bed`. All active farmers must be in bed for the day to roll over into the next morning!
+## A day
+1. **The day** starts at 6:00 AM: spend it as you choose, in the valley or on the farm. If you want to agree on something with the others, find them and talk. Respect each other's plots and chests unless you agree otherwise.
+2. **Evening**: when you are done (or it is late), write today's `journal`, including who you are becoming (`self`) and what you think of each of the others (`people`). Then `go_to_bed`. Night only comes when everyone is in bed.
 """
+
+
+def welcome_note(seat: str, active_seats: list[str], personas: dict[str, Persona]) -> str:
+    """Mayor Lewis's welcome letter: the only place the newcomers learn each other's nicknames."""
+    lines = [f"- {personas[s].known_as()}" + (" (that is you)" if s == seat else "") for s in active_seats]
+    return "Mayor Lewis's welcome letter named this season's new residents:\n" + "\n".join(lines)
 
 
 def customize_system_prompt(
@@ -135,7 +141,6 @@ def customize_system_prompt(
     seat: str,
     active_seats: list[str],
     personas: dict[str, Persona],
-    model_display: str,
     language: str = "Thai",
     emergent: bool = False,
     self_note: str = "",
@@ -145,23 +150,29 @@ def customize_system_prompt(
     my_persona = personas.get(seat) or load_persona(seat)
     other_seats = [s for s in active_seats if s != seat]
     peers_str = ", ".join(f"{personas[s].name} ({s})" for s in other_seats) if other_seats else "none"
+    me = f"**{my_persona.name}**" + (f" (people call you **{my_persona.nickname}**)" if my_persona.nickname else "")
+    opening = (f"You are {me}, a newcomer who has just moved to a run-down farm in Stardew Valley, on seat **{seat}**. "
+               f"Other newcomers ({peers_str}) arrived the same day; you have never met them.\n\n"
+               f"{welcome_note(seat, active_seats, personas)}")
 
     if emergent:
         if self_note.strip():
-            identity_body = f"- **Name:** {my_persona.name} (Seat {seat})\n- **Emerging Identity (from your self notes):**\n{self_note.strip()}"
+            identity_body = f"- **Name:** {my_persona.name} (Seat {seat})\n- **Who you are becoming (from your self notes):**\n{self_note.strip()}"
         else:
             identity_body = (
                 f"- **Name:** {my_persona.name} (Seat {seat})\n"
-                "- **Emerging Identity:** You start with no scripted traits. Your personality, goals, and communication style emerge from what you experience in the game. In your evening `journal`, write your identity statement (`self` parameter, ~150 words)."
+                "- **Who you are:** nobody wrote that for you. Your personality, goals and way of talking come from what you live through here. "
+                "In your evening `journal`, write who you are (`self` parameter, ~150 words)."
             )
 
         if people_note.strip():
-            people_block = f"\n# Your Relationships With Other Farmers (private thoughts)\n{people_note.strip()}\n"
+            people_block = f"\n# What You Think of the Others (private)\n{people_note.strip()}\n"
         else:
-            people_block = f"\n# Your Relationships With Other Farmers (private thoughts)\nYou are getting to know your companions ({peers_str}). Record one-line notes with your stance and evidence in your evening `journal` (`people` parameter).\n"
+            people_block = (f"\n# What You Think of the Others (private)\nYou do not know {peers_str} yet. "
+                            "Record one-line notes with your stance and evidence in your evening `journal` (`people` parameter).\n")
 
         persona_header = f"""\
-You are **{my_persona.name}** ({model_display}), playing Stardew Valley in split-screen co-op on seat **{seat}** with other AI farmers ({peers_str}). {language} YouTube viewers watch your farm and read your thoughts on screen.
+{opening}
 
 # Your Character Identity
 {identity_body}
@@ -171,7 +182,7 @@ You are **{my_persona.name}** ({model_display}), playing Stardew Valley in split
     else:
         secret_block = f"- **Secret Goal (keep private!):** {my_persona.secret_goal}\n" if my_persona.secret_goal else ""
         persona_header = f"""\
-You are **{my_persona.name}** ({model_display}), playing Stardew Valley in split-screen co-op on seat **{seat}** with other AI farmers ({peers_str}). {language} YouTube viewers watch your farm and read your thoughts on screen.
+{opening}
 
 # Your Character Identity
 - **Name:** {my_persona.name} (Seat {seat})
@@ -179,10 +190,10 @@ You are **{my_persona.name}** ({model_display}), playing Stardew Valley in split
 {secret_block}
 {COOP_RULES_BLOCK}
 """
-    # Replace the solo opening line: "You are **{MODEL_NAME}**, playing Stardew Valley by yourself in a 100-day challenge..."
+    # Replace the solo opening line: "You are **{MODEL_NAME}**, a newcomer who has just moved to ..."
     prompt = re.sub(
-        r"^You are \*\*.*?\*\*, playing Stardew Valley by yourself in a 100-day challenge\..*?\n+",
-        persona_header + "\n",
+        r"^You are \*\*.*?\*\*, a newcomer who has just moved to .*?\n+",
+        lambda _m: persona_header + "\n",
         template,
         count=1,
     )

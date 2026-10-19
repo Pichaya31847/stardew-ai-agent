@@ -25,8 +25,8 @@ public sealed record SeatAction(string Tool, string What, string Reason, int Sta
 /// What the AI farmers perceive of each other, and what stops them mid-action.
 /// <list type="bullet">
 /// <item><c>look</c> and <c>status</c> list the other players in view with what each is actually doing (running tool, its reason,
-/// game minutes so far) next to what it claimed (its last <c>say</c> and its newest plan-board section), so a lie can be caught.</item>
-/// <item>Events are queued per seat: an @mention or whisper, another player coming into view or entering your house,
+/// game minutes so far) next to what it claimed (the last <c>say</c> of it this player heard), so a lie can be caught.</item>
+/// <item>Events are queued per seat: an @mention, another player coming into view or entering your house,
 /// a theft from you (<see cref="Ownership.Theft"/>), a gift, rain starting, crows on the farm. They are added to the seat's next
 /// tool result, and a running walk, wait or farm action is stopped to hand them over at once (<see cref="AgentRuntime.Interrupt"/>).</item>
 /// </list>
@@ -56,7 +56,8 @@ public static class Perception
     private static readonly ConcurrentQueue<SeenEvent>[] Queues = Enumerable.Range(0, Players.Seats).Select(_ => new ConcurrentQueue<SeenEvent>()).ToArray();
     private static readonly SeatAction?[] Acts = new SeatAction?[Players.Seats];
     private static readonly PendingCall?[] Tracked = new PendingCall?[Players.Seats];
-    private static readonly (int day, string time, string text)?[] LastSaid = new (int, string, string)?[Players.Seats];
+    // [listener, speaker]: the last line the listener heard the speaker say (say only reaches players who see the speaker).
+    private static readonly (int day, string time, string text)?[,] LastHeard = new (int, string, string)?[Players.Seats, Players.Seats];
     private static readonly int[] Ticks = new int[Players.Seats];
 
     private sealed class Pair
@@ -155,19 +156,14 @@ public static class Perception
         return $"{act.What} ({span}{reason})";
     }
 
-    /// <summary>What <paramref name="s"/> said last and what it has on the plan board: the claims a lie would contradict.</summary>
-    private static string ClaimsText(PlayerSlot s)
-    {
-        var parts = new List<string>();
-        if (LastSaid[s.Screen] is { } said)
-            parts.Add($"said {(said.day == AgentLog.FarmDay ? "at " + said.time : "on day " + said.day)} \"{Clip(said.text, 100)}\"");
-        if (PlanBoard.LatestBy(SocialTools.Label(s)) is { } plan)
-            parts.Add($"plan board \"{plan.Section}\" ({plan.Time}): \"{Clip(Clean(plan.Text), 100)}\"");
-        return parts.Count == 0 ? "none yet (has said nothing and has nothing on the plan board)" : string.Join("; ", parts);
-    }
+    /// <summary>What <paramref name="me"/> last heard <paramref name="s"/> say: the claim a lie would contradict.</summary>
+    private static string ClaimsText(PlayerSlot me, PlayerSlot s) =>
+        LastHeard[me.Screen, s.Screen] is { } said
+            ? $"said {(said.day == AgentLog.FarmDay ? "at " + said.time : "on day " + said.day)} \"{Clip(said.text, 100)}\""
+            : "none yet (you have not heard them say anything)";
 
-    private static string Describe(PlayerSlot s, Farmer f, int dist) =>
-        $"{SocialTools.Label(s)} at ({f.TilePoint.X},{f.TilePoint.Y}), {dist} tile(s) away. Actually doing: {DoingText(s)}. Claims: {ClaimsText(s)}.";
+    private static string Describe(PlayerSlot me, PlayerSlot s, Farmer f, int dist) =>
+        $"{SocialTools.Label(s)} at ({f.TilePoint.X},{f.TilePoint.Y}), {dist} tile(s) away. Actually doing: {DoingText(s)}. Claims: {ClaimsText(me, s)}.";
 
     /// <summary>
     /// Block for <c>look</c> and <c>status</c>: every other AI player within <paramref name="radius"/> tiles on this map, what it is
@@ -179,7 +175,7 @@ public static class Perception
         if (me.Role != SeatRole.Ai) return "";
         var sb = new StringBuilder();
         foreach (var (seat, farmer, dist) in Visible(me, radius).OrderBy(v => v.dist))
-            sb.Append("\n  ").Append(Describe(seat, farmer, dist));
+            sb.Append("\n  ").Append(Describe(me, seat, farmer, dist));
         return sb.Length == 0 ? "" : "Other players in view (what each is actually doing, next to what it claimed):" + sb;
     }
 
@@ -194,7 +190,7 @@ public static class Perception
         while (q.Count > MaxQueued) q.TryDequeue(out _);
     }
 
-    /// <summary>The seat's events for its tool result ("" when none), then its chat and whispers. Replaces <see cref="SocialTools.TakeMail"/> in the runtime.</summary>
+    /// <summary>The seat's events for its tool result ("" when none), then the chat it heard. Replaces <see cref="SocialTools.TakeMail"/> in the runtime.</summary>
     public static string TakeMail(string player)
     {
         var mail = SocialTools.TakeMail(player);
@@ -228,13 +224,15 @@ public static class Perception
 
     // ------------------------------------------------------------------ sources fed by the social tools
 
-    /// <summary>A seat spoke in chat: remember it as its latest claim, and interrupt whoever it addressed with @name or @pN.</summary>
+    /// <summary>A seat spoke in chat: remember it as its latest claim for those who heard it, and interrupt whoever it addressed with @name or @pN.</summary>
     public static void OnSay(PlayerSlot speaker, string text, IEnumerable<PlayerSlot> heard)
     {
-        LastSaid[speaker.Screen] = (AgentLog.FarmDay, Hhmm(), text);
         foreach (var s in heard)
+        {
+            LastHeard[s.Screen, speaker.Screen] = (AgentLog.FarmDay, Hhmm(), text);
             if (Mentions(text, s))
                 Notify(s, "mention", $"{SocialTools.Label(speaker)} mentioned you in chat");
+        }
     }
 
     /// <summary>"@Gemini", "@gemini," or "@p2" in a chat line (not part of a longer word).</summary>
@@ -318,14 +316,14 @@ public static class Perception
                 var whereYouAre = there == here.NameOrUniqueName ? "right where you are" : $"while you are at {here.Name} ({mine.X},{mine.Y})";
                 shortText = $"{label} entered your house";
                 detail = $"[{Hhmm()}] {label} entered your house ({f.currentLocation.Name}, at ({t.X},{t.Y})), {whereYouAre}. " +
-                         $"Actually doing: {DoingText(s)}. Claims: {ClaimsText(s)}.";
+                         $"Actually doing: {DoingText(s)}. Claims: {ClaimsText(me, s)}.";
             }
             else
             {
                 var dist = Math.Max(Math.Abs(t.X - mine.X), Math.Abs(t.Y - mine.Y));
                 shortText = $"{label} came into view";
                 detail = $"[{Hhmm()}] {label} came into view at ({t.X},{t.Y}), {dist} tile(s) away. " +
-                         $"Actually doing: {DoingText(s)}. Claims: {ClaimsText(s)}.";
+                         $"Actually doing: {DoingText(s)}. Claims: {ClaimsText(me, s)}.";
             }
             Notify(me, enteredHome ? "house" : "arrived", shortText, detail);
             me.Runtime.Log.Add("notice", text: detail, args: new { kind = enteredHome ? "house" : "arrived", who = s.Id });
