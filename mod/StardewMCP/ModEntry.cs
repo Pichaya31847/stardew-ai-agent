@@ -1,5 +1,6 @@
 using System.IO;
 using StardewMCP.Agent;
+using StardewMCP.Agent.Brain;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -37,12 +38,20 @@ public class ModEntry : Mod
         SocialTools.Apply(ModManifest);
         Ownership.Apply(ModManifest);
         AgentTools.Apply(ModManifest);
-        _http = new AgentHttp(_log, _config, Monitor, Path.Combine(helper.DirectoryPath, "assets"));
+        string assetDir = Path.Combine(helper.DirectoryPath, "assets");
+        _http = new AgentHttp(_log, _config, Monitor, assetDir);
+        Brains.Init(helper, Monitor, _config, _log, assetDir);
+        Hud.Init(helper, _config);
 
-        helper.Events.GameLoop.GameLaunched += (_, _) => _http.Start(_config.HttpPort);
+        helper.Events.GameLoop.GameLaunched += (_, _) =>
+        {
+            _http.Start(_config.HttpPort);
+            ConfigMenu.Register(helper, ModManifest, _config, Monitor);
+        };
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
+            Brains.StopAll();
             SplitScreen.OnReturnedToTitle();
             PassOut.OnReturnedToTitle();
             WorldProgress.Reset();
@@ -64,7 +73,12 @@ public class ModEntry : Mod
             "Freeze the world while an AI is thinking.\n\nUsage: mcp_freeze [on|off] (no argument toggles)",
             OnFreezeCommand);
 
-        Monitor.Log($"Stardew MCP loaded{(_config.SplitScreen ? " (split-screen: 3 AIs + camera)" : "")}. Logs: {logDir}", LogLevel.Info);
+        helper.ConsoleCommands.Add(
+            "mcp_brain",
+            "The mod's built-in AI players.\n\nUsage: mcp_brain [status|start|stop]",
+            (_, args) => Brains.Command(args));
+
+        Monitor.Log($"Stardew MCP loaded{(_config.SplitScreen ? $" (split-screen: {Players.ScreenCount} screens, {Players.Describe()})" : "")}. Logs: {logDir}", LogLevel.Info);
     }
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
@@ -77,9 +91,12 @@ public class ModEntry : Mod
         Game1.options.pauseWhenOutOfFocus = false;
         if (Context.ScreenId != 0)
             return;
+        // Seat roles and split-screen may have changed in the config menu; farmhands join on later host ticks.
+        Players.Resolve(_config, Monitor);
         SaveFolder.OnSaveLoaded();
         EconomyTools.CheckWallets(Monitor, _config);
         Players.Host.Runtime.Log.Add("system", text: $"Save loaded: {Game1.player.Name} / {Game1.player.farmName} Farm");
+        Brains.StartAll();
     }
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)

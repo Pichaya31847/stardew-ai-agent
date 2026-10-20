@@ -12,7 +12,11 @@ public enum SeatRole
     /// <summary>A farmer driven by an AI through <c>/mcp/p{N}</c>.</summary>
     Ai,
     /// <summary>The video's camera / summary screen: no AI, never blocks the world.</summary>
-    Camera
+    Camera,
+    /// <summary>A person at the keyboard (P1 only): never frozen by the clock, never driven by a tool.</summary>
+    Human,
+    /// <summary>The seat is not used: no screen is joined for it.</summary>
+    Off
 }
 
 /// <summary>One split-screen seat (screen index = SMAPI <c>Context.ScreenId</c>) and its agent runtime.</summary>
@@ -20,7 +24,8 @@ public class PlayerSlot
 {
     public int Screen { get; }
     public string Id => $"p{Screen + 1}";
-    public SeatRole Role { get; }
+    /// <summary>Set again by <see cref="Players.Resolve"/> on each save load (the config menu can change it).</summary>
+    public SeatRole Role { get; internal set; }
     public AgentRuntime Runtime { get; }
 
     /// <summary>Game ticks seen on this screen; the HTTP thread uses it to tell whether the screen exists.</summary>
@@ -87,6 +92,9 @@ public class ScreenState
     public int Energy { get; init; }
     public bool InBed { get; init; }
     public int MaxEnergy { get; init; }
+    /// <summary>Farm day (1 = the first day), so threads off the game loop can tell when a day changed.</summary>
+    public int Day { get; init; }
+    public string Time { get; init; } = "";
     public string? Menu { get; init; }
     public string? Dialogue { get; init; }
 
@@ -134,6 +142,8 @@ public class ScreenState
             Energy = (int)p.Stamina,
             InBed = p.isInBed.Value,
             MaxEnergy = p.MaxStamina,
+            Day = AgentLog.FarmDay,
+            Time = WorldText.FormatTime(Game1.timeOfDay),
             Menu = menu?.GetType().Name,
             Dialogue = menu is StardewValley.Menus.DialogueBox box ? box.characterDialogue?.speaker?.displayName ?? "" : null,
             KnownTastes = NpcKnowledge.Count(p),
@@ -155,15 +165,47 @@ public static class Players
 
     public static PlayerSlot[] Slots { get; private set; } = Array.Empty<PlayerSlot>();
 
+    /// <summary>Screens the game should run: P1 plus every seat up to the last one that is not "off". 1 without split-screen.</summary>
+    public static int ScreenCount { get; private set; } = 1;
+
     public static void Init(IModHelper helper, IMonitor monitor, ModConfig config, AgentLog log)
     {
         Slots = Enumerable.Range(0, Seats)
-            .Select(i =>
-            {
-                var role = i == Seats - 1 ? SeatRole.Camera : SeatRole.Ai;
-                return new PlayerSlot(i, role, new AgentRuntime(helper, monitor, config, log.For($"p{i + 1}")));
-            })
+            .Select(i => new PlayerSlot(i, SeatRole.Ai, new AgentRuntime(helper, monitor, config, log.For($"p{i + 1}"))))
             .ToArray();
+        Resolve(config, monitor);
+    }
+
+    /// <summary>
+    /// Seat roles and <see cref="ScreenCount"/> from the config. Runs at startup and again when the host loads a save,
+    /// so seat and split-screen changes made in the config menu apply to the next save; the seats keep their runtimes.
+    /// </summary>
+    public static void Resolve(ModConfig config, IMonitor monitor)
+    {
+        var roles = new SeatRole[Seats];
+        int last = 0;
+        for (int i = 0; i < Seats; i++)
+        {
+            var c = config.Seat(i);
+            roles[i] = c.IsOff ? SeatRole.Off : c.IsCamera ? SeatRole.Camera : c.IsHuman ? SeatRole.Human : SeatRole.Ai;
+            if (i == 0 && roles[i] is SeatRole.Off or SeatRole.Camera)
+                roles[i] = SeatRole.Ai; // P1 is the save's farmer and the host screen; it is always there
+            if (i > 0 && roles[i] == SeatRole.Human)
+            {
+                monitor.Log($"Seats[{i}].Role \"human\" only works for P1 (the keyboard reaches the host screen); P{i + 1} is a camera seat instead.", LogLevel.Warn);
+                roles[i] = SeatRole.Camera;
+            }
+            if (roles[i] != SeatRole.Off) last = i;
+        }
+        for (int i = 1; i < last; i++)
+            if (roles[i] == SeatRole.Off)
+            {
+                monitor.Log($"Seats[{i}] is \"off\" but a later seat is on; screens are joined in order, so P{i + 1} is a camera seat.", LogLevel.Warn);
+                roles[i] = SeatRole.Camera;
+            }
+        ScreenCount = config.SplitScreen ? last + 1 : 1;
+        for (int i = 0; i < Seats; i++)
+            Slots[i].Role = roles[i];
     }
 
     /// <summary>The seat of the screen being updated. Only valid on the game thread.</summary>
@@ -173,6 +215,10 @@ public static class Players
 
     /// <summary>Seat by id ("p1".."p4"), or null.</summary>
     public static PlayerSlot? ById(string id) => Slots.FirstOrDefault(s => s.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>"P1 ai, P2 ai, P3 ai, P4 camera" for the log.</summary>
+    public static string Describe() =>
+        string.Join(", ", Slots.Take(ScreenCount).Select(s => $"{s.Id} {s.Role.ToString().ToLowerInvariant()}"));
 
     /// <summary>True while the game runs more than one local screen.</summary>
     public static bool SplitScreen => GameRunner.instance?.gameInstances.Count > 1;

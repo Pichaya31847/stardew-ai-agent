@@ -1,106 +1,39 @@
 # Stardew MCP
 
 SMAPI mod (C#, net6.0) that hosts an MCP server inside Stardew Valley so AI agents can play.
-MIT licensed, open source.
+MIT licensed, open source. This repository is **the mod only**: gameplay tools, the per-player
+runtime, the HTTP API and the overlay / replay pages the mod serves itself.
 
-## Project goal: three AIs play together
+The YouTube production around it (the runner that drives `claude` / `agy` / `opencode` sessions
+through the day, OBS director and recorder, personas, prompts) lives in a separate private
+repository (`stardew-ai-studio`). It only talks to this mod over HTTP, so nothing here may depend
+on it: no OBS, video, recording or runner concerns in `mod/`. When the runner needs something new,
+add an HTTP endpoint or an event here and consume it there.
 
-Three different AIs (Claude, Gemini, GPT) share one farm in split-screen co-op and play as
-characters for YouTube videos: they talk, plan, split work, help each other, slack off, lie,
-get caught and betray each other. The story must emerge from the game, not from a script.
+## What the mod does
 
-### Requirements
-
-**Players and backends**
-- One game instance, split-screen local co-op with **4 screens** in the game's even 2×2 grid:
-  P1 = host, P2/P3 = local farmhands, each driven by an AI; **P4 = camera / summary screen**
-  for the video (no AI). P4's farmer is parked out of the way and excluded from the scheduler,
-  perception and interrupts; what P4 shows is chosen by studio through a generic mod API.
-- Each AI farmer has its own MCP endpoint: `/mcp/p1`, `/mcp/p2`, `/mcp/p3`.
-- The save needs 3 cabins (new co-op farm with starting cabins); the mod joins P2–P4 itself
-  (`GameRunner.AddGameInstance`, no gamepads) and locks physical keyboard/mouse input on P1.
-- Backends are the CLIs the user already subscribes to: `claude` (Claude), `agy` (Gemini),
-  `opencode` (GPT). Each session gets only the stardew MCP tools (no shell, no file edits).
-  A direct API backend may be added later per player if a CLI proves unreliable.
-- Filmed models: P1 Claude Haiku 5.5 (`claude-haiku-5-5`), P2 Gemini 3.8 Flash (`agy`, `gemini-3.8-flash-*`),
-  P3 GPT-6 Luna (`opencode`, `gpt-6-luna`; needs an OpenAI-compatible provider in the user's opencode config).
-  The 3-day warm-up (rehearsal) uses all three seats.
-- Characters **emerge from experience** on top of the base model, not from hand-written personas (#48):
-  each AI writes its own `self` note (overwritten every evening, about 150 words) and a one-line `people`
-  note per other player. Only the owner and the viewers see them (overlay, like `think`); the strip shows
-  the new note when it is written. Writing is reminded, not forced. A persona file with an
-  optional secret goal stays an extra if the emerged characters turn out flat.
-- The AIs are strangers who just moved to the valley (decided 2026-10-19): no mention of viewers, a show, a
-  challenge, teammates or being an AI in anything they read. Farmer names stay `Claude` / `Gemini` / `GPT`;
-  nicknames พี่ส้ม / พี่ฟ้า / พี่เขียว come from Mayor Lewis's welcome letter (`runner/personas.py`) and day 1's
-  morning is their introduction. Nobody gives them a life goal: each finds what it lives for and writes it in `self`.
-  `think` is private thought with no coordinates, decimals or tool names.
-
-**Time: event-driven, no fixed rounds**
-- Each AI acts independently, one action at a time; nobody waits for a turn.
-- The world (clock *and* movement) is frozen whenever any AI is thinking, i.e. between its last
-  tool result and its next action. Thinking speed never costs game time, so a farmer standing
-  still has chosen to (`wait`, slacking), never "the model is slow".
-- A thinking timeout (config) makes a stuck or crashed AI's farmer idle so the world can continue.
-- Day shape: wake at 6:00 and play (no meeting phase; to plan together they go and find each other) →
-  evening private diary → everyone goes to bed. Day 1 tells them the other newcomers live in the nearby cabins.
-
-**Communication (two levels, decided 2026-10-19: no whisper, no shared plan board)**
-- `say`: real in-game chat box + text above the farmer's head, heard only by the AIs whose screen shows
-  the speaker (same map, inside their view); viewers see it all. Plans and deals are made face to face.
-- `think`: private thought, viewers only (overlay). This is where secret plans and lies show.
-- `emote` (game emotes), `give` (hand an item to another player).
-
-**Perception and interrupts**
-- Observations of nearby players show what they are *actually* doing (current tool + time spent),
-  next to what they last heard them say, so lies can be caught.
-- These events interrupt a running long action (walk, wait, farm work) and return control to the
-  AI with the event list: being @mentioned, another player coming into view,
-  someone taking from your chest or harvesting your plot, receiving a gift, weather or crop damage.
-
-**Things to compete over**
-- Separate wallets (game multiplayer option), a personal plot and chest per player.
-
-**Separation: game vs. YouTube vs. AI orchestration**
-- `mod/` is gameplay only: per-player MCP, scheduler, chat, `/api/state`, and an
-  event stream `/api/events` (SSE). It never references OBS or video concerns.
-- `studio/` is the YouTube layer and optional: overlay (per-player think/chat), replay,
-  OBS director, recorder, story log for editing. It only reads the mod's HTTP API.
-  `studio/overlay.html` and `studio/replay.html` live here.
-- `runner/` launches and supervises the three AI sessions and the day loop.
-
-**Video**
-- Setup and run order: `docs/recording.md`. One episode (30–50 min) ≈ 10 in-game days = one unattended
-  batch; the VO is written from the logs and recorded afterwards in DaVinci Resolve.
-- Record the whole 2×2 grid at 3840×2160 (NVIDIA DSR 4.00x on a 1080p monitor, exclusive fullscreen):
-  1920×1080 per screen, so cropping one player onto a 1080p timeline needs no scaling. Focus shots are
-  made in editing (the director is not used while recording). Each AI's `/overlay?player=pN` strip (think,
-  diary, self note) is laid in OBS on the top left of its own quadrant; `say` stays in the game's chat.
-  Launch with `SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS=0` so the game keeps rendering when OBS has focus.
-- `obs_recorder.py --out` writes `video_map.jsonl` (one OBS file per day); `story_export.py` turns the
-  logs into Resolve markers and per-day story tables at video time.
-- An AI's provider down or over its usage limit holds the whole world (run-control pause) until it answers
-  (cap `--outage-cap-hours`, default 6); the runner holds the world whenever it exits.
-- Per-screen base zoom = 1.5 × (screen width / 960), keeping about 20 tiles in view.
-- Frozen frames must look like live ones: no "Paused" banner, HUD kept, no gamepad hint,
-  join/hosting chat lines or cursor. The recorder keeps cutting frozen time; a say's bubble and chat line wait their turn
-  (one line at a time per place, in the order said) and count only time the world runs, so talk shows over moving footage;
-  a menu an action opens (item box, letter) keeps recording; a think never holds a frozen frame; the evening diary and
-  self note are held.
-
-### Phases
-
-0. ~~Spike: split-screen with mod-driven farmers~~ (#37), **done: GO**. Findings and API names
-   are in the #37 comments; throwaway code on `spike/37-splitscreen` and `spike/37-layout`.
-1. Multi-player core (#38): split-screen setup (join P2–P4, focus/sleep fixes, P1 input lock,
-   recording-artefact patches, zoom), per-player endpoints and runtime, freeze-while-anyone-thinks
-   scheduler (`netWorldState.IsPaused`), thinking timeout, per-player logs.
-2. Social tools (#39): say, think, emote, give (whisper and the plan board were removed 2026-10-19).
-3. Perception and interrupts (#40).
-4. Runner for claude / agy / opencode with day phases and per-seat memory (#41). Before filming, a 3-day, 3-seat
-   warm-up on a throwaway save tests the emergent-persona mechanism (#48) and doubles as the recording rehearsal
-   (checklist in `docs/recording.md`).
-5. Studio (#42): `/api/events`, overlay and replay moved out, OBS director and scenes, recorder.
+- One game instance, optional split-screen co-op with **4 screens** in the game's 2×2 grid:
+  P1 = host, P2/P3 = local farmhands, each with its own MCP endpoint (`/mcp/p1`, `/mcp/p2`,
+  `/mcp/p3`); **P4 = camera seat** (no AI, parked out of the way, excluded from the scheduler,
+  perception and interrupts). Single-player mode is `/mcp` alone.
+- The mod joins P2–P4 itself (`GameRunner.AddGameInstance`, no gamepads), locks physical input on
+  P1 and keeps frozen frames looking live (no Paused banner, HUD kept, no gamepad hint).
+- **Time is event-driven.** Each AI acts independently, one action at a time. The world (clock and
+  movement) is frozen whenever any connected AI is thinking, i.e. between its last tool result and
+  its next action, so a slow model never loses game time. A thinking timeout (config) lets the
+  world continue when an AI is stuck.
+- **Communication** (decided 2026-10-19: no whisper, no shared plan board): `say` (in-game chat + bubble,
+  heard only by the AIs whose screen shows the speaker, so plans and deals are made face to face; a line
+  stays up `ChatSeconds`), `think` (private, overlay only), `emote`, `give`.
+- **Perception and interrupts**: observations show what nearby players are *actually* doing next
+  to what they last heard them say; mentions, gifts, theft, arrivals and weather interrupt a running
+  long action and come back as `Events:`.
+- The AIs only ever read farmer names, never seat ids (`p1`, `p2`...), in prompts, results and tool descriptions.
+- **Memory**: `journal` (diary, lessons, plan, notes), `self` / `people` notes that emerge from play.
+- **Seats** (`ModConfig.Seats`, `SeatRole`): each of P1–P4 is `ai`, `human` (P1 only, keyboard and mouse,
+  never frozen by the clock), `camera` or `off`. An `ai` seat is driven either by an external MCP client
+  (`Brain: none`, the studio runner) or by the mod's own loop (`Brain: anthropic | openai | gemini`).
+- Separate wallets, a personal plot and chest per player are game options the save provides.
 
 ## Layout
 
@@ -108,19 +41,20 @@ get caught and betray each other. The story must emerge from the game, not from 
 mod/StardewMCP/
   ModEntry.cs          SMAPI entry: config, events, auto-load, mcp_freeze command
   Pathfinder.cs        A* walking routes; IsWalkable uses the game's own collision check
+  assets/              overlay.html and replay.html (served at /overlay and /replay), system_prompt.md (the built-in AI's prompt)
   Agent/
     AgentHttp.cs       HttpListener on localhost:8770: /mcp, /overlay, /replay, /api/*
     AgentRuntime.cs    Runs tool calls on the game thread as coroutines; freezes time between calls
     AgentTools.cs      Tool definitions (ToolDef) and their coroutines
-    MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters (part of AgentTools)
+    MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters
     SocialTools.cs     say (heard only by screens that show the speaker) / emote / give; per-seat inbox appended to the next tool result
-    Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat events (mention, gift, theft, arrival, weather) that interrupt a running action
-    CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound (reflection for unchecked game members) are shared with Joja (#26)
-    JojaTools.cs       joja: membership (confirm guard) / projects / buy_project, and the route decision record
+    Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat interrupt events
+    CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound shared with Joja
+    JojaTools.cs       joja: membership (confirm guard) / projects / buy_project
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
-    JournalTools.cs    journal(diary, lessons, plan, notes, day): the AI's memory across days; go_to_bed needs today's
-    ToolResult.cs      Reason codes, partial flag and counts of tool results; MCP reply tag + structuredContent; day_XXX_summary.json
+    JournalTools.cs    journal(diary, lessons, plan, notes, day); go_to_bed needs today's
+    ToolResult.cs      Reason codes, partial flag and counts; MCP reply tag + structuredContent; day_XXX_summary.json
     ModConfig.cs       config.json settings
     DebugApi.cs        /api/debug/* and /api/debug/p{N}/* test hooks (warp, build_cabins, capture...), off by default
     Players.cs         The 4 split-screen seats (P1-P3 AI, P4 camera) and their per-screen state
@@ -129,28 +63,18 @@ mod/StardewMCP/
     SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
     SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
     RunControl.cs      Pause / stop_after_day / stop_now (F8, POST /api/control), unknown-menu watch for go_to_bed
-studio/
-  overlay.html         OBS browser-source overlay; ?player=pN = one AI's think box for the top left of its quadrant
-  replay.html          Day-by-day replay of the logs
-  director.py          OBS scene switcher driven by /api/events (SSE)
-  test_director.py     Unit tests for director scene picking
-runner/
-  smoke.py             LLM-free tool tests on a smoke_* copy of the save (gate for run_days.py)
-  run_days.py          One `claude -p` session per in-game day
-  multi_runner.py      Multi-seat day: free play from 6:00, outage hold (world paused until the provider answers)
-  agy_tool_guard.py    agy PreToolUse hook (written per workdir): only the seat's stardew server, everything else denied
-  game_watchdog.py     Detects a game crash/hang, relaunches with AutoLoadSave, replays the day (max 2 retries)
-  run_control.py       Pause / stop flags for run_days.py (graceful Ctrl+C); CLI: run_control.py pause|resume|stop_after_day|stop_now
-  save_backup.py       Backs up the save named by /api/state saveFolder (never smoke_*), keeps the last N
-  restore_day.py       Rolls the farm back to the end of a day (for mod bugs), sets later files aside in abandoned/
-  tool_results.py      Reason codes and result tags (Python side of ToolResult.cs); day summary printing
-  obs_recorder.py      Pauses OBS recording while the game is frozen; one file per day; --out writes video_map.jsonl
-  story_export.py      Logs + video_map.jsonl -> edit/markers.csv (Resolve) and edit/story_day_NNN.md
-  memory.py            Lessons / plan / notes injected into the system prompt; batch-end consolidation
-  stats.py             batch_report.md, usage_NNN.json, the Thai morning stats line (from the mod's stats files)
-  compare_runs.py      Two runs side by side at checkpoint days
-  tests/               pytest for memory.py, stats.py and compare_runs.py (no game needed)
-  system_prompt.md     System prompt used by run_days.py
+    Hud.cs             In-game panel per AI screen (name, model, action or thinking time, last think / say); fed by AgentLog.Added
+    ConfigMenu.cs      Generic Mod Config Menu pages (optional dependency; IGenericModConfigMenuApi.cs is the copied API)
+    Cabins.cs          Builds the farmhands' cabins (AutoBuildCabins, debug build_cabins)
+    Brain/             The built-in AI loop ("viewer edition": the mod plays a seat itself with the user's API key)
+      Llm.cs           Provider-neutral chat types, ILlmProvider, LlmProviders factory, SchemaFilter (game-free)
+      AnthropicProvider.cs / OpenAiProvider.cs / GeminiProvider.cs   Wire formats (game-free; OpenAI = any compatible server)
+      Prompts.cs       System prompt from assets/system_prompt.md + memory files; morning / nudge / handoff texts (game-free)
+      SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; breaks, retries (no meeting phase)
+      Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
+mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
+mod/tests/             pytest lints over the C# source and the overlay pages (see Tests)
+docs/coverage.md       Which game features the tools cover, and how to add one
 ```
 
 ## How it works
@@ -179,15 +103,16 @@ dotnet build -p:EnableModDeploy=false -p:EnableModZip=false   # compile check on
 The mod build needs the game's DLLs (ModBuildConfig), so CI and the test projects never build it.
 
 ```
-dotnet test mod/StardewMCP.Tests                                  # C# xUnit, game-free
-pip install pytest && python -m pytest -q runner/tests studio     # Python
+dotnet test mod/StardewMCP.Tests          # C# xUnit, game-free
+pip install pytest && python -m pytest -q mod/tests   # Python lints over the source and the pages
 ```
 
 ```
 mod/StardewMCP.Tests/  Does NOT reference the mod project; compiles the game-free mod files below via
                        <Compile Include Link> and shims Point/Vector2 (Shims/XnaTypes.cs)
-runner/tests/          pytest: run_days.py stream parsing / diaries / day rollover, tool schemas read from the C# source
-runner/samples/        Synthetic claude stream-json transcripts, game logs and diaries used by those tests
+mod/tests/             test_tool_sources.py: tool schemas read from the C# source (snake_case names, reason
+                       on actions, required in properties); test_i18n.py: overlay/replay language tables (needs node);
+                       test_crop_math.py, test_bobber_controller.py: Python twins of KnowledgeMath.cs and BobberController.cs
 ```
 
 Game-free mod files (no `Game1`, `GameLocation`, `Farmer`; linked into the tests):
@@ -199,11 +124,17 @@ mod/StardewMCP/Agent/ToolArgs.cs     Schema and argument helpers (Obj, Str, Int,
 mod/StardewMCP/Agent/ToolContract.cs Rules for tools/list (valid schema, required in properties, reason on actions); logged at startup
 mod/StardewMCP/Agent/McpDispatcher.cs JSON-RPC handling over IMcpSeat; McpSeat.cs adapts a real seat for AgentHttp
 mod/StardewMCP/Agent/WorldText.Format.cs  FormatTime, DirName, part of WorldText
+mod/StardewMCP/Agent/BubbleText.cs   Line breaking for the speech bubbles (Thai-aware)
+mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, timed only while the world runs
+mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts
 ```
 
 New logic that can run without the game goes into such a file with a test; keep moves small and leave a
 forwarder behind. A tool's `reason`, snake_case name and `required` list are checked by `ToolContract` and
-`runner/tests/test_tool_sources.py`.
+`mod/tests/test_tool_sources.py`.
+
+In-game behaviour is checked by the studio repo's smoke tests (`runner/smoke.py`, LLM-free, through
+`/api/debug/*` on a `smoke_*` copy of a save). A feature row in `docs/coverage.md` becomes ✅ only with such a case.
 
 ## Rules
 
@@ -212,4 +143,5 @@ forwarder behind. A tool's `reason`, snake_case name and `required` list are che
 - Never commit game files, saves, logs or personal paths.
 - New game features follow `docs/coverage.md`: reuse the game's own entry points, and update the
   feature's row in the same PR.
+- The HTTP API (`/api/*`, `/api/events`) is the contract with the studio repo: add to it, don't break it.
 - Reference: https://stardewvalleywiki.com/Modding:Modder_Guide/APIs

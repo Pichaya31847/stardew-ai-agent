@@ -428,40 +428,7 @@ public static class DebugApi
         { c.Fail("build_cabins only runs on smoke_* save copies"); yield break; }
 
         int want = Math.Clamp(I(a, "n", 3), 1, 7);
-        var farm = Game1.getFarm();
-        var built = new List<string>();
-        int w = farm.Map.Layers[0].LayerWidth, h = farm.Map.Layers[0].LayerHeight;
-        for (int y = 8; y < h - 6 && built.Count < want; y++)
-        {
-            for (int x = 8; x < w - 8 && built.Count < want; x++)
-            {
-                // A cabin is 5x3 plus a front row; only use plain buildable ground.
-                bool ok = true;
-                for (int dy = 0; dy < 4 && ok; dy++)
-                    for (int dx = 0; dx < 5 && ok; dx++)
-                    {
-                        int tx = x + dx, ty = y + dy;
-                        if (farm.doesTileHaveProperty(tx, ty, "Buildable", "Back") == null && farm.doesTileHaveProperty(tx, ty, "Diggable", "Back") == null)
-                            ok = false;
-                        else if (farm.getBuildingAt(new Microsoft.Xna.Framework.Vector2(tx, ty)) != null || farm.resourceClumps.Any(r => r.occupiesTile(tx, ty)))
-                            ok = false;
-                    }
-                if (!ok) continue;
-                for (int dy = 0; dy < 4; dy++)
-                    for (int dx = 0; dx < 5; dx++)
-                    {
-                        var t = new Microsoft.Xna.Framework.Vector2(x + dx, y + dy);
-                        farm.objects.Remove(t);
-                        farm.terrainFeatures.Remove(t);
-                    }
-                if (!farm.buildStructure("Cabin", new Microsoft.Xna.Framework.Vector2(x, y), Game1.player, out var b, magicalConstruction: true, skipSafetyChecks: true))
-                    continue;
-                if (b.GetIndoors() is StardewValley.Locations.Cabin cabin && !cabin.HasOwner)
-                    cabin.CreateFarmhand();
-                built.Add($"({x},{y})");
-                x += 6;
-            }
-        }
+        var built = Cabins.Build(want);
         if (built.Count < want) { c.Fail($"Built {built.Count} of {want} cabins: {string.Join(" ", built)}"); yield break; }
         c.Result = $"Built {built.Count} cabins at {string.Join(" ", built)}";
     }

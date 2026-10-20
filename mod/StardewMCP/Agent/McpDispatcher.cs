@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -43,9 +44,12 @@ public class McpDispatcher
     public const string ProtocolFallback = "2025-06-18";
 
     private readonly IReadOnlyDictionary<string, ToolDef> _tools;
-    private readonly bool _splitScreen;
+    private readonly Func<bool> _splitScreen;
 
-    public McpDispatcher(IReadOnlyDictionary<string, ToolDef> tools, bool splitScreen)
+    public McpDispatcher(IReadOnlyDictionary<string, ToolDef> tools, bool splitScreen) : this(tools, () => splitScreen) { }
+
+    /// <summary><paramref name="splitScreen"/> is read on each initialize, so a config change applies to the next session.</summary>
+    public McpDispatcher(IReadOnlyDictionary<string, ToolDef> tools, Func<bool> splitScreen)
     {
         _tools = tools;
         _splitScreen = splitScreen;
@@ -91,7 +95,7 @@ public class McpDispatcher
                     protocolVersion = ver ?? ProtocolFallback,
                     capabilities = new { tools = new { listChanged = false } },
                     serverInfo = new { name = "stardew", version = "2.0.0" },
-                    instructions = _splitScreen
+                    instructions = _splitScreen()
                         ? "You live on a shared Stardew Valley farm with other newcomers. The whole world is frozen while you or another player is thinking, and only moves while actions run."
                         : "You are playing Stardew Valley. Game time is frozen while you think and only moves while an action runs."
                 });

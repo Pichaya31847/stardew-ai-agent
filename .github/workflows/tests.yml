@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   python:
-    name: Runner and studio (pytest)
+    name: Mod source lints (pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pytest
-      - run: python -m pytest -q runner/tests studio
+      - run: python -m pytest -q mod/tests
 
   dotnet:
     name: Game-free C# tests (dotnet test)

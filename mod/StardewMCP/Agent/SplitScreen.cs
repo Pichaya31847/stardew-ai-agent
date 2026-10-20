@@ -24,6 +24,7 @@ public static class SplitScreen
     private static readonly Stopwatch _joinWatch = new();
     private static int _joiningScreen = -1;
     private static bool _gaveUp;
+    private static bool _cabinsTried;
     private static string? _lastProblem;
     private static readonly int[] _menuTicks = new int[Players.Seats];
 
@@ -40,6 +41,9 @@ public static class SplitScreen
     /// <summary>Farmhand name for a seat (P2..P4); P1 is the save's own farmer.</summary>
     public static string NameFor(int screen)
     {
+        var own = _config.Seat(screen).Name;
+        if (!string.IsNullOrWhiteSpace(own))
+            return own.Trim();
         var names = _config.FarmhandNames;
         int i = screen - 1;
         return i >= 0 && i < names.Length && !string.IsNullOrWhiteSpace(names[i]) ? names[i].Trim() : $"P{screen + 1}";
@@ -51,6 +55,7 @@ public static class SplitScreen
         {
             _sinceLoad.Restart();
             _gaveUp = false;
+            _cabinsTried = false;
             _lastProblem = null;
         }
     }
@@ -104,7 +109,7 @@ public static class SplitScreen
             }
             return;
         }
-        if (_gaveUp || screens >= Players.Seats)
+        if (_gaveUp || screens >= Players.ScreenCount)
             return;
 
         int free = 0;
@@ -115,8 +120,18 @@ public static class SplitScreen
         });
         if (free == 0)
         {
-            Problem($"Split-screen needs {Players.Seats - screens} more free cabin(s) on the farm (have {screens} of {Players.Seats} players). " +
-                    "Start a co-op farm with 3 starting cabins, or build them.");
+            int missing = Players.ScreenCount - screens;
+            if (_config.AutoBuildCabins && !_cabinsTried)
+            {
+                _cabinsTried = true;
+                var built = Cabins.Build(missing);
+                _monitor.Log($"Split-screen: built {built.Count} cabin(s) for the farmhands: {string.Join(", ", built)}", LogLevel.Info);
+                Players.Host.Runtime.Log.Add("system", text: $"Built {built.Count} cabin(s) for the farmhands");
+                if (built.Count > 0)
+                    return; // the next tick sees the free cabins
+            }
+            Problem($"Split-screen needs {missing} more free cabin(s) on the farm (have {screens} of {Players.ScreenCount} players). " +
+                    "Start a co-op farm with starting cabins, build them, or turn on AutoBuildCabins.");
             return;
         }
 

@@ -1,10 +1,10 @@
 {
   "Name": "Stardew MCP",
   "Author": "Duckxy",
-  "Version": "0.1.0",
-  "Description": "Lets an AI agent (Claude or any MCP client) play Stardew Valley through an in-game MCP server.",
+  "Version": "0.2.0",
+  "Description": "AI farmers for Stardew Valley: up to three AIs (Claude, GPT, Gemini or a local model) play split-screen co-op with you, or any MCP client plays through the in-game MCP server.",
   "UniqueID": "Duckxy.StardewMCP",
   "EntryDll": "StardewMCP.dll",
   "MinimumApiVersion": "4.0.0",
-  "UpdateKeys": []
+  "UpdateKeys": [ "GitHub:duckxy166/stardew-ai-agent" ]
 }

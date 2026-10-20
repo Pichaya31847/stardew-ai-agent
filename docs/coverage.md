@@ -209,7 +209,7 @@ What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselv
 
 ## Keeping it complete
 
-- A PR that adds coverage updates its row and adds a `runner/smoke.py` case. A 🟡 row needs a
+- A PR that adds coverage updates its row and adds a smoke case (`runner/smoke.py` in the studio repo, which drives `/api/debug/*`). A 🟡 row needs a
   smoke case before it becomes ✅.
 - Where to look for gaps in the decompiled game:
   - `GameLocation.performAction`: about 120 tile actions. The `performAction` overrides in
