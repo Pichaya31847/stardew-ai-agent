@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1] / "StardewMCP" / "assets"  # the pages the mod serves
 NODE = shutil.which("node") or "/opt/node22/bin/node"
 THAI = re.compile("[฀-๿]")
 pytestmark = pytest.mark.skipif(not Path(NODE).exists() and not shutil.which("node"), reason="node not installed")

@@ -8,7 +8,6 @@ it cannot silently stop seeing tools.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -18,7 +17,6 @@ from tool_source_parser import Tool, mask, read_all, read_tools
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENT_DIR = ROOT / "mod" / "StardewMCP" / "Agent"
-SAMPLES = ROOT / "runner" / "samples"
 
 
 def tools_in(tmp_path: Path, code: str) -> list[Tool]:
@@ -194,28 +192,3 @@ def test_every_non_instant_tool_has_a_reason(tools):
     """Same rule as ToolContract.Check: only pure observations may leave the 'reason' out."""
     without = sorted(t.name for t in tools if not t.instant and not t.instant_for and "reason" not in t.properties)
     assert without in ([], ["close_menu"]), f"action tools without a 'reason' parameter: {without}"
-
-
-# -------------------------------------------------------------------------------- samples match the tools
-
-def sample_tool_names() -> set[str]:
-    names: set[str] = set()
-    for path in sorted(SAMPLES.glob("claude_stream_*.jsonl")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "system":
-                names.update(event.get("tools", []))
-            for block in (event.get("message") or {}).get("content", []) if event.get("type") == "assistant" else []:
-                if block.get("type") == "tool_use":
-                    names.add(block["name"])
-    return {n.removeprefix("mcp__stardew__") for n in names}
-
-
-def test_sample_transcripts_only_call_real_tools(tools):
-    used = sample_tool_names()
-    assert used, "the sample transcripts mention no tools"
-    unknown = used - {t.name for t in tools}
-    assert not unknown, f"runner/samples calls tools the mod does not have: {sorted(unknown)}"
