@@ -108,7 +108,7 @@ public class McpDispatcher
                 if (!_tools.TryGetValue(name, out var tool))
                     return Ok(id, seat.ErrorReply("not_found", $"Unknown tool {name}"));
                 if (!seat.Active)
-                    return Ok(id, seat.ErrorReply("not_ready", $"Player {seat.Id} is not in the game yet (title screen, loading or still joining). Wait and try again."));
+                    return Ok(id, seat.ErrorReply("not_ready", "Your farmer is not in the game yet (title screen, loading or still joining). Wait and try again."));
                 return Ok(id, await seat.CallToolReply(tool, args));
             default:
                 return new { jsonrpc = "2.0", id, error = new { code = -32601, message = $"Method not found: {method}" } };

@@ -174,7 +174,7 @@ public class McpDispatcherTests
             "{'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'look','arguments':{}}}");
 
         Assert.True(response.GetProperty("result").GetProperty("isError").GetBoolean());
-        Assert.Contains("p3", ResultText(response));
+        Assert.DoesNotContain("p3", ResultText(response)); // the AIs never see seat ids
         Assert.Contains("not in the game yet", ResultText(response));
         Assert.Empty(seat.Calls);
     }

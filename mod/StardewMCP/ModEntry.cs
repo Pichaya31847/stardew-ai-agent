@@ -52,6 +52,9 @@ public class ModEntry : Mod
         {
             Briefing.OnDayStarted();
             JojaRoute.OnDayStarted();
+            // a 0 stack (left by an older eat) blocks its slot forever: this screen's farmer drops it
+            for (int i = 0; i < Game1.player.Items.Count; i++)
+                if (Game1.player.Items[i] is { Stack: <= 0 }) Game1.player.Items[i] = null;
         };
         // The day's log is complete here: write day_XXX_summary.json (failure reasons per tool).
         helper.Events.GameLoop.DayEnding += (_, _) => { if (Context.ScreenId == 0) DaySummary.Write(_log, AgentLog.FarmDay, Monitor); };
@@ -98,6 +101,14 @@ public class ModEntry : Mod
         Briefing.Tick(seat, e.IsMultipleOf(300));
         if (e.IsMultipleOf(15))
             seat.State = ScreenState.Capture();
+        // Local split-screen stops the clock once every screen asks to (a menu, or a farmer that cannot move). The parked
+        // camera must never ask: with the three AIs waiting in bed the clock stopped at 18:20 and 2:00 AM never came (2026-10-20)
+        if (seat.Role == SeatRole.Camera && Context.IsWorldReady)
+        {
+            Game1.player.requestingTimePause.Value = false;
+            if (e.IsMultipleOf(60))
+                ParkCameraInBed();
+        }
 
         if (seat.Screen == 0)
         {
@@ -107,6 +118,25 @@ public class ModEntry : Mod
             if (e.IsMultipleOf(15))
                 _http.RefreshState();
         }
+    }
+
+    /// <summary>
+    /// Keep the camera farmer on its own bed. A screen only fades into the night when its farmer is in bed (Game1.NewDay), and the
+    /// game counts a farmer as in bed by the tile it stands on. Once the camera stood at its cabin door, the AIs' screens went
+    /// black but the night waited for the camera forever (days 6-7, 2026-10-20).
+    /// </summary>
+    private static void ParkCameraInBed()
+    {
+        var p = Game1.player;
+        if (p.isInBed.Value || Game1.newDay || Game1.fadeToBlack || Game1.isWarping || Game1.eventUp || Game1.activeClickableMenu != null)
+            return;
+        if (Utility.getHomeOfFarmer(p) is not { } home)
+            return;
+        var bed = home.GetPlayerBedSpot();
+        if (p.currentLocation == home)
+            p.Position = new Microsoft.Xna.Framework.Vector2(bed.X * 64, bed.Y * 64);
+        else
+            Game1.warpFarmer(home.NameOrUniqueName, bed.X, bed.Y, false);
     }
 
     /// <summary>For unattended runs: load the configured save once the title screen is up.</summary>

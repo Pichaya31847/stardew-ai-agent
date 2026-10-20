@@ -48,6 +48,8 @@ public class AgentRuntime
     /// <summary>Profession choices (skill, level) waiting for choose_profession, and the game day they were offered.</summary>
     public List<Microsoft.Xna.Framework.Point> PendingProfessions { get; } = new();
     public int PendingProfessionDay { get; set; }
+    /// <summary>Farm day the "too early for bed" note was given (once a day, see go_to_bed).</summary>
+    public int EarlyBedDay { get; set; }
     public ModConfig Config { get; }
     public IModHelper Helper { get; }
 
@@ -262,7 +264,8 @@ public class AgentRuntime
                 return;
 
             _ticksInCall++;
-            if (_ticksInCall > 60 * 60 * 6)
+            // go_to_bed waits for the others until 2:00 AM at the latest and keeps its own, longer limit
+            if (_ticksInCall > 60 * 60 * 6 && Current!.Tool.Name != "go_to_bed")
             {
                 _ctx!.Fail(Reasons.Timeout, "Action timed out after 6 minutes of real time.");
                 Finish();

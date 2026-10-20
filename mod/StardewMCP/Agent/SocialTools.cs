@@ -46,15 +46,13 @@ public static class SocialTools
 
     private static void DrawBubble_Postfix(Farmer __instance, SpriteBatch b)
     {
+        float lift = DrawName(__instance, b);
         if (__instance.currentLocation is not { } loc || Speech.Showing(loc.NameOrUniqueName) is not { } line
             || line.Speaker != __instance.UniqueMultiplayerID) return;
-        if (!Game1.viewport.Contains(new xTile.Dimensions.Location(__instance.StandingPixel.X, __instance.StandingPixel.Y)))
-            return; // viewers watch one screen: a sliver of an unseen speaker's bubble at its edge only confuses
         var widest = line.Lines.MaxBy(l => SpriteText.getWidthOfString(l))!; // every line's box gets this width
-        float x = OnScreen(__instance, SpriteText.getWidthOfString(widest) + 64), bottom = __instance.StandingPixel.Y - 192;
-        // the top line starts at least BubbleTopMargin down the screen (it may then cover the head: better than hidden text)
-        float minTop = Game1.viewport.Y + AgentTools.Config.BubbleTopMargin * Game1.viewport.Height;
-        bottom = Math.Max(bottom, minTop + (line.Lines.Count - 1) * BubbleLineHeight);
+        // at its real place in the world, the same on every screen, cut at the edge like the game's own bubbles: kept
+        // on screen it was pushed over other farmers and stood where the speaker wasn't (2026-10-19)
+        float x = __instance.StandingPixel.X, bottom = __instance.StandingPixel.Y - 192 - lift;
         for (int i = 0; i < line.Lines.Count; i++)
         {
             var at = Game1.GlobalToLocal(new Vector2(x, bottom - (line.Lines.Count - 1 - i) * BubbleLineHeight));
@@ -62,14 +60,23 @@ public static class SocialTools
         }
     }
 
-    /// <summary>Bubble centre over the speaker, kept on screen and clear of the clock and money box in the top right.</summary>
-    private static float OnScreen(Farmer f, int w)
+    /// <summary>
+    /// The AI farmer's name above its head, so viewers can tell who is who; drawn the way the game's own
+    /// <c>Farmer.DrawUsername</c> does (white small font, black outline), which the game never shows in split-screen.
+    /// Returns how far a bubble must rise to clear it (0 when no name is drawn). Drawn under the bubbles (0.99): where a
+    /// bubble still meets a name (a neighbour's), the words win.
+    /// </summary>
+    private static float DrawName(Farmer f, SpriteBatch b)
     {
-        float at = f.StandingPixel.X;
-        var v = Game1.viewport;
-        float hud = StardewValley.Menus.DayTimeMoneyBox.width * Game1.options.uiScale / Game1.options.zoomLevel;
-        float left = v.X + w / 2f, right = v.X + v.Width - hud - w / 2f;
-        return left < right ? Math.Clamp(at, left, right) : at;
+        if (!Players.Slots.Any(s => s.Role == SeatRole.Ai && NameOf(s) == f.Name)) return 0;
+        var size = Game1.smallFont.MeasureString(f.Name);
+        var at = f.getLocalPosition(Game1.viewport) + new Vector2(32f, -104f) - size / 2f;
+        for (int i = -1; i <= 1; i++)
+        for (int j = -1; j <= 1; j++)
+            if (i != 0 || j != 0)
+                b.DrawString(Game1.smallFont, f.Name, at + new Vector2(i, j) * 2f, Color.Black, 0f, Vector2.Zero, 1f, SpriteEffects.None, 0.98f);
+        b.DrawString(Game1.smallFont, f.Name, at, Color.White, 0f, Vector2.Zero, 1f, SpriteEffects.None, 0.9801f);
+        return size.Y + 24; // the scroll's lower edge and tail hang below its text
     }
 
     // All of these are marked Instant: talking costs no game time, so they run even while the world is

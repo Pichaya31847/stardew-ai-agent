@@ -310,6 +310,7 @@ public class AgentHttp
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         SessionBreaks.Observe(seat.Id, root, req.QueryString["breaks"]); // "initialize" starts a session; /mcp?breaks=1 opts in (#30)
+        seat.ReplyWithinSeconds = int.TryParse(req.QueryString["reply_within"], out var within) ? within : 0; // agy gives up after 3 minutes
 
         var reply = await _mcp.Handle(root, new McpSeat(seat));
         if (reply.Body == null) { res.StatusCode = reply.Status; res.Close(); return; }

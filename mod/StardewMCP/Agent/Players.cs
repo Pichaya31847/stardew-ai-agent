@@ -33,6 +33,9 @@ public class PlayerSlot
     /// <summary>Set by <see cref="WorldClock"/> when this AI thought longer than the configured timeout.</summary>
     public volatile bool TimedOut;
 
+    /// <summary>The MCP client gives up on a call after this many seconds (<c>?reply_within=N</c>; 0 = it waits); <see cref="Perception"/> answers in time.</summary>
+    public volatile int ReplyWithinSeconds;
+
     /// <summary>Latest per-screen state for /api/state, written on this screen's tick.</summary>
     public volatile object? State;
 
@@ -87,6 +90,13 @@ public class ScreenState
     public string? Menu { get; init; }
     public string? Dialogue { get; init; }
 
+    /// <summary>The sleep ready check as this screen sees it ("ready/required"), while it is open: why a night does not begin.</summary>
+    public string? Sleep { get; init; }
+    /// <summary>This screen asks the game to stop the clock (local split-screen stops it once every screen asks).</summary>
+    public bool TimePause { get; init; }
+    /// <summary>The night as this screen sees it (newDay flag, fade, new-day sync), once one of them is set: where a stalled night waits.</summary>
+    public string? Night { get; init; }
+
     /// <summary>How many gift tastes this player has found out (they are discovered by gifting, not known from the start).</summary>
     public int KnownTastes { get; init; }
 
@@ -97,6 +107,15 @@ public class ScreenState
     /// <summary>This screen shows <paramref name="who"/> (same map, inside the view).</summary>
     public bool Sees(Farmer who) =>
         Map != null && who.currentLocation?.NameOrUniqueName == Map && View.Contains(who.StandingPixel);
+
+    private static string? NightState()
+    {
+        var sync = Game1.newDaySync;
+        bool inSync = sync?.hasInstance() == true;
+        if (!Game1.newDay && !Game1.fadeToBlack && !inSync)
+            return null;
+        return $"newDay:{Game1.newDay} fade:{Game1.fadeToBlack} sync:{(inSync ? (sync!.hasStarted() ? "started" : "created") : "none")}";
+    }
 
     /// <summary>Must run on the game thread during that screen's update.</summary>
     public static ScreenState Capture()
@@ -118,6 +137,11 @@ public class ScreenState
             Menu = menu?.GetType().Name,
             Dialogue = menu is StardewValley.Menus.DialogueBox box ? box.characterDialogue?.speaker?.displayName ?? "" : null,
             KnownTastes = NpcKnowledge.Count(p),
+            Sleep = menu is StardewValley.Menus.ReadyCheckDialog { checkName: "sleep" } || Context.IsMainPlayer && Game1.netReady.GetNumberRequired("sleep") > 0
+                ? $"{Game1.netReady.GetNumberReady("sleep")}/{Game1.netReady.GetNumberRequired("sleep")}{(Game1.netReady.IsReady("sleep") ? " done" : "")}"
+                : null,
+            TimePause = p.requestingTimePause.Value,
+            Night = NightState(),
             Map = Game1.currentLocation?.NameOrUniqueName,
             View = new Microsoft.Xna.Framework.Rectangle(Game1.viewport.X, Game1.viewport.Y, Game1.viewport.Width, Game1.viewport.Height)
         };

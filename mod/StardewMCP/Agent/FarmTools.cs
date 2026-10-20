@@ -53,8 +53,12 @@ public static partial class AgentTools
         Name = "water_all",
         Description = "Water every unwatered crop on the current map (dead crops and crops that are ready to harvest are skipped). " +
                       "Refills the watering can at the nearest water by itself when it runs dry. Stops, and tells you why, when energy is low, a menu opens or it is late; " +
-                      "it never eats for you. Reports watered / still dry. If it is raining the rain has already done the work.",
-        Schema = Obj(new { reason = Str(ReasonDesc) }, "reason"),
+                      "it never eats for you. Reports watered / still dry and whose crops they were. If it is raining the rain has already done the work.",
+        Schema = Obj(new
+        {
+            whose = Str("all (default): every unwatered crop on the map, whoever planted it; mine: only the crops you planted"),
+            reason = Str(ReasonDesc)
+        }, "reason"),
         Run = WaterAll
     };
 
@@ -156,6 +160,13 @@ public static partial class AgentTools
     /// <summary>A growing crop that is dry: not dead, not waiting for harvest, not watered.</summary>
     private static bool FarmCropNeedsWater(GameLocation loc, int x, int y) =>
         FarmDirt(loc, x, y) is { crop: not null } d && !d.crop.dead.Value && !d.readyForHarvest() && !d.isWatered();
+
+    /// <summary>Seat id of the farmer who planted the crop on this tile, or null when nobody is recorded.</summary>
+    private static string? FarmCropOwner(GameLocation loc, int x, int y) => FarmDirt(loc, x, y) is { } d ? Ownership.OwnerOf(d) : null;
+
+    /// <summary>"yours", "Gemini's" or "nobody's" for a watered-crops count; the AIs never see seat ids.</summary>
+    private static string CropOwnerLabel(string owner, string me) => owner == me ? "yours"
+        : Players.Slots.FirstOrDefault(s => s.Id == owner) is { } slot ? SocialTools.Label(slot) + "'s" : "nobody's";
 
     /// <summary>A ripe crop on this tile.</summary>
     private static bool FarmRipeCrop(GameLocation loc, int x, int y) =>
@@ -362,13 +373,19 @@ public static partial class AgentTools
         if (slot < 0) { c.Fail("You don't have a Watering Can. Check inventory."); yield break; }
         var can = (WateringCan)P.Items[slot];
 
-        var todo = FarmTilesWhere(loc, FarmCropNeedsWater);
+        // the farmers share one farm: "mine" keeps to the crops this seat planted (2026-10-20: plots split by agreement, but
+        // water_all could only water everyone's)
+        bool mineOnly = S(a, "whose").Trim().Equals("mine", StringComparison.OrdinalIgnoreCase);
+        string me = Players.Current.Id;
+        var todo = FarmTilesWhere(loc, (l, x, y) => FarmCropNeedsWater(l, x, y) && (!mineOnly || FarmCropOwner(l, x, y) == me));
         if (todo.Count == 0)
         {
             bool rain = loc is Farm && (Game1.isRaining || Game1.isLightning);
-            c.Result = rain ? "It is raining: the rain watered every crop. Nothing to do." : $"No unwatered crops on {loc.Name}.";
+            c.Result = rain ? "It is raining: the rain watered every crop. Nothing to do."
+                : $"No unwatered crops{(mineOnly ? " of yours" : "")} on {loc.Name}.";
             yield break;
         }
+        var byOwner = new Dictionary<string, int>();
 
         var remaining = RouteOrder(todo, P.TilePoint);
         int watered = 0, wet = 0, refills = 0, visited = 0;
@@ -401,12 +418,19 @@ public static partial class AgentTools
             P.CurrentToolIndex = slot;
             yield return Swing(t);
             if (FarmCropNeedsWater(loc, t.X, t.Y)) problems.Add($"({t.X},{t.Y}) is still dry after watering");
-            else watered++;
+            else
+            {
+                watered++;
+                var owner = FarmCropOwner(loc, t.X, t.Y) ?? "";
+                byOwner[owner] = byOwner.GetValueOrDefault(owner) + 1;
+            }
         }
 
         int dry = remaining.Count + problems.Count;
         var sb = new StringBuilder();
-        sb.Append($"Watered {watered} of {todo.Count} crops on {loc.Name}");
+        sb.Append($"Watered {watered} of {todo.Count} {(mineOnly ? "of your " : "")}crops on {loc.Name}");
+        if (byOwner.Keys.Any(o => o != me))
+            sb.Append(" (" + string.Join(", ", byOwner.OrderByDescending(kv => kv.Key == me).Select(kv => $"{kv.Value} {CropOwnerLabel(kv.Key, me)}")) + ")");
         if (refills > 0) sb.Append($" ({refills} refill{(refills == 1 ? "" : "s")})");
         sb.Append(dry == 0 ? ". partial=false" : $". {dry} still dry, partial=true");
         sb.Append($". Watering can {can.WaterLeft}/{can.waterCanMax}.");

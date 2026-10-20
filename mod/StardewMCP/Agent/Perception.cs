@@ -47,10 +47,11 @@ public static class Perception
     /// </summary>
     public static bool Interrupts { get; set; } = true;
 
-    // Tools that may be stopped, and only where nothing is half done: a wait at any time, the others while the farmer is walking.
+    // Tools that may be stopped, and only where nothing is half done: a wait or rest at any time, go_to_bed while it waits in
+    // bed for the others (the game lets a sleeper cancel then), the others while the farmer is walking.
     private static readonly HashSet<string> Stoppable = new()
     {
-        "walk_to", "travel_to", "wait", "use_tool", "plant", "harvest", "interact", "talk_to", "ship"
+        "walk_to", "travel_to", "wait", "rest", "go_to_bed", "use_tool", "plant", "harvest", "interact", "talk_to", "ship"
     };
 
     private static readonly ConcurrentQueue<SeenEvent>[] Queues = Enumerable.Range(0, Players.Seats).Select(_ => new ConcurrentQueue<SeenEvent>()).ToArray();
@@ -269,6 +270,7 @@ public static class Perception
             SampleWeather(seat);
             SampleCrows(seat);
         }
+        ReplyInTime(seat, rt);
         TryInterrupt(seat, rt);
     }
 
@@ -325,8 +327,11 @@ public static class Perception
                 detail = $"[{Hhmm()}] {label} came into view at ({t.X},{t.Y}), {dist} tile(s) away. " +
                          $"Actually doing: {DoingText(s)}. Claims: {ClaimsText(me, s)}.";
             }
-            Notify(me, enteredHome ? "house" : "arrived", shortText, detail);
-            me.Runtime.Log.Add("notice", text: detail, args: new { kind = enteredHome ? "house" : "arrived", who = s.Id });
+            // Both on their way to bed: not news, and waking each other right then left the night unable to begin (days 6-7, 2026-10-20).
+            bool bothToBed = me.Runtime.CurrentTool == "go_to_bed" && Acts[s.Screen]?.Tool == "go_to_bed";
+            if (!bothToBed)
+                Notify(me, enteredHome ? "house" : "arrived", shortText, detail);
+            me.Runtime.Log.Add("notice", text: detail, args: new { kind = enteredHome ? "house" : "arrived", who = s.Id, quiet = bothToBed ? true : (bool?)null });
         }
     }
 
@@ -397,6 +402,47 @@ public static class Perception
 
     // ------------------------------------------------------------------ interrupting
 
+    /// <summary>In bed waiting for the others: the sleep ready check is open and still cancelable (not once the night began).</summary>
+    private static bool Asleep(PendingCall call, AgentRuntime rt) =>
+        call.Tool.Name == "go_to_bed" && !rt.WakingUp &&
+        Game1.activeClickableMenu is StardewValley.Menus.ReadyCheckDialog { checkName: "sleep" } check && check.isCancelable();
+
+    /// <summary>
+    /// A client that gives up on a call after a few minutes (agy: 3, 2026-10-20) is answered before that. A sleeper is told
+    /// its day is over while go_to_bed keeps running, so it stays in bed; any other action stops at its next safe point.
+    /// </summary>
+    private static void ReplyInTime(PlayerSlot seat, AgentRuntime rt)
+    {
+        int limit = seat.ReplyWithinSeconds;
+        var call = rt.CurrentCall;
+        if (limit <= 0 || call == null || call.Instant || call.Done.Task.IsCompleted ||
+            (DateTime.UtcNow - call.Queued).TotalSeconds < limit) return;
+
+        if (Asleep(call, rt))
+        {
+            call.Done.TrySetResult((true, "You are asleep in bed, waiting for the others to go to bed too; the night begins " +
+                                          "when everyone is in bed. Your day is over: stop here."));
+            rt.Log.Add("system", text: "Answered go_to_bed early: asleep, waiting for the others");
+            return;
+        }
+        if (!Stoppable.Contains(call.Tool.Name)) return; // runs to its end; the 6-minute action timeout still applies
+
+        var p = Game1.player;
+        bool waiting = call.Tool.Name is "wait" or "rest";
+        if (Game1.activeClickableMenu != null || Game1.isWarping || Game1.fadeToBlack || Game1.newDay || Game1.eventUp || p.UsingTool) return;
+        if (!waiting && p.controller == null) return;
+        if (!waiting && Game1.getOnlineFarmers().Any(f => f != p && f.currentLocation == p.currentLocation && f.TilePoint == p.TilePoint)) return;
+        if (p.controller != null)
+        {
+            p.controller = null;
+            p.Halt();
+        }
+        var where = $"{Game1.currentLocation?.Name} ({p.TilePoint.X},{p.TilePoint.Y})";
+        if (rt.Interrupt($"Paused: your {call.Tool.Name} ran long and was stopped at {where} at {WorldText.FormatTime(Game1.timeOfDay)}; " +
+                         "nothing happened to you. Call it again to go on, or decide something else."))
+            rt.Log.Add("interrupt", call.Tool.Name, "reply_within", args: new { seconds = limit });
+    }
+
     /// <summary>
     /// Stop the seat's running walk, wait or farm action when it has unseen events. Never mid-swing, in a menu, during a warp or
     /// cutscene, and (for everything but <c>wait</c>) only while the farmer is walking between two steps of the job.
@@ -409,8 +455,11 @@ public static class Perception
         if (call == null || call.Instant || !Stoppable.Contains(call.Tool.Name)) return;
 
         var p = Game1.player;
-        if (Game1.activeClickableMenu != null || Game1.isWarping || Game1.fadeToBlack || Game1.eventUp || p.UsingTool) return;
-        bool waiting = call.Tool.Name == "wait";
+        // in bed waiting for the others: the sleep ready check is open and still cancelable (not once the night began)
+        bool asleep = Asleep(call, rt);
+        if (asleep && call.Done.Task.IsCompleted) return; // already told its day is over (ReplyInTime): it sleeps through
+        if ((Game1.activeClickableMenu != null && !asleep) || Game1.isWarping || Game1.fadeToBlack || Game1.newDay || Game1.eventUp || p.UsingTool) return;
+        bool waiting = call.Tool.Name is "wait" or "rest" || asleep;
         if (!waiting && p.controller == null) return;
         // farmers don't collide: stopping on another's tile stacks them, so the walk goes on to the next free tile first
         if (!waiting && Game1.getOnlineFarmers().Any(f => f != p && f.currentLocation == p.currentLocation && f.TilePoint == p.TilePoint)) return;
@@ -423,8 +472,11 @@ public static class Perception
             p.controller = null;
             p.Halt();
         }
-        var text = $"Interrupted: your {tool} was stopped at {where} before it finished, because {why}. " +
-                   "Its normal result is lost; use look or inventory to see how far it got, then decide what to do.";
+        var text = asleep
+            ? $"Woken up: you got out of bed at {WorldText.FormatTime(Game1.timeOfDay)} because {why}. The day goes on; " +
+              "call go_to_bed again when you want to sleep."
+            : $"Interrupted: your {tool} was stopped at {where} before it finished, because {why}. " +
+              "Its normal result is lost; use look or inventory to see how far it got, then decide what to do.";
         if (rt.Interrupt(text))
             rt.Log.Add("interrupt", tool, why, args: new { events = q.Select(e => e.Kind).Distinct().ToArray() });
     }

@@ -104,8 +104,4 @@ public class ModConfig
     /// <summary>Longest time in seconds an AI's `say` stays up: the bubble above its head and its line in the chat box
     /// (the game keeps chat lines 10 s, too long next to the other players' talk).</summary>
     public int ChatSeconds { get; set; } = 5;
-
-    /// <summary>Part of each screen's height, from its top edge, that speech bubbles stay below (0 = none), so a strip
-    /// laid over the top of a screen never covers what is said.</summary>
-    public float BubbleTopMargin { get; set; } = 0.12f;
 }
