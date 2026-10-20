@@ -124,7 +124,7 @@ public class ModEntry : Mod
         {
             Game1.player.requestingTimePause.Value = false;
             if (e.IsMultipleOf(60))
-                ParkCameraInBed();
+                ParkCameraInBed(Monitor);
         }
 
         if (seat.Screen == 0)
@@ -140,16 +140,22 @@ public class ModEntry : Mod
     /// <summary>
     /// Keep the camera farmer on its own bed. A screen only fades into the night when its farmer is in bed (Game1.NewDay), and the
     /// game counts a farmer as in bed by the tile it stands on. Once the camera stood at its cabin door, the AIs' screens went
-    /// black but the night waited for the camera forever (days 6-7, 2026-10-20).
+    /// black but the night waited for the camera forever (days 6-7, 2026-10-20). GetPlayerBedSpot falls back to the entry tile
+    /// when the home has no bed of the upgrade's type, which is that same door, so the bed itself is looked up.
     /// </summary>
-    private static void ParkCameraInBed()
+    private static void ParkCameraInBed(IMonitor monitor)
     {
         var p = Game1.player;
         if (p.isInBed.Value || Game1.newDay || Game1.fadeToBlack || Game1.isWarping || Game1.eventUp || Game1.activeClickableMenu != null)
             return;
         if (Utility.getHomeOfFarmer(p) is not { } home)
             return;
-        var bed = home.GetPlayerBedSpot();
+        if ((home.GetPlayerBed() ?? home.GetBed()) is not { } bedFurniture)
+        {
+            monitor.LogOnce($"The camera farmer {p.Name} has no bed in {home.NameOrUniqueName}, so the night can't start: put a bed in that cabin.", LogLevel.Error);
+            return;
+        }
+        var bed = bedFurniture.GetBedSpot();
         if (p.currentLocation == home)
             p.Position = new Microsoft.Xna.Framework.Vector2(bed.X * 64, bed.Y * 64);
         else
