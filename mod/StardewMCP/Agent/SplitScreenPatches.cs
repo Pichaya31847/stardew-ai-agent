@@ -37,7 +37,8 @@ public static class SplitScreenPatches
     private static bool Clean => _config.SplitScreen && _config.CleanFrames;
 
     /// <summary>The real devices reach only screen 0 (P1); blank them there once a save is loaded.</summary>
-    private static bool HostLocked => _config.SplitScreen && _config.LockHostInput && Context.ScreenId == 0 && Context.IsWorldReady;
+    private static bool HostLocked => _config.SplitScreen && _config.LockHostInput && Context.ScreenId == 0 && Context.IsWorldReady &&
+                                      Players.Host.Role == SeatRole.Ai;
 
     public static void Apply(IManifest manifest, ModConfig config)
     {

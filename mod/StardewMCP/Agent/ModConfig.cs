@@ -1,8 +1,78 @@
+using System;
+using StardewValley;
+
 namespace StardewMCP.Agent;
+
+/// <summary>One split-screen seat in config.json: who sits there and, for an AI, which model plays it.</summary>
+public class SeatConfig
+{
+    /// <summary>"ai" (a farmer played by an AI), "human" (P1 only: you, with keyboard and mouse), "camera" (a parked farmer whose screen only watches) or "off" (no screen).</summary>
+    public string Role { get; set; } = "ai";
+
+    /// <summary>
+    /// The AI that plays this seat: "anthropic", "openai" (also any OpenAI-compatible server: OpenRouter, Ollama, LM Studio...),
+    /// "gemini", or "none" = an external MCP client drives the seat through /mcp/pN (Claude Code, the studio runner).
+    /// </summary>
+    public string Brain { get; set; } = "none";
+
+    /// <summary>Model name for the provider; empty = the provider's default.</summary>
+    public string Model { get; set; } = "";
+
+    public string ApiKey { get; set; } = "";
+
+    /// <summary>Optional endpoint override, e.g. http://localhost:11434/v1 for Ollama with Brain "openai".</summary>
+    public string BaseUrl { get; set; } = "";
+
+    /// <summary>Farmhand name (P2-P4); empty = FarmhandNames / "P{N}".</summary>
+    public string Name { get; set; } = "";
+
+    public bool IsOff => Role.Equals("off", StringComparison.OrdinalIgnoreCase);
+    public bool IsHuman => Role.Equals("human", StringComparison.OrdinalIgnoreCase);
+    public bool IsCamera => Role.Equals("camera", StringComparison.OrdinalIgnoreCase);
+    public bool HasBrain => !string.IsNullOrWhiteSpace(Brain) && !Brain.Equals("none", StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>User-editable settings (config.json in the mod folder).</summary>
 public class ModConfig
 {
+    /// <summary>
+    /// The four seats P1-P4 (P1 is the save's own farmer and the host screen). Defaults: P1-P3 AI seats driven from
+    /// outside through MCP, P4 the camera. Set a seat's Brain and ApiKey to let the mod play it by itself.
+    /// </summary>
+    public SeatConfig[] Seats { get; set; } =
+    {
+        new SeatConfig(),
+        new SeatConfig { Name = "Gemini" },
+        new SeatConfig { Name = "GPT" },
+        new SeatConfig { Role = "camera", Name = "Camera" }
+    };
+
+    /// <summary>Seat config by screen index, never null (a short Seats array is padded with defaults).</summary>
+    public SeatConfig Seat(int screen)
+    {
+        if (Seats == null || Seats.Length < 4)
+        {
+            var defaults = new ModConfig().Seats;
+            var full = new SeatConfig[4];
+            for (int i = 0; i < 4; i++)
+                full[i] = Seats != null && i < Seats.Length && Seats[i] != null ? Seats[i] : defaults[i];
+            Seats = full;
+        }
+        return Seats[Math.Clamp(screen, 0, 3)] ??= new SeatConfig();
+    }
+
+    /// <summary>Show each AI seat's thoughts, chat and current action on its own screen (no OBS needed).</summary>
+    public bool ShowHud { get; set; } = true;
+
+    /// <summary>Split-screen: build the cabins the farmhands need when the farm has too few (changes the save).</summary>
+    public bool AutoBuildCabins { get; set; } = true;
+
+    /// <summary>Built-in AI: tool calls each AI may make in the morning meeting (chat and plan board only) before free play starts. 0 = no meeting.</summary>
+    public int MeetingCalls { get; set; } = 6;
+
+    /// <summary>Built-in AI: longest answer the model may write per turn (tokens).</summary>
+    public int MaxOutputTokens { get; set; } = 4096;
+
     /// <summary>Port for the MCP endpoint (/mcp), overlay (/overlay) and replay (/replay).</summary>
     public int HttpPort { get; set; } = 8770;
 
@@ -18,8 +88,48 @@ public class ModConfig
     /// <summary>Serve POST /api/debug/* (warp, set_time, add_item...) for runner/smoke.py. Keep off for normal play.</summary>
     public bool EnableDebugApi { get; set; } = false;
 
-    /// <summary>Language the AI is told to use for on-screen text: thoughts, action reasons and the diary (e.g. "English").</summary>
-    public string ThoughtLanguage { get; set; } = "Thai";
+    /// <summary>Language the AI is told to use for on-screen text: thoughts, action reasons and the diary (e.g. "English"). Empty = the game's language.</summary>
+    public string ThoughtLanguage { get; set; } = "";
+
+    /// <summary>The configured ThoughtLanguage, or the game's current language when it is blank.</summary>
+    public string LanguageName()
+    {
+        if (!string.IsNullOrWhiteSpace(ThoughtLanguage))
+            return ThoughtLanguage.Trim();
+        try
+        {
+            var code = LocalizedContentManager.CurrentLanguageCode;
+            if (code == LocalizedContentManager.LanguageCode.mod)
+            {
+                var tag = LocalizedContentManager.CurrentModLanguage?.LanguageCode ?? "";
+                return tag.Split('-')[0].ToLowerInvariant() switch
+                {
+                    "th" => "Thai", "vi" => "Vietnamese", "id" => "Indonesian", "pl" => "Polish", "uk" => "Ukrainian",
+                    "nl" => "Dutch", "sv" => "Swedish", "cs" => "Czech", "ro" => "Romanian", "ar" => "Arabic", "he" => "Hebrew",
+                    _ => "English"
+                };
+            }
+            return code switch
+            {
+                LocalizedContentManager.LanguageCode.ja => "Japanese",
+                LocalizedContentManager.LanguageCode.zh => "Chinese",
+                LocalizedContentManager.LanguageCode.ru => "Russian",
+                LocalizedContentManager.LanguageCode.de => "German",
+                LocalizedContentManager.LanguageCode.es => "Spanish",
+                LocalizedContentManager.LanguageCode.fr => "French",
+                LocalizedContentManager.LanguageCode.hu => "Hungarian",
+                LocalizedContentManager.LanguageCode.it => "Italian",
+                LocalizedContentManager.LanguageCode.ko => "Korean",
+                LocalizedContentManager.LanguageCode.pt => "Portuguese",
+                LocalizedContentManager.LanguageCode.tr => "Turkish",
+                _ => "English"
+            };
+        }
+        catch
+        {
+            return "English";
+        }
+    }
 
     /// <summary>
     /// water_all, clear_area, till_area (and the Scythe pass of harvest_all) stop when energy drops below this, instead of

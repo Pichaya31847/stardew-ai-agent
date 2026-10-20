@@ -68,6 +68,9 @@ public class AgentLog
     /// <summary>Free-form metadata posted by the runner (model, session id...). Shown on the overlay.</summary>
     public Dictionary<string, string> Meta { get; } = new();
 
+    /// <summary>Raised for every entry (any thread); the in-game HUD listens.</summary>
+    public static event Action<LogEntry>? Added;
+
     public AgentLog(string dir, IMonitor monitor)
     {
         _baseDir = dir;
@@ -120,6 +123,7 @@ public class AgentLog
         }
         if (kind == "result")
             DaySummary.Touch(this, e.Day, _monitor);
+        Added?.Invoke(e);
         return e;
     }
 

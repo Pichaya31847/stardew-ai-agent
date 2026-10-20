@@ -35,6 +35,11 @@
     <Compile Include="..\StardewMCP\Agent\ToolContract.cs" Link="Mod\ToolContract.cs" />
     <Compile Include="..\StardewMCP\Agent\McpDispatcher.cs" Link="Mod\McpDispatcher.cs" />
     <Compile Include="..\StardewMCP\Agent\WorldText.Format.cs" Link="Mod\WorldText.Format.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\Llm.cs" Link="Mod\Brain\Llm.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\AnthropicProvider.cs" Link="Mod\Brain\AnthropicProvider.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\OpenAiProvider.cs" Link="Mod\Brain\OpenAiProvider.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\GeminiProvider.cs" Link="Mod\Brain\GeminiProvider.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\Prompts.cs" Link="Mod\Brain\Prompts.cs" />
   </ItemGroup>
 
 </Project>
