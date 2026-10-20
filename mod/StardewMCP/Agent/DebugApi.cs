@@ -296,11 +296,9 @@ public static class DebugApi
         if (Context.ScreenId != 0) { c.Fail("makeover only works on p1 (the only screen with a mouse); then look + set_look to the farmhand"); yield break; }
         if (_makeoverDone != null) { c.Fail("the creator is already open on p1"); yield break; }
         var p = Game1.player;
-        var cfg = AgentTools.Config;
-        (string name, string fav, bool locked, bool clean) saved = (p.Name, p.favoriteThing.Value, cfg.LockHostInput, cfg.CleanFrames);
+        (string name, string fav) saved = (p.Name, p.favoriteThing.Value);
         if (string.IsNullOrEmpty(p.favoriteThing.Value)) p.favoriteThing.Value = "-"; // OK refuses an empty favourite thing
-        cfg.LockHostInput = false;
-        cfg.CleanFrames = false;
+        HostUnlock.Hold("makeover");
         var menu = new CharacterCustomization(CharacterCustomization.Source.NewFarmhand);
         Game1.activeClickableMenu = menu;
         _makeoverOpen = () => Game1.activeClickableMenu == menu;
@@ -310,8 +308,7 @@ public static class DebugApi
             p.displayName = saved.name;
             p.favoriteThing.Value = saved.fav;
             p.ConvertClothingOverrideToClothesItems();
-            cfg.LockHostInput = saved.locked;
-            cfg.CleanFrames = saved.clean;
+            HostUnlock.Release("makeover");
         };
         c.Result = "Character creator open on P1's screen: mouse unlocked until OK";
     }
@@ -558,13 +555,37 @@ public static class DebugApi
         c.Result = last;
     }
 
-    /// <summary>The input lock and clean frames from before set_display's unlock_input:true, put back by unlock_input:false.</summary>
-    private static (bool locked, bool clean)? _beforeUnlock;
+    /// <summary>The one saved copy of the input lock and clean frames for everything that unlocks P1 (set_display's unlock_input,
+    /// makeover). The first hold saves them and the last release puts them back, so interleaved unlocks can't restore each
+    /// other's unlocked values. A second hold under the same name counts once.</summary>
+    private static class HostUnlock
+    {
+        private static readonly HashSet<string> Holders = new();
+        private static (bool locked, bool clean) _saved;
+
+        public static void Hold(string who)
+        {
+            var cfg = AgentTools.Config;
+            if (Holders.Count == 0)
+                _saved = (cfg.LockHostInput, cfg.CleanFrames);
+            Holders.Add(who);
+            cfg.LockHostInput = false;
+            cfg.CleanFrames = false; // the cursor and menus' own hints are needed to adjust anything
+        }
+
+        public static void Release(string who)
+        {
+            if (!Holders.Remove(who) || Holders.Count > 0)
+                return;
+            (AgentTools.Config.LockHostInput, AgentTools.Config.CleanFrames) = _saved;
+        }
+    }
 
     /// <summary>Set music volume, fullscreen and/or resolution (only what is given: fullscreen alone keeps the resolution), or
     /// unlock host input with the cursor shown for adjusting settings (unlock_input:false puts both back).</summary>
     private static IEnumerator SetDisplay(JsonElement a, CallContext c)
     {
+        if (a.ValueKind != JsonValueKind.Object) { c.Fail("set_display takes a JSON object, e.g. {\"music\":0.5}"); yield break; }
         var cfg = AgentTools.Config;
         if (a.TryGetProperty("music", out var m) && m.ValueKind == JsonValueKind.Number)
         {
@@ -572,19 +593,10 @@ public static class DebugApi
             Game1.options.musicVolumeLevel = vol;
             try { Game1.musicCategory?.SetVolume(vol); } catch { }
         }
-        if (a.TryGetProperty("unlock_input", out var u) && u.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        if (B(a, "unlock_input") is bool unlock)
         {
-            if (u.ValueKind == JsonValueKind.True)
-            {
-                _beforeUnlock ??= (cfg.LockHostInput, cfg.CleanFrames);
-                cfg.LockHostInput = false;
-                cfg.CleanFrames = false; // the cursor and menus' own hints are needed to adjust anything
-            }
-            else if (_beforeUnlock is { } before)
-            {
-                (cfg.LockHostInput, cfg.CleanFrames) = before;
-                _beforeUnlock = null;
-            }
+            if (unlock) HostUnlock.Hold("set_display");
+            else HostUnlock.Release("set_display");
         }
         bool hasFullscreen = a.TryGetProperty("fullscreen", out var fs) && fs.ValueKind is JsonValueKind.True or JsonValueKind.False;
         if (Has(a, "w") || Has(a, "h") || hasFullscreen)
