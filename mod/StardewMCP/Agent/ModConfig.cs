@@ -71,6 +71,9 @@ public class ModConfig
     /// <summary>Built-in AI: longest answer the model may write per turn (tokens).</summary>
     public int MaxOutputTokens { get; set; } = 4096;
 
+    /// <summary>Built-in AI: once a seat has used this many tokens (input + output) in one day it stops until the next morning. 0 = no limit.</summary>
+    public int DailyTokenBudget { get; set; } = 0;
+
     /// <summary>Port for the MCP endpoint (/mcp), overlay (/overlay) and replay (/replay).</summary>
     public int HttpPort { get; set; } = 8770;
 
