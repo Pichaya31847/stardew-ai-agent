@@ -78,7 +78,7 @@ The farmhands (Gemini, GPT, Camera) are created again by the mod on every launch
 so their looks from `runner/looks.json` must be set again after each launch:
 
 ```powershell
-$looks = Get-Content runner/looks.json -Raw | ConvertFrom-Json; foreach ($p in 'p1','p2','p3') { Invoke-RestMethod -Method Post "http://localhost:8770/api/debug/$p/set_look" -Body ($looks.$p | ConvertTo-Json -Compress) }
+$looks = Get-Content runner/looks.json -Raw | ConvertFrom-Json; foreach ($p in 'p1','p2','p3') { Invoke-RestMethod -Method Post "http://127.0.0.1:8770/api/debug/$p/set_look" -Body ($looks.$p | ConvertTo-Json -Compress) }
 ```
 
 ## 4. Start the recorder (terminal 2)

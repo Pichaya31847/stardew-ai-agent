@@ -214,6 +214,7 @@ public static class Perception
         foreach (var q in Queues)
             while (q.TryDequeue(out _)) { }
         Pairs.Clear();
+        System.Array.Clear(LastHeard);
         foreach (var m in Moods)
         {
             m.Loc = null;
