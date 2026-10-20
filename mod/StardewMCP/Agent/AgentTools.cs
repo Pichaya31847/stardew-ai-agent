@@ -309,6 +309,12 @@ public static partial class AgentTools
     /// <summary>Lie on the bed while time passes: the game itself regenerates a multiplayer farmer standing on a bed tile.</summary>
     private static IEnumerator Rest(JsonElement a, CallContext c)
     {
+        // Farmer.Update regenerates a farmer in bed only in multiplayer (and alone, the bed's question would stop the clock)
+        if (!Game1.IsMultiplayer)
+        {
+            c.Fail(Reasons.NotReady, "Lying in bed only gives energy back while other farmers are in the game. Eat something, or go_to_bed to end the day.");
+            yield break;
+        }
         int minutes = Math.Clamp(I(a, "minutes", 240), 10, 240);
         if (Loc is not FarmHouse)
         {
@@ -319,13 +325,29 @@ public static partial class AgentTools
         var walk = new CallContext();
         yield return WalkTo(((FarmHouse)Loc).GetPlayerBedSpot(), walk);
         if (!walk.Ok) { c.Fail(walk.Reason ?? Reasons.NoPath, $"Couldn't reach your bed: {walk.Result}"); yield break; }
+        yield return Ticks(10); // the bed's question opens a moment after stepping on it
+        DismissBedQuestion();
 
         int energy = (int)P.Stamina, health = P.health, start = Utility.ConvertTimeToMinutes(Game1.timeOfDay), day = Game1.Date.TotalDays;
         while (Game1.Date.TotalDays == day && Utility.ConvertTimeToMinutes(Game1.timeOfDay) - start < minutes
                && (P.Stamina < P.MaxStamina || P.health < P.maxHealth))
+        {
+            DismissBedQuestion();
             yield return null;
+        }
         c.Result = $"Rested in bed until {WorldText.FormatTime(Game1.timeOfDay)}: energy {energy} → {(int)P.Stamina}/{P.MaxStamina}, " +
                    $"health {health} → {P.health}/{P.maxHealth}.";
+    }
+
+    /// <summary>Close the bed's own "Go to sleep for the night?" question (stepping onto a bed opens it): a rest is not the night's
+    /// sleep, and an open box would keep every interrupt and early reply away (Perception.SafeToStop).</summary>
+    private static void DismissBedQuestion()
+    {
+        if (Game1.activeClickableMenu is DialogueBox { isQuestion: true } box && Loc.lastQuestionKey == "Sleep")
+        {
+            box.closeDialogue();
+            Game1.dialogueUp = false;
+        }
     }
 
     // ------------------------------------------------------------------ movement helpers
@@ -1253,8 +1275,11 @@ public static partial class AgentTools
                             lm.okButtonClicked();
                         break;
                 }
-                // A question or a naming box in the night (a child): hand it to the AI instead of waiting on it (#53).
-                if (t > 30 && (Romance.NightQuestion(c, Rt, t) || Naming.NightPrompt(c)))
+                // A question or a naming box in the night (a child): hand it to the AI instead of waiting on it (#53). An AI already
+                // told its day is over (Perception.ReplyInTime) has gone and can't answer: the night answers for it.
+                if (t > 30 && Rt.CurrentCall?.Done.Task.IsCompleted == true)
+                    AnswerNightAlone(Rt, t);
+                else if (t > 30 && (Romance.NightQuestion(c, Rt, t) || Naming.NightPrompt(c)))
                     yield break;
                 if (Game1.Date.TotalDays > dayBefore && Context.IsWorldReady && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay && P.CanMove)
                     break;
@@ -1288,5 +1313,26 @@ public static partial class AgentTools
         if (Game1.Date.TotalDays <= dayBefore) { Briefing.Unseal(); c.Fail("Tried to sleep but the day did not change."); yield break; }
         Rt.Log.Add("system", text: $"New day: farm day {AgentLog.FarmDay}");
         c.Result = $"Good morning! It's now farm day {AgentLog.FarmDay}. Money {moneyBefore}g → {P.Money}g (shipping income {P.Money - moneyBefore}g). Your day is over — stop here.";
+    }
+
+    /// <summary>The night of a farmer whose AI was already told its day is over: a naming box gets a random name and a question
+    /// the game's last answer ("No" comes last), so the night never waits on an AI that has gone.</summary>
+    private static void AnswerNightAlone(AgentRuntime rt, int tick)
+    {
+        switch (Game1.activeClickableMenu)
+        {
+            case NamingMenu nm:
+                Naming.AutoName(rt, nm, "its day was already over");
+                break;
+            case DialogueBox { isQuestion: true } box when box.responses?.Length > 0:
+                if (tick % 90 != 0 || box.transitioning) break;
+                box.selectedResponse = box.responses.Length - 1;
+                rt.Log.Add("system", text: $"Night question answered \"{box.responses[^1].responseText}\": its day was already over");
+                box.receiveLeftClick(0, 0);
+                break;
+            default:
+                Romance.NightQuestion(new CallContext(), rt, tick); // a text-only box is read out to the log and clicked through
+                break;
+        }
     }
 }

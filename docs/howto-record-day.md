@@ -64,10 +64,10 @@ Invoke-RestMethod -Method Post 127.0.0.1:8770/api/debug/p1/set_display -Body '{"
 ## 2. Check the resolution
 
 ```powershell
-Invoke-RestMethod -Method Post localhost:8770/api/debug/p1/capture -Body '{"path":"C:/Users/admin/Videos/check.png"}'
+Invoke-RestMethod -Method Post 127.0.0.1:8770/api/debug/p1/capture -Body '{}'
 ```
 
-The result must say `(3840x2160)`. `1920x1080` means the game isn't in exclusive fullscreen 4K: fix it in the game options.
+The frame is saved as `stardew-capture.png` in your temp folder (`$env:TEMP`). The result must say `(3840x2160)`. `1920x1080` means the game isn't in exclusive fullscreen 4K: fix it in the game options.
 
 P2–P4 can be black in this picture: if the farmhands joined after the world was held, their fade-in waits until the
 world runs. It finishes about a second after the first AI acts.
@@ -105,8 +105,9 @@ about 1.5–2 h of real time. For more days, change `--days`; the next batch con
 
 ## 6. Get the MP4
 
-When `run_days.py` has finished, press Ctrl+C in terminal 2: OBS stops and leaves an `.mkv` in `C:\Users\admin\Videos`.
-Remux the newest one to MP4 (no re-encode):
+When `run_days.py` has finished, press Ctrl+C in terminal 2: OBS stops and leaves an `.mkv` in its recording folder
+(Settings → Output; OBS's default is `$HOME\Videos`, or `<out>` if you set it as above). Remux the newest one to MP4
+(no re-encode):
 
 ```powershell
 Get-ChildItem $HOME\Videos\*.mkv | Sort LastWriteTime | Select -Last 1 | % { ffmpeg -i $_.FullName -c copy ($_.FullName -replace '\.mkv$','.mp4') }

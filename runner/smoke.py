@@ -402,8 +402,10 @@ def release_freeze(seat: str = "all") -> dict:
 
 
 def journal_and_sleep(diary: str) -> str:
-    """#21: go_to_bed refuses until today's journal is written, so every case that sleeps writes one first."""
+    """#21: go_to_bed refuses until today's journal is written, so every case that sleeps writes one first. It sleeps in the
+    evening: a farmer wide awake before 17:00 is told so once and has to call go_to_bed again (case `journal` checks that)."""
     ok("journal", diary=diary, lessons="Smoke lesson: water the crops before bed.", plan="## Today\nSmoke plan: water the parsnips.")
+    debug("set_time", time=2200)
     return ok("go_to_bed", reason="smoke test")
 
 
@@ -872,6 +874,10 @@ def journal():
     if mem["notes"].count(fact) != 1:
         raise Smoke(f"the same fact was noted twice:\n{mem['notes']}")
 
+    # 9:00 after reset() with full energy: the first go_to_bed of the day is a note, the second one sleeps
+    good, text = call("go_to_bed", reason="smoke test")
+    if good or "aren't tired" not in text:
+        raise Smoke(f"a wide-awake go_to_bed before 17:00 should be refused once, got: {text.splitlines()[0]}")
     ok("go_to_bed", reason="smoke test")
     if fresh_state().get("day") != day + 1:
         raise Smoke("day did not advance after journal + go_to_bed")

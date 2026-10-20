@@ -47,8 +47,8 @@ public static class Perception
     /// </summary>
     public static bool Interrupts { get; set; } = true;
 
-    // Tools that may be stopped, and only where nothing is half done: a wait or rest at any time, go_to_bed while it waits in
-    // bed for the others (the game lets a sleeper cancel then), the others while the farmer is walking.
+    // Tools that may be stopped, and only where nothing is half done (SafeToStop): a wait at any time, a rest once in bed,
+    // go_to_bed only while it waits in bed for the others (the game lets a sleeper cancel then), the others while the farmer walks.
     private static readonly HashSet<string> Stoppable = new()
     {
         "walk_to", "travel_to", "wait", "rest", "go_to_bed", "use_tool", "plant", "harvest", "interact", "talk_to", "ship"
@@ -408,16 +408,60 @@ public static class Perception
         Game1.activeClickableMenu is StardewValley.Menus.ReadyCheckDialog { checkName: "sleep" } check && check.isCancelable();
 
     /// <summary>
+    /// Whether the running action may be stopped right now with nothing half done: never mid-swing, in a menu (but a sleeper's
+    /// ready check), during a warp, fade or cutscene. A wait, a rest once in bed and a sleeper stand still and stop anywhere;
+    /// everything else only while its farmer walks between two steps of the job, on a tile of its own. go_to_bed's walk home is
+    /// stopped only for a client deadline (<paramref name="bedWalk"/>), never by an event.
+    /// </summary>
+    private static bool SafeToStop(PendingCall call, bool asleep, bool bedWalk = false)
+    {
+        var name = call.Tool.Name;
+        if (!Stoppable.Contains(name) || (name == "go_to_bed" && !asleep && !bedWalk)) return false;
+        var p = Game1.player;
+        if ((Game1.activeClickableMenu != null && !asleep) || Game1.isWarping || Game1.fadeToBlack || Game1.newDay || Game1.eventUp || p.UsingTool)
+            return false;
+        if (asleep || name == "wait" || (name == "rest" && p.isInBed.Value)) return true;
+        // farmers don't collide: stopping on another's tile stacks them, so the walk goes on to the next free tile first
+        return p.controller != null &&
+               !Game1.getOnlineFarmers().Any(f => f != p && f.currentLocation == p.currentLocation && f.TilePoint == p.TilePoint);
+    }
+
+    /// <summary>Halt the farmer's walk and end its running action with <paramref name="text"/> as the result.</summary>
+    private static bool Stop(AgentRuntime rt, string text)
+    {
+        var p = Game1.player;
+        if (p.controller != null)
+        {
+            p.controller = null;
+            p.Halt();
+        }
+        return rt.Interrupt(text);
+    }
+
+    private static string Where() => $"{Game1.currentLocation?.Name} ({Game1.player.TilePoint.X},{Game1.player.TilePoint.Y})";
+
+    /// <summary>
     /// A client that gives up on a call after a few minutes (agy: 3, 2026-10-20) is answered before that. A sleeper is told
-    /// its day is over while go_to_bed keeps running, so it stays in bed; any other action stops at its next safe point.
+    /// its day is over while go_to_bed keeps running, so it stays in bed; any other action stops at its next safe point;
+    /// a call that never started (behind another action, or held by a pause) is answered and dropped.
     /// </summary>
     private static void ReplyInTime(PlayerSlot seat, AgentRuntime rt)
     {
         int limit = seat.ReplyWithinSeconds;
+        if (limit <= 0) return;
         var call = rt.CurrentCall;
-        if (limit <= 0 || call == null || call.Instant || call.Done.Task.IsCompleted ||
-            (DateTime.UtcNow - call.Queued).TotalSeconds < limit) return;
+        if (call is { Instant: false, Tool.Name: "go_to_bed" } && call.Done.Task.IsCompleted && !rt.WakingUp)
+        {
+            // told its day is over, the client went on anyway: those calls would otherwise run on tomorrow's farmer
+            if (rt.AnswerQueued("You are asleep in bed and your day is over: the night begins when everyone is in bed. Stop here.") > 0)
+                rt.Log.Add("system", text: "Refused a call sent after go_to_bed was answered: asleep");
+        }
+        else if (rt.AnswerQueued(RunControl.Holding ? "The game is paused, so this call never started. Call it again."
+                                     : $"This call never started: your {rt.CurrentTool ?? "earlier action"} was still running. Call it again.",
+                                 limit) > 0)
+            rt.Log.Add("system", text: $"Answered calls that waited {limit}s without starting");
 
+        if (call == null || call.Instant || call.Done.Task.IsCompleted || (DateTime.UtcNow - call.Queued).TotalSeconds < limit) return;
         if (Asleep(call, rt))
         {
             call.Done.TrySetResult((true, "You are asleep in bed, waiting for the others to go to bed too; the night begins " +
@@ -425,59 +469,35 @@ public static class Perception
             rt.Log.Add("system", text: "Answered go_to_bed early: asleep, waiting for the others");
             return;
         }
-        if (!Stoppable.Contains(call.Tool.Name)) return; // runs to its end; the 6-minute action timeout still applies
-
-        var p = Game1.player;
-        bool waiting = call.Tool.Name is "wait" or "rest";
-        if (Game1.activeClickableMenu != null || Game1.isWarping || Game1.fadeToBlack || Game1.newDay || Game1.eventUp || p.UsingTool) return;
-        if (!waiting && p.controller == null) return;
-        if (!waiting && Game1.getOnlineFarmers().Any(f => f != p && f.currentLocation == p.currentLocation && f.TilePoint == p.TilePoint)) return;
-        if (p.controller != null)
-        {
-            p.controller = null;
-            p.Halt();
-        }
-        var where = $"{Game1.currentLocation?.Name} ({p.TilePoint.X},{p.TilePoint.Y})";
-        if (rt.Interrupt($"Paused: your {call.Tool.Name} ran long and was stopped at {where} at {WorldText.FormatTime(Game1.timeOfDay)}; " +
-                         "nothing happened to you. Call it again to go on, or decide something else."))
+        if (!SafeToStop(call, asleep: false, bedWalk: true)) return; // runs to its end; the 6-minute action timeout still applies
+        var where = Where();
+        if (Stop(rt, $"Paused: your {call.Tool.Name} ran long and was stopped at {where} at {WorldText.FormatTime(Game1.timeOfDay)}; " +
+                     "nothing happened to you. Call it again to go on, or decide something else."))
             rt.Log.Add("interrupt", call.Tool.Name, "reply_within", args: new { seconds = limit });
     }
 
     /// <summary>
-    /// Stop the seat's running walk, wait or farm action when it has unseen events. Never mid-swing, in a menu, during a warp or
-    /// cutscene, and (for everything but <c>wait</c>) only while the farmer is walking between two steps of the job.
+    /// Stop the seat's running walk, wait or farm action when it has unseen events (see <see cref="SafeToStop"/>). A call
+    /// already answered (<see cref="ReplyInTime"/>) runs to its end: nobody is left to read why it stopped.
     /// </summary>
     private static void TryInterrupt(PlayerSlot seat, AgentRuntime rt)
     {
         var q = Queues[seat.Screen];
         if (!Interrupts || q.IsEmpty) return;
         var call = rt.CurrentCall;
-        if (call == null || call.Instant || !Stoppable.Contains(call.Tool.Name)) return;
-
-        var p = Game1.player;
+        if (call == null || call.Instant || call.Done.Task.IsCompleted) return;
         // in bed waiting for the others: the sleep ready check is open and still cancelable (not once the night began)
         bool asleep = Asleep(call, rt);
-        if (asleep && call.Done.Task.IsCompleted) return; // already told its day is over (ReplyInTime): it sleeps through
-        if ((Game1.activeClickableMenu != null && !asleep) || Game1.isWarping || Game1.fadeToBlack || Game1.newDay || Game1.eventUp || p.UsingTool) return;
-        bool waiting = call.Tool.Name is "wait" or "rest" || asleep;
-        if (!waiting && p.controller == null) return;
-        // farmers don't collide: stopping on another's tile stacks them, so the walk goes on to the next free tile first
-        if (!waiting && Game1.getOnlineFarmers().Any(f => f != p && f.currentLocation == p.currentLocation && f.TilePoint == p.TilePoint)) return;
+        if (!SafeToStop(call, asleep)) return;
 
         var why = string.Join("; ", q.Select(e => e.Short).Distinct().Take(4));
         var tool = call.Tool.Name;
-        var where = $"{Game1.currentLocation?.Name} ({p.TilePoint.X},{p.TilePoint.Y})";
-        if (p.controller != null)
-        {
-            p.controller = null;
-            p.Halt();
-        }
         var text = asleep
             ? $"Woken up: you got out of bed at {WorldText.FormatTime(Game1.timeOfDay)} because {why}. The day goes on; " +
               "call go_to_bed again when you want to sleep."
-            : $"Interrupted: your {tool} was stopped at {where} before it finished, because {why}. " +
+            : $"Interrupted: your {tool} was stopped at {Where()} before it finished, because {why}. " +
               "Its normal result is lost; use look or inventory to see how far it got, then decide what to do.";
-        if (rt.Interrupt(text))
+        if (Stop(rt, text))
             rt.Log.Add("interrupt", tool, why, args: new { events = q.Select(e => e.Kind).Distinct().ToArray() });
     }
 }

@@ -591,37 +591,55 @@ public static class DebugApi
         c.Result = last;
     }
 
-    /// <summary>Set music volume, fullscreen resolution, or unlock host input for settings adjustment.</summary>
+    /// <summary>The input lock and clean frames from before set_display's unlock_input:true, put back by unlock_input:false.</summary>
+    private static (bool locked, bool clean)? _beforeUnlock;
+
+    /// <summary>Set music volume, fullscreen and/or resolution (only what is given: fullscreen alone keeps the resolution), or
+    /// unlock host input with the cursor shown for adjusting settings (unlock_input:false puts both back).</summary>
     private static IEnumerator SetDisplay(JsonElement a, CallContext c)
     {
+        var cfg = AgentTools.Config;
         if (a.TryGetProperty("music", out var m) && m.ValueKind == JsonValueKind.Number)
         {
             float vol = (float)m.GetDouble();
             Game1.options.musicVolumeLevel = vol;
             try { Game1.musicCategory?.SetVolume(vol); } catch { }
         }
-        if (a.TryGetProperty("unlock_input", out var u) && u.GetBoolean())
+        if (a.TryGetProperty("unlock_input", out var u) && u.ValueKind is JsonValueKind.True or JsonValueKind.False)
         {
-            AgentTools.Config.LockHostInput = false;
-            AgentTools.Config.CleanFrames = false;
-        }
-        if (Has(a, "w") || Has(a, "h") || a.TryGetProperty("fullscreen", out _))
-        {
-            int w = I(a, "w", 3840), h = I(a, "h", 2160);
-            Game1.options.preferredResolutionX = w;
-            Game1.options.preferredResolutionY = h;
-            Game1.graphics.PreferredBackBufferWidth = w;
-            Game1.graphics.PreferredBackBufferHeight = h;
-            if (a.TryGetProperty("fullscreen", out var fs))
+            if (u.ValueKind == JsonValueKind.True)
             {
-                bool fullscreen = fs.GetBoolean();
+                _beforeUnlock ??= (cfg.LockHostInput, cfg.CleanFrames);
+                cfg.LockHostInput = false;
+                cfg.CleanFrames = false; // the cursor and menus' own hints are needed to adjust anything
+            }
+            else if (_beforeUnlock is { } before)
+            {
+                (cfg.LockHostInput, cfg.CleanFrames) = before;
+                _beforeUnlock = null;
+            }
+        }
+        bool hasFullscreen = a.TryGetProperty("fullscreen", out var fs) && fs.ValueKind is JsonValueKind.True or JsonValueKind.False;
+        if (Has(a, "w") || Has(a, "h") || hasFullscreen)
+        {
+            if (Has(a, "w") || Has(a, "h"))
+            {
+                int w = I(a, "w", Game1.graphics.PreferredBackBufferWidth), h = I(a, "h", Game1.graphics.PreferredBackBufferHeight);
+                Game1.options.preferredResolutionX = w;
+                Game1.options.preferredResolutionY = h;
+                Game1.graphics.PreferredBackBufferWidth = w;
+                Game1.graphics.PreferredBackBufferHeight = h;
+            }
+            if (hasFullscreen)
+            {
+                bool fullscreen = fs.ValueKind == JsonValueKind.True;
                 Game1.options.windowedBorderlessFullscreen = false;
                 Game1.options.fullscreen = fullscreen;
                 Game1.graphics.IsFullScreen = fullscreen;
             }
             Game1.graphics.ApplyChanges();
         }
-        c.Result = $"BackBuffer: {Game1.graphics.GraphicsDevice.PresentationParameters.BackBufferWidth}x{Game1.graphics.GraphicsDevice.PresentationParameters.BackBufferHeight}, FullScreen: {Game1.options.fullscreen}, Music: {Game1.options.musicVolumeLevel}, HostLocked: {AgentTools.Config.LockHostInput}";
+        c.Result = $"BackBuffer: {Game1.graphics.GraphicsDevice.PresentationParameters.BackBufferWidth}x{Game1.graphics.GraphicsDevice.PresentationParameters.BackBufferHeight}, FullScreen: {Game1.options.fullscreen}, Music: {Game1.options.musicVolumeLevel}, HostLocked: {cfg.LockHostInput}, CleanFrames: {cfg.CleanFrames}";
         yield break;
     }
 

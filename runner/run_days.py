@@ -42,6 +42,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from datetime import datetime
@@ -80,6 +81,8 @@ AGY_CMD = ["agy"]  # tests swap in a fake
 AGY_REPLY_WITHIN = 150
 # calls outside the game tools that agy's guard refuses (the model is told why) before the session is ended as misbehaving
 AGY_DENIED_LIMIT = 5
+# agy reports the guard's refusal right after the call (about 0.1 s): a disallowed call not refused by then has run
+AGY_DENY_PROOF_SECONDS = 5.0
 
 
 def find_opencode_cmd() -> list[str]:
@@ -228,7 +231,8 @@ def save_folder() -> Path | None:
 
 @dataclass
 class NormalizedEvent:
-    kind: str  # "init", "tool_call", "result"
+    kind: str  # "init", "tool_call", "tool_denied" (agy: its guard hook refused a call), "result"
+    step: int = -1  # agy's step_index: pairs a tool_call with its tool_denied
     session_id: str = ""
     model: str = ""
     tool_name: str = ""
@@ -503,6 +507,7 @@ class AgyBackend(Backend):
             return [NormalizedEvent(kind="init", session_id=ev.get("conversation_id", ""), model=init_obj.get("model", ""))]
         elif event == "step_update":
             su = ev.get("step_update", {})
+            step = su.get("step_index", -1)
             if su.get("step_type") == "tool" and su.get("state") == "ACTIVE":
                 raw_name = su.get("tool_name", "")
                 tinfo = su.get("tool_info", {})
@@ -512,8 +517,13 @@ class AgyBackend(Backend):
                     return []  # its own copy of the stardew server's instructions: not a game action, not a leak
                 name, is_stardew = normalize_agy_tool(raw_name, arg, getattr(self, "server", ""))
                 if not is_stardew:
-                    return [NormalizedEvent(kind="tool_call", tool_name=raw_name, tool_args=arg, is_disallowed=True)]
-                return [NormalizedEvent(kind="tool_call", tool_name=name, tool_args=arg)]
+                    return [NormalizedEvent(kind="tool_call", step=step, tool_name=raw_name, tool_args=arg, is_disallowed=True)]
+                return [NormalizedEvent(kind="tool_call", step=step, tool_name=name, tool_args=arg)]
+            if su.get("step_type") == "tool" and su.get("state") == "ERROR":
+                # the guard's refusal, right after the ACTIVE step: "tool call denied by pre-tool hook: <DENY_REASON>"
+                message = str(((su.get("tool_info") or {}).get("error") or {}).get("message") or "")
+                if "denied by pre-tool hook" in message:
+                    return [NormalizedEvent(kind="tool_denied", step=step, tool_name=su.get("tool_name", ""))]
             return []
         elif event == "result":
             res = ev.get("result", {})
@@ -663,6 +673,14 @@ def copy_args_with_seat(args, backend_name: str, model: str):
     return new_args
 
 
+def _end_unguarded(proc, name: str, unguarded: list[str]) -> None:
+    """Timer thread: a disallowed agy call its guard did not refuse in time has run, so the session ends now."""
+    unguarded.append(name)
+    print(f"  NOT REFUSED BY THE GUARD: {name}: ending the session", flush=True)
+    if hasattr(proc, "kill"):
+        proc.kill()
+
+
 def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1") -> sessions.PartResult:
     backend_name = getattr(args, "backend", "claude")
     backend = get_backend(backend_name)
@@ -681,6 +699,8 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     session_id = ""
     tool_calls = 0
     denied = 0  # agy calls its guard refused in this session
+    unproven: dict[int, tuple[threading.Timer, str]] = {}  # step -> (kill timer, tool): agy calls the guard is yet to refuse
+    unguarded: list[str] = []  # calls the guard never refused: they ran
     limit = usage_limit.LimitWatcher()
     tracker = usage_log.UsageTracker()
     game_start, t_start = game_state().get("time", ""), time.time()
@@ -727,15 +747,26 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                                                "event": f"{backend.display_name} session {session_id} started ({model}), day {day} part {part}"})
                     except Exception:
                         pass
+                elif norm_ev.kind == "tool_denied":
+                    pending = unproven.pop(norm_ev.step, None)
+                    if pending:
+                        pending[0].cancel()
+                    print(f"  DENIED BY GUARD: {norm_ev.tool_name} ({denied}/{AGY_DENIED_LIMIT})")
                 elif norm_ev.kind == "tool_call":
                     if norm_ev.is_disallowed and backend.name == "agy" and denied < AGY_DENIED_LIMIT:
-                        # agy's guard hook already refused it before it ran and told the model so: the session goes on
-                        # (2026-10-20: one search_web stopped Gemini for the day before)
+                        # agy's guard hook refuses it before it runs and tells the model so: the session goes on
+                        # (2026-10-20: one search_web stopped Gemini for the day before). agy reports that refusal as an
+                        # ERROR step at once; a call not refused within AGY_DENY_PROOF_SECONDS ran, and ends the session.
                         denied += 1
-                        print(f"  DENIED BY GUARD: {norm_ev.tool_name} ({denied}/{AGY_DENIED_LIMIT})")
+                        timer = threading.Timer(AGY_DENY_PROOF_SECONDS, _end_unguarded, (proc, norm_ev.tool_name, unguarded))
+                        timer.daemon = True
+                        unproven[norm_ev.step] = (timer, norm_ev.tool_name)
+                        timer.start()
                         continue
                     if norm_ev.is_disallowed:
                         print(f"  DISALLOWED TOOL: {norm_ev.tool_name}")
+                        for timer, _ in unproven.values():
+                            timer.cancel()
                         if hasattr(proc, "kill"):
                             proc.kill()
                         if tool_calls == 0 and backend.name == "opencode":
@@ -767,6 +798,13 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
         proc.wait()
         GUARD.detach()
         SESSIONS.pop(seat, None)
+        for timer, name in unproven.values():  # the session ended before the guard's refusal showed: it ran
+            timer.cancel()
+            if name not in unguarded:
+                unguarded.append(name)
+    if unguarded:  # not "Disallowed tool ...": a broken guard gets no second session (multi_runner)
+        raise SystemExit(f"Guard failed: agy ran {', '.join(unguarded)} without its guard refusing it; check the hook in "
+                         f"{workdir / '.agents'}")
     if limit.info:  # subscription usage limit: the caller waits for the reset and retries this part
         raise usage_limit.UsageLimitHit(limit.info, tool_calls)
     row = tracker.row(day, part, game_start, game_state().get("time", ""), time.time() - t_start)

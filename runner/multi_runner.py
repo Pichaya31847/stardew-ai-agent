@@ -184,7 +184,7 @@ class MultiDayRunner:
         while time.time() - t0 < HELD_TIMEOUT and not (self._get_quiet("/api/control") or {}).get("held"):
             time.sleep(2)
         state = self._get_quiet("/api/state") or {}
-        killed = [s for s, t in alive.items() if t.is_alive() and not is_in_bed(state, s)]
+        killed = [s for s, t in alive.items() if t.is_alive() and not went_to_bed(state, s, self.log_dir, day)]
         for s in killed:
             game_watchdog.kill_tree(run_days.SESSIONS.get(s))
         for s in killed:

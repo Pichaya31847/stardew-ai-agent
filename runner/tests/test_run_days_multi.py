@@ -503,6 +503,37 @@ def test_usage_limit_on_one_seat_holds_the_world_and_resumes_everyone(tmp_path, 
     assert not any(p == "/api/release_freeze" for p, _ in posted)
 
 
+def test_outage_also_ends_a_session_whose_farmer_only_stands_on_its_bed(tmp_path, monkeypatch):
+    # every farmer wakes up on its bed: at 6:00 that is not "in bed for the night", so its CLI is ended and relaunched too
+    fake = _Sessions(monkeypatch)
+    _fake_clock(monkeypatch)
+    calls, posted = [], []
+    reset = usage_limit._now() + timedelta(hours=1)
+
+    def fake_run_session(args, out_d, day, prompt, sys_prompt, part=1, attempt=1, seat="p1"):
+        calls.append((seat, part))
+        if (seat, part) == ("p1", 1):
+            raise usage_limit.UsageLimitHit(usage_limit.LimitInfo("limit reached", reset, "iso"), 3)
+        if (seat, part) == ("p2", 1):
+            return fake.block("p2", sessions.PartResult(5, False))
+        return sessions.PartResult(2, False)
+
+    monkeypatch.setattr(run_days, "run_session", fake_run_session)
+    monkeypatch.setattr(multi_runner.MultiDayRunner, "probe", lambda self, seat: None)
+    state = {"ready": True, "day": 1, "players": [{"id": "p1", "state": {}}, {"id": "p2", "state": {"inBed": True}}]}
+
+    def api_get(path):
+        if path == "/api/control":
+            return {"held": True}
+        if ("p1", 2) in calls and ("p2", 2) in calls:
+            state["day"] = 2
+        return state
+
+    _runner(tmp_path, "p1,p2", api_get, posted).run_free_play_phase(1, {"p1": "S1", "p2": "S2"})
+    assert fake.killed[:1] == ["p2"]
+    assert ("p2", 2) in calls
+
+
 def test_outage_longer_than_the_cap_stops_with_the_world_held(tmp_path, monkeypatch):
     _Sessions(monkeypatch)
     _fake_clock(monkeypatch)

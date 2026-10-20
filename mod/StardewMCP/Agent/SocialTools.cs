@@ -46,6 +46,9 @@ public static class SocialTools
 
     private static void DrawBubble_Postfix(Farmer __instance, SpriteBatch b)
     {
+        // a postfix runs even when Farmer.draw drew nothing (hidden in a cutscene or on the bus, viewing another map)
+        if (__instance.hidden.Value || __instance.currentLocation != Game1.currentLocation ||
+            (__instance.IsLocalPlayer && __instance.viewingLocation.Value != null)) return;
         float lift = DrawName(__instance, b);
         if (__instance.currentLocation is not { } loc || Speech.Showing(loc.NameOrUniqueName) is not { } line
             || line.Speaker != __instance.UniqueMultiplayerID) return;

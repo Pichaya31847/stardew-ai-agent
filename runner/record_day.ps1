@@ -65,8 +65,14 @@ Start-Sleep 3
 $ErrorActionPreference = "Continue"  # PowerShell 5.1 turns the runner's stderr lines into errors; "Stop" would end here
 py -u runner/run_days.py --multi --days $Days --out $Out --skip-smoke --game-cmd "`"$game\StardewModdingAPI.exe`"" 2>&1 |
     % { $line = "$_"; $line; $line | Out-File -Append -Encoding utf8 "$Out/run_days.out" }
+$code = $LASTEXITCODE
 
 # Batch over (the night's money summary is already recorded: the runner ends after the next morning starts).
 # The recorder stops OBS and closes its window; the AI CLIs died with the runner (game_watchdog.die_with_runner).
-New-Item $stop -ItemType File | Out-Null
+New-Item $stop -ItemType File -Force | Out-Null
+if ($code -ne 0) {
+    # -File exits 0 unless told otherwise: record_day.bat keeps its window open only on a non-zero code
+    Write-Warning "run_days.py ended with exit code $code (see $Out/run_days.out). Recording stops in a moment."
+    exit $code
+}
 Write-Host "Batch done. Recording stops in a moment; the game stays open with the world held."

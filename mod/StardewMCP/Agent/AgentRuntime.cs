@@ -110,6 +110,23 @@ public class AgentRuntime
         return call;
     }
 
+    /// <summary>
+    /// Answer this seat's AI calls still waiting in the action lane (only those queued at least <paramref name="olderThanSeconds"/>)
+    /// with <paramref name="text"/> as a failure; the lane drops them when their turn comes. Game thread. Returns how many.
+    /// </summary>
+    public int AnswerQueued(string text, double olderThanSeconds = 0)
+    {
+        int n = 0;
+        foreach (var call in _actions)
+        {
+            if (!call.FromAgent || call.Done.Task.IsCompleted || (DateTime.UtcNow - call.Queued).TotalSeconds < olderThanSeconds)
+                continue;
+            call.Outcome = new ToolOutcome(false, Reasons.NotReady, false, null);
+            if (call.Done.TrySetResult((false, text))) n++;
+        }
+        return n;
+    }
+
     /// <summary>Called every tick of this seat's screen (UpdateTicked).</summary>
     public void Tick()
     {
@@ -203,8 +220,13 @@ public class AgentRuntime
 
         public void Tick(ConcurrentQueue<PendingCall> queue)
         {
-            if (Current == null && !RunControl.ShouldHold(queue) && queue.TryDequeue(out var next))
-                Start(next);
+            if (Current == null && !RunControl.ShouldHold(queue))
+                while (queue.TryDequeue(out var next))
+                    if (!next.Done.Task.IsCompleted) // answered while it waited (AnswerQueued): dropped
+                    {
+                        Start(next);
+                        break;
+                    }
             if (Current != null)
                 Step();
         }
@@ -346,7 +368,8 @@ public class AgentRuntime
             var hint = _rt.Guard.End(call, ctx.Ok, ctx.Result);
             if (hint.Length > 0) text = text.TrimEnd() + "\n" + hint;
 
-            var mail = call.Tool.Mail ? Perception.TakeMail(_rt.Log.Player) : "";
+            // a call answered early (Perception.ReplyInTime) leaves what was heard meanwhile for the next result
+            var mail = call.Tool.Mail && !call.Done.Task.IsCompleted ? Perception.TakeMail(_rt.Log.Player) : "";
             if (mail.Length > 0) text = text.TrimEnd() + "\n" + mail;
             if (call.Tool.AppendStatus && Context.IsWorldReady)
                 text = text.TrimEnd() + "\n" + Observation.OneLine(AgentTools.Footer()); // one line, however many menus are open

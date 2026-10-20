@@ -106,11 +106,19 @@ def test_agy_meta_reporting(play_agy):
     assert "Gemini 3.8 Flash session agy-sample-session-0001" in body["event"]
 
 
-def _agy_denied_stream(n: int) -> str:
-    run = json.dumps({"event": "step_update", "step_update": {"step_type": "tool", "state": "ACTIVE", "tool_name": "run_command",
-                                                              "tool_info": {"parameters": {"CommandLine": "dir"}}}})
-    return "\n".join([json.dumps({"event": "init", "conversation_id": "c1", "init": {"model": "gemini-3.8-flash-medium"}})]
-                     + [run] * n + [json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1}})]) + "\n"
+def _agy_denied_stream(n: int, refused: bool = True) -> str:
+    """n run_command calls, each refused by the guard hook the way agy reports it (an ERROR step right after the ACTIVE one)."""
+    def step(i: int, state: str, **info) -> str:
+        return json.dumps({"event": "step_update", "step_update": {
+            "step_index": i, "step_type": "tool", "state": state, "tool_name": "run_command",
+            "tool_info": {"parameters": {"CommandLine": "dir"}, **info}}})
+
+    deny = {"error": {"type": "TOOL_ERROR", "message": "tool call denied by pre-tool hook: " + run_days.agy_tool_guard.DENY_REASON}}
+    lines = [json.dumps({"event": "init", "conversation_id": "c1", "init": {"model": "gemini-3.8-flash-medium"}})]
+    for i in range(n):
+        lines.append(step(i, "ACTIVE"))
+        lines.append(step(i, "ERROR", **deny) if refused else step(i, "DONE", output="Volume in drive C"))
+    return "\n".join(lines + [json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1}})]) + "\n"
 
 
 def test_agy_tool_its_guard_refused_does_not_end_the_session(tmp_path, monkeypatch):
@@ -121,6 +129,58 @@ def test_agy_tool_its_guard_refused_does_not_end_the_session(tmp_path, monkeypat
     args = SimpleNamespace(backend="agy", model="gemini-3.8-flash-medium", max_turns=600)
     run_days.run_session(args, out_dir, 1, "play", "system", 1)
     assert not proc.killed
+
+
+def test_agy_tool_its_guard_did_not_refuse_ends_the_session_for_good(tmp_path, monkeypatch):
+    # no hook refusal in the stream: the command really ran, so no tolerance and no second session (not "Disallowed tool")
+    out_dir = tmp_path / "out"
+    (out_dir / "logs").mkdir(parents=True)
+    proc = FakeProc(_agy_denied_stream(1, refused=False))
+    monkeypatch.setattr(run_days.subprocess, "Popen", lambda *a, **kw: proc)
+    args = SimpleNamespace(backend="agy", model="gemini-3.8-flash-medium", max_turns=600)
+    with pytest.raises(SystemExit, match="Guard failed: agy ran run_command"):
+        run_days.run_session(args, out_dir, 1, "play", "system", 1)
+
+
+class BusyProc(FakeProc):
+    """stdout gives `lines`, then blocks like a CLI busy running a command, until kill()."""
+
+    def __init__(self, lines: list[str]):
+        super().__init__("")
+        import threading
+        self.gone = threading.Event()
+
+        def out():
+            yield from (line + "\n" for line in lines)
+            self.gone.wait(10)
+
+        self.stdout = out()
+
+    def kill(self):
+        self.killed = True
+        self.gone.set()
+
+
+def test_agy_call_the_guard_never_refuses_is_killed_while_it_runs(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    (out_dir / "logs").mkdir(parents=True)
+    monkeypatch.setattr(run_days, "AGY_DENY_PROOF_SECONDS", 0.05)
+    proc = BusyProc(_agy_denied_stream(1, refused=False).splitlines()[:2])  # init, then the ACTIVE call and nothing more
+    monkeypatch.setattr(run_days.subprocess, "Popen", lambda *a, **kw: proc)
+    args = SimpleNamespace(backend="agy", model="gemini-3.8-flash-medium", max_turns=600)
+    with pytest.raises(SystemExit, match="Guard failed"):
+        run_days.run_session(args, out_dir, 1, "play", "system", 1)
+    assert proc.killed
+
+
+def test_agy_guard_refusal_is_parsed_from_the_error_step():
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    ev = json.loads(_agy_denied_stream(1).splitlines()[2])
+    assert [(e.kind, e.step, e.tool_name) for e in b.parse_event(ev)] == [("tool_denied", 0, "run_command")]
+    other = json.loads(_agy_denied_stream(1).splitlines()[2])
+    other["step_update"]["tool_info"]["error"]["message"] = "No villager called \"Jodi\"."
+    assert b.parse_event(other) == []
 
 
 def test_agy_disallowed_tool_aborts_after_too_many_refusals(tmp_path, monkeypatch):
