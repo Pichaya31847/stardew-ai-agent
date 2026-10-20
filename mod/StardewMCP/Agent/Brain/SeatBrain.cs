@@ -93,7 +93,7 @@ public sealed class SeatBrain
                 if (!alive)
                     return;
 
-                // In bed (or idle and released): do not hold the world for the others, wait for the morning.
+                // In bed (or idle and released, or over its token budget): do not hold the world for the others, wait for the morning.
                 _slot.SetReleased(true);
                 while (!ct.IsCancellationRequested && Day == day)
                     await Task.Delay(1000, ct);
@@ -142,6 +142,12 @@ public sealed class SeatBrain
             if (Day != day)
             {
                 Status = "the day ended";
+                return true;
+            }
+            if (_cfg.DailyTokenBudget > 0 && InputTokens + OutputTokens >= _cfg.DailyTokenBudget)
+            {
+                Log.Add("system", text: $"{Id}: daily token budget reached ({InputTokens} input + {OutputTokens} output, budget {_cfg.DailyTokenBudget}): it stops for today and the world runs on without it");
+                Status = "token budget reached";
                 return true;
             }
 

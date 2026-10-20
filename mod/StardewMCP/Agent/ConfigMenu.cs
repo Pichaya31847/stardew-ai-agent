@@ -13,6 +13,9 @@ public static class ConfigMenu
 {
     private const string GmcmId = "spacechase0.GenericModConfigMenu";
 
+    /// <summary>What the API key field shows once a key is set; saving the field with this value keeps the stored key.</summary>
+    private const string KeyMask = "••••••••";
+
     public static void Register(IModHelper helper, IManifest manifest, ModConfig config, IMonitor monitor)
     {
         var api = helper.ModRegistry.GetApi<IGenericModConfigMenuApi>(GmcmId);
@@ -43,6 +46,10 @@ public static class ConfigMenu
             int seat = i;
             api.AddPageLink(manifest, $"seat{seat}", () => $"Player {seat + 1} settings", () => SeatSummary(config, seat));
         }
+        api.AddNumberOption(manifest, () => config.MaxOutputTokens, v => config.MaxOutputTokens = v,
+            () => "Longest answer (tokens)", () => "Built-in AI: the most tokens the model may write in one turn.", 256);
+        api.AddNumberOption(manifest, () => config.DailyTokenBudget, v => config.DailyTokenBudget = v,
+            () => "Daily token budget", () => "Built-in AI: once a seat has used this many tokens (input + output) in one day it stops until the next morning and the others play on. 0 = no limit.", 0);
 
         api.AddSectionTitle(manifest, () => "Time");
         api.AddBoolOption(manifest, () => config.FreezeTimeWhileThinking, v => config.FreezeTimeWhileThinking = v,
@@ -89,7 +96,8 @@ public static class ConfigMenu
             LlmProviders.Names, BrainLabel);
         api.AddTextOption(manifest, () => S().Model, v => S().Model = v,
             () => "Model", () => $"Empty = the provider's default (anthropic {LlmProviders.DefaultModel("anthropic")}, openai {LlmProviders.DefaultModel("openai")}, gemini {LlmProviders.DefaultModel("gemini")}).");
-        api.AddTextOption(manifest, () => S().ApiKey, v => S().ApiKey = v.Trim(),
+        api.AddTextOption(manifest, () => string.IsNullOrEmpty(S().ApiKey) ? "" : KeyMask,
+            v => { if (v.Trim() != KeyMask) S().ApiKey = v.Trim(); },
             () => "API key", () => "Your own key for the provider. It is stored as plain text in the mod's config.json; every action the AI takes costs tokens on your account.");
         api.AddTextOption(manifest, () => S().BaseUrl, v => S().BaseUrl = v.Trim(),
             () => "Base URL (optional)", () => "Endpoint override, e.g. http://localhost:11434/v1 for Ollama with provider openai, or https://openrouter.ai/api/v1.");

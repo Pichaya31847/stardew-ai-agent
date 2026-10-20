@@ -23,7 +23,7 @@ If you enjoy this project, you can support development here:
 
 - Stardew Valley 1.6+
 - [SMAPI](https://smapi.io) 4.0+
-- An MCP client, e.g. [Claude Code](https://claude.com/claude-code)
+- An API key for a provider (anthropic, openai or gemini), or an MCP client such as [Claude Code](https://claude.com/claude-code)
 
 ## Install
 
@@ -69,12 +69,13 @@ split-screen: **P1** is the save's farmer (you, or an AI), **P2–P4** are farmh
 ]
 ```
 
-Three AIs and a camera screen (the recorded setup) is the default `Seats` with a `Brain` and `ApiKey` on P1–P3.
+The default `Seats` is three AI seats and a camera; give P1–P3 a `Brain` and `ApiKey` to let the mod play them.
 Things to know:
 
 - **Cost.** Every action is a model call with the game state in it. A day costs roughly 50–300k input tokens per
   AI depending on the model and how it plays; cheap models (Haiku, Flash, GPT mini, a local model) are the
-  sensible choice. Keys are stored as plain text in `config.json`; keep that file to yourself.
+  sensible choice. `DailyTokenBudget` stops a seat for the rest of the day once it has used that many tokens
+  (input + output; 0 = no limit). Keys are stored as plain text in `config.json`; keep that file to yourself.
 - **Language.** The AIs think and chat in the game's language (`ThoughtLanguage` overrides it). Scripts the
   game's font cannot draw show as `·` on the HUD unless a font mod adds them.
 - **Local models** work through `openai` + `BaseUrl`, but small models struggle with 70 tools; expect confusion.
