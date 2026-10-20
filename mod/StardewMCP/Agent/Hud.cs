@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Menus;
 
 namespace StardewMCP.Agent;
 
@@ -120,7 +121,12 @@ public static class Hud
 
         float lineH = font.LineSpacing;
         int height = (int)(wrapped.Count * lineH) + 2 * Pad;
-        var box = new Rectangle(16, 16, width, height);
+        // The toolbar sits at the top of the screen while the farmer is in the lower half: draw under it then.
+        int top = 16;
+        foreach (var menu in Game1.onScreenMenus)
+            if (menu is Toolbar bar && bar.yPositionOnScreen < Game1.uiViewport.Height / 2)
+                top = Math.Max(top, bar.yPositionOnScreen + bar.height + 8);
+        var box = new Rectangle(16, top, width, height);
         e.SpriteBatch.Draw(Game1.fadeToBlackRect, box, Color.Black * 0.6f);
         float y = box.Y + Pad;
         foreach (var (text, color) in wrapped)
