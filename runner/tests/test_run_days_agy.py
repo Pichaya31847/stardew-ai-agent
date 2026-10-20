@@ -106,15 +106,27 @@ def test_agy_meta_reporting(play_agy):
     assert "Gemini 3.8 Flash session agy-sample-session-0001" in body["event"]
 
 
-def test_agy_disallowed_tool_aborts(tmp_path, monkeypatch):
+def _agy_denied_stream(n: int) -> str:
+    run = json.dumps({"event": "step_update", "step_update": {"step_type": "tool", "state": "ACTIVE", "tool_name": "run_command",
+                                                              "tool_info": {"parameters": {"CommandLine": "dir"}}}})
+    return "\n".join([json.dumps({"event": "init", "conversation_id": "c1", "init": {"model": "gemini-3.8-flash-medium"}})]
+                     + [run] * n + [json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1}})]) + "\n"
+
+
+def test_agy_tool_its_guard_refused_does_not_end_the_session(tmp_path, monkeypatch):
     out_dir = tmp_path / "out"
     (out_dir / "logs").mkdir(parents=True)
-    fake_stream = "\n".join([
-        json.dumps({"event": "init", "conversation_id": "c1", "init": {"model": "gemini-3.8-flash-medium"}}),
-        json.dumps({"event": "step_update", "step_update": {"step_type": "tool", "state": "ACTIVE", "tool_name": "run_command", "tool_info": {"parameters": {"CommandLine": "dir"}}}}),
-    ]) + "\n"
+    proc = FakeProc(_agy_denied_stream(run_days.AGY_DENIED_LIMIT))
+    monkeypatch.setattr(run_days.subprocess, "Popen", lambda *a, **kw: proc)
+    args = SimpleNamespace(backend="agy", model="gemini-3.8-flash-medium", max_turns=600)
+    run_days.run_session(args, out_dir, 1, "play", "system", 1)
+    assert not proc.killed
 
-    proc = FakeProc(fake_stream)
+
+def test_agy_disallowed_tool_aborts_after_too_many_refusals(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    (out_dir / "logs").mkdir(parents=True)
+    proc = FakeProc(_agy_denied_stream(run_days.AGY_DENIED_LIMIT + 1))
     monkeypatch.setattr(run_days.subprocess, "Popen", lambda *a, **kw: proc)
     args = SimpleNamespace(backend="agy", model="gemini-3.8-flash-medium", max_turns=600)
     with pytest.raises(SystemExit) as exc:
@@ -272,3 +284,17 @@ def test_agy_guard_with_no_server_or_bad_input_denies():
     script = Path(run_days.agy_tool_guard.__file__)
     res = subprocess.run([run_days.sys.executable, str(script), "stardew"], input="not json", capture_output=True, text=True)
     assert json.loads(res.stdout)["decision"] == "deny"
+
+
+def test_agy_may_read_back_its_own_tool_output_with_read_file_too():
+    # day 7 of EP01: read_file (not view_file) of its own saved output stopped Gemini for the day (2026-10-20)
+    out = Path.home() / ".gemini" / "antigravity-cli" / "brain" / "083f9d4a" / ".system_generated" / "steps" / "6" / "output.txt"
+    assert _guard({"name": "read_file", "args": {"Path": str(out)}}) == {"decision": "allow"}
+    b = run_days.AgyBackend()
+    b.server = "stardew_p2"
+    read = {"event": "step_update", "step_update": {"step_type": "tool", "state": "ACTIVE", "tool_name": "read_file",
+            "tool_info": {"parameters": {"Path": str(out)}}}}
+    assert b.parse_event(read) == []
+    assert _guard({"name": "read_file", "args": {"Path": str(Path("CLAUDE.md").resolve())}})["decision"] == "deny"
+    read["step_update"]["tool_info"]["parameters"]["Path"] = str(Path("CLAUDE.md").resolve())
+    assert b.parse_event(read)[0].is_disallowed

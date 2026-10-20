@@ -54,6 +54,15 @@ def is_in_bed(state: dict, seat: str) -> bool:
     return False
 
 
+def went_to_bed(state: dict, seat: str, log_dir: Path, day: int) -> bool:
+    """In bed for the night: go_to_bed needs today's diary and is still waiting in the sleep check. Every farmer wakes up
+    on its bed at 6:00 (2026-10-19: Gemini stopped at 6:00 held the world 5 minutes), and a farmer woken from bed still
+    stands on it (2026-10-20: GPT, woken at 13:00, ended its session there and was never relaunched)."""
+    p = next((p for p in state.get("players", []) if p.get("id") == seat), {})
+    asleep = p.get("action") == "go_to_bed" or (p.get("state") or {}).get("menu") == "ReadyCheckDialog"
+    return is_in_bed(state, seat) and asleep and memory.diary_path(log_dir, day, seat).exists()
+
+
 def all_in_bed(state: dict, seats: list[str]) -> bool:
     return all(is_in_bed(state, s) for s in seats)
 
@@ -226,6 +235,7 @@ class MultiDayRunner:
         active_threads: dict[str, threading.Thread] = {}
         seat_results: dict[str, sessions.PartResult] = {}
         stopped: set[str] = set()  # seats whose session raised SystemExit: not relaunched
+        slipped: set[str] = set()  # seats that already used their one disallowed-tool restart today
         trouble: dict[str, object] = {}  # seat -> UsageLimitHit / BackendError of its last part: hold the world
         probed: dict[str, float] = {}
         prompts: dict[str, str] = {}  # seat -> prompt of its last part, repeated when that part never got going
@@ -244,6 +254,11 @@ class MultiDayRunner:
                 except game_watchdog.GameFault as e:  # the loop's GUARD.check() recovers
                     print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} ended by a game fault: {e}")
                 except SystemExit as e:  # disallowed tool; a thread would swallow it and get relaunched
+                    if str(e).startswith("Disallowed tool") and seat not in slipped:
+                        # one slip (Gemini reaching for its shell, denied by its guard anyway) costs a part, not the day
+                        slipped.add(seat)
+                        print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} session ended: {e} (it gets one more)")
+                        return
                     print(f"[{time.strftime('%H:%M:%S')}] [Multi-AI] {seat} stopped: {e}")
                     stopped.add(seat)
 
@@ -307,7 +322,7 @@ class MultiDayRunner:
                 if thread and not thread.is_alive():
                     # Thread finished
                     thread.join()
-                    in_bed = is_in_bed(state, seat)
+                    in_bed = went_to_bed(state, seat, self.log_dir, day)
                     error, res = trouble.pop(seat, None), seat_results.get(seat)
                     empty = isinstance(res, sessions.PartResult) and res.tool_calls == 0
                     if not in_bed and seat not in stopped and (error is not None or empty):

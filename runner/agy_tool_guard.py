@@ -42,13 +42,25 @@ def readable(path: str, server: str) -> bool:
     return own_mcp_file(path, server) or own_tool_output(path)
 
 
+# agy reads files with view_file (AbsolutePath) or read_file (Path); read_file of its own saved tool output was taken for a
+# forbidden tool and Gemini sat out most of day 7 (2026-10-20)
+READERS = {"view_file": "AbsolutePath", "read_file": "Path"}
+
+
+def read_path(name: str, args: dict) -> str | None:
+    """The file a read tool call opens, or None when the call is not a file read."""
+    key = READERS.get(name)
+    return str(args.get(key) or args.get("AbsolutePath") or args.get("Path") or "") if key else None
+
+
 def decide(call: dict, server: str) -> str:
     name = str(call.get("name") or "")
     args = call.get("args") if isinstance(call.get("args"), dict) else {}
     if name == "call_mcp_tool":
         srv = str(args.get("ServerName") or args.get("server_name") or args.get("server") or "")
         return "allow" if server and srv.lower() == server.lower() else "deny"
-    if name == "view_file" and readable(str(args.get("AbsolutePath") or ""), server):
+    path = read_path(name, args)
+    if path is not None and readable(path, server):
         return "allow"
     return "deny"
 

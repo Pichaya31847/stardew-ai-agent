@@ -32,10 +32,12 @@ _BREAK_LINE = re.compile(r"^" + re.escape(BREAK_MARKER), re.MULTILINE)
 DEFAULT_MAX_BREAKS = 8
 
 
-def mcp_url(api: str, breaks: bool = True, seat: str = "p1") -> str:
-    """The seat's MCP URL. `?breaks=1` asks the mod for planned session breaks on this connection."""
+def mcp_url(api: str, breaks: bool = True, seat: str = "p1", reply_within: int = 0) -> str:
+    """The seat's MCP URL. `?breaks=1` asks the mod for planned session breaks on this connection; `reply_within=N`
+    asks it to answer every call within N seconds of real time (for a client that gives up on long calls)."""
     base = f"{api}/mcp/{seat}" if seat and seat != "p1" else f"{api}/mcp"
-    return f"{base}?breaks=1" if breaks else base
+    query = [q for q in ("breaks=1" if breaks else "", f"reply_within={reply_within}" if reply_within else "") if q]
+    return f"{base}?{'&'.join(query)}" if query else base
 
 
 # ---------------------------------------------------------------------- reading the transcript

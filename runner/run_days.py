@@ -47,6 +47,11 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+# multi_runner does `import run_days`: run as a script, that would load a second copy whose GUARD stays the null
+# watchdog, so a multi-seat hang was detected but never recovered (day 7, 2026-10-20). Share this module instead.
+if __name__ == "__main__":
+    sys.modules.setdefault("run_days", sys.modules[__name__])
+
 import agy_tool_guard
 import briefing
 import game_watchdog
@@ -70,6 +75,11 @@ from run_control import RunControl  # noqa: E402
 API = "http://localhost:8770"
 CLAUDE_CMD = ["claude"]  # tests swap in a fake
 AGY_CMD = ["agy"]  # tests swap in a fake
+# agy gives up on an MCP call after 3 minutes (a travel_to or a wait in bed held the world that long and Gemini, left with an
+# error, went looking at its MCP files with run_command, 2026-10-20): the mod answers its calls before that
+AGY_REPLY_WITHIN = 150
+# calls outside the game tools that agy's guard refuses (the model is told why) before the session is ended as misbehaving
+AGY_DENIED_LIMIT = 5
 
 
 def find_opencode_cmd() -> list[str]:
@@ -100,6 +110,10 @@ def opencode_run_cmd() -> list[str]:
     service and ignores the workdir's opencode.json (no stardew MCP, no tool denials: it could read the repo)."""
     standalone = Path(OPENCODE_CMD[0]).stem.lower() == "opencode-cli"
     return [*OPENCODE_CMD, "run", *(["--standalone"] if standalone else [])]
+
+
+def git_init(folder: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(folder)], check=True)
 
 
 def opencode_env(workdir: Path) -> dict[str, str]:
@@ -340,16 +354,18 @@ def ensure_agy_mcp(mcp_url: str, server_name: str = "stardew") -> None:
         output = res.stdout or ""
         found_stardew = False
         stardew_enabled = False
+        same_url = False
         for line in output.splitlines():
             parts = line.split()
             if parts and parts[0] == server_name:
                 found_stardew = True
                 if len(parts) >= 3 and parts[2].lower() == "enabled":
                     stardew_enabled = True
+                same_url = len(parts) >= 4 and parts[3] == mcp_url
                 break
-        if not found_stardew:
+        if not found_stardew or not same_url:  # `mcp add` also updates a server's URL
             subprocess.run([*AGY_CMD, "mcp", "add", server_name, mcp_url], capture_output=True, text=True, check=False)
-        elif not stardew_enabled:
+        if found_stardew and not stardew_enabled:
             subprocess.run([*AGY_CMD, "mcp", "enable", server_name], capture_output=True, text=True, check=False)
     except Exception:
         pass
@@ -451,7 +467,8 @@ class AgyBackend(Backend):
         return "Gemini 3.8 Flash"
 
     def prepare(self, args, out_dir: Path, seat: str = "p1") -> None:
-        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False), seat=seat)
+        mcp_url = sessions.mcp_url(API, breaks=not getattr(args, "no_session_breaks", False), seat=seat,
+                                   reply_within=AGY_REPLY_WITHIN)
         srv_name = f"stardew_{seat}" if seat != "p1" else "stardew"
         self.server = srv_name
         ensure_agy_mcp(mcp_url, server_name=srv_name)
@@ -490,7 +507,8 @@ class AgyBackend(Backend):
                 raw_name = su.get("tool_name", "")
                 tinfo = su.get("tool_info", {})
                 arg = tinfo.get("parameters", {})
-                if raw_name == "view_file" and agy_own_mcp_file(str(arg.get("AbsolutePath") or ""), getattr(self, "server", "")):
+                path = agy_tool_guard.read_path(raw_name, arg)
+                if path is not None and agy_own_mcp_file(path, getattr(self, "server", "")):
                     return []  # its own copy of the stardew server's instructions: not a game action, not a leak
                 name, is_stardew = normalize_agy_tool(raw_name, arg, getattr(self, "server", ""))
                 if not is_stardew:
@@ -555,6 +573,10 @@ class OpenCodeBackend(Backend):
             },
         }
         opencode_cfg.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
+        # opencode 2.x lists a remote MCP server's tools only inside a git repo: an --out outside the repo left GPT
+        # with `stardew` but no tools (2026-10-20)
+        if not (workdir / ".git").exists():
+            git_init(workdir)
 
     def build_cmd(self, args, out_dir: Path, day: int, prompt: str, system_prompt: str, part: int, attempt: int = 1, seat: str = "p1"):
         full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
@@ -658,6 +680,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
     print(f"[{datetime.now():%H:%M:%S}]{seat_tag} day {day} part {part}: starting {args.model}")
     session_id = ""
     tool_calls = 0
+    denied = 0  # agy calls its guard refused in this session
     limit = usage_limit.LimitWatcher()
     tracker = usage_log.UsageTracker()
     game_start, t_start = game_state().get("time", ""), time.time()
@@ -676,6 +699,7 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
             CTL.watch(proc)  # stop_now / Ctrl+C: ends the session once the running tool call has finished
         assert proc.stdout
         GUARD.attach(proc)
+        game_watchdog.die_with_runner(proc)
         SESSIONS[seat] = proc
         for line in proc.stdout:
             tf.write(line)
@@ -704,6 +728,12 @@ def run_session(args, out_dir: Path, day: int, prompt: str, system_prompt: str, 
                     except Exception:
                         pass
                 elif norm_ev.kind == "tool_call":
+                    if norm_ev.is_disallowed and backend.name == "agy" and denied < AGY_DENIED_LIMIT:
+                        # agy's guard hook already refused it before it ran and told the model so: the session goes on
+                        # (2026-10-20: one search_web stopped Gemini for the day before)
+                        denied += 1
+                        print(f"  DENIED BY GUARD: {norm_ev.tool_name} ({denied}/{AGY_DENIED_LIMIT})")
+                        continue
                     if norm_ev.is_disallowed:
                         print(f"  DISALLOWED TOOL: {norm_ev.tool_name}")
                         if hasattr(proc, "kill"):

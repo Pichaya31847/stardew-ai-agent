@@ -1115,3 +1115,57 @@ def test_wait_ready_reports_a_fault_when_the_watchdog_is_armed(rd, tmp_path):
     with pytest.raises(gw.GameFault) as e:
         rd.wait_ready(timeout=30)
     assert e.value.signal == "not_ready"
+
+
+FAKE_CLI = """
+import subprocess, sys, time
+p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+open(sys.argv[1], "a").write(str(p.pid) + " ")
+time.sleep(120)
+"""
+
+FAKE_RUNNER = """
+import subprocess, sys, time
+sys.path.insert(0, sys.argv[1])
+import game_watchdog
+cli = subprocess.Popen([sys.executable, sys.argv[2], sys.argv[3]])
+game_watchdog.die_with_runner(cli)
+open(sys.argv[3], "a").write(str(cli.pid) + " ")
+time.sleep(120)
+"""
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
+def test_ai_cli_and_its_children_die_when_the_runner_is_killed(tmp_path):
+    """Closing the runner's window kills Python without a `finally`: the CLIs it started must not keep running."""
+    import time
+    pids = tmp_path / "pids.txt"
+    (tmp_path / "cli.py").write_text(FAKE_CLI)  # an AI CLI that starts a helper of its own
+    (tmp_path / "runner.py").write_text(FAKE_RUNNER)
+    runner = subprocess.Popen([sys.executable, str(tmp_path / "runner.py"), str(Path(gw.__file__).parent),
+                               str(tmp_path / "cli.py"), str(pids)])
+    for _ in range(100):
+        if pids.exists() and len(pids.read_text().split()) == 2:
+            break
+        time.sleep(0.1)
+    started = [int(p) for p in pids.read_text().split()]
+    assert len(started) == 2 and all(alive(p) for p in started)
+    runner.kill()  # TerminateProcess, like closing the console window
+    runner.wait()
+    for _ in range(50):
+        if not any(alive(p) for p in started):
+            break
+        time.sleep(0.1)
+    assert not any(alive(p) for p in started)
+
+
+def alive(pid: int) -> bool:
+    import subprocess
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+    return str(pid) in out
+
+
+def test_die_with_runner_ignores_test_doubles_and_other_platforms():
+    gw.die_with_runner(object())                       # no _handle: a fake proc
+    gw.die_with_runner(None)
+    gw.die_with_runner(type("P", (), {"_handle": 1})(), windows=False)

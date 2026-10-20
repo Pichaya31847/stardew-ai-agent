@@ -5,27 +5,60 @@ are in [recording.md](recording.md).
 
 Before you start:
 - `Mods/StardewMCP/config.json`: `LogDir` is `<out>/logs` (here `runs-ep01/logs`) and `AutoLoadSave` is the save folder.
-- Game options: exclusive **Fullscreen at 3840×2160** (DSR 4.00x).
-- OBS is open on the recording scene (Game Capture + the three `/overlay?player=pN` strips) with WebSocket on port 4455.
-  If WebSocket needs a password, put it in `OBS_WS_PASSWORD`.
-- Game Music volume is 0.
+  `<out>` may be any folder, spaces allowed (e.g. one per episode next to the videos); setting OBS's recording folder
+  (Settings → Output) to the same `<out>` keeps each day's video with its logs.
+- OBS is open on the recording scene with WebSocket on port 4455. If WebSocket needs a password, put it in
+  `OBS_WS_PASSWORD`. The scene has **one** game source, a Game Capture fitted to the canvas (Transform → Fit to
+  screen), plus the three `/overlay?player=pN` strips. No Window or Display Capture of the game stays enabled above it:
+  in exclusive fullscreen they only get stale frames, and covering the Game Capture they recorded a frozen picture with
+  old purple screens (2026-10-19). `obs_recorder.py` refuses such a scene, and a Game Capture that shows only black.
+- Start everything from your own desktop (a terminal you opened, or a double-click), never from an agent's background
+  shell: a game started on a hidden desktop renders where OBS can't hook it.
+
+## Quick way: one script
+
+```
+runner\record_day.bat 1 runs-ep01
+```
+
+It does steps 1–5 below: opens OBS on the `stardew` scene if it isn't running, puts the game on the main monitor, launches it, holds the world the moment it answers, sets
+exclusive fullscreen 4K and music 0, applies the looks, warns if the clock isn't 06:00, opens the recorder in its own
+window and runs the runner in its own (output also in `runs-ep01/recorder.out` and `run_days.out`). Close the game first.
+
+When the runner ends (after the next morning has started, so the night's money summary is in the file) it drops
+`<out>/recorder.stop`: the recorder stops OBS and closes. Every AI CLI runs in a Windows job tied to the runner, so it
+dies with the runner however that ends, even when its window is closed: nothing keeps spending a subscription. The game
+stays open with the world held.
 
 ## 1. Launch the game (terminal 1, PowerShell)
+
+The game must open on the main monitor: `displayIndex` in `%APPDATA%\StardewValley\startup_preferences` is `0`.
 
 ```powershell
 & "C:\Program Files (x86)\Steam\steamapps\common\Stardew Valley\StardewModdingAPI.exe"
 ```
 
-As soon as the API answers, hold the world so the clock doesn't run while no AI is connected:
+As soon as the API answers, hold the world so the clock doesn't run while no AI is connected (use `127.0.0.1`:
+PowerShell can stall on `localhost`; while it stalled once, the clock ran from 6:00 to 21:40 and pulling it back with
+`set_time` left the farmhand screens dark at a wrong time):
 
 ```powershell
-Invoke-RestMethod -Method Post localhost:8770/api/control -Body '{"action":"pause"}'
+Invoke-RestMethod -Method Post 127.0.0.1:8770/api/control -Body '{"action":"stop_now"}'
 ```
+
+`stop_now` is the hold `run_days.py` lifts itself when its AIs start; a `pause` waits for you to run
+`py runner/run_control.py resume`.
 
 Wait for `ready = True` and `screens = 4` (the mod loads the save and joins P2–P4 itself):
 
 ```powershell
-Invoke-RestMethod localhost:8770/api/state | Select ready,screens,paused,time
+Invoke-RestMethod 127.0.0.1:8770/api/state | Select ready,screens,paused,time
+```
+
+Exclusive fullscreen at 3840×2160 and music off, if the game options don't have them yet:
+
+```powershell
+Invoke-RestMethod -Method Post 127.0.0.1:8770/api/debug/p1/set_display -Body '{"fullscreen":true,"w":3840,"h":2160,"music":0}'
 ```
 
 ## 2. Check the resolution
@@ -66,7 +99,8 @@ $env:PYTHONIOENCODING="utf-8"
 py -u runner/run_days.py --multi --days 1 --out runs-ep01 --skip-smoke --game-cmd "`"C:\Program Files (x86)\Steam\steamapps\common\Stardew Valley\StardewModdingAPI.exe`""
 ```
 
-Don't run `run_control.py resume` yourself: `run_days.py` lifts the hold when the AIs are connected. A day takes
+With the `stop_now` hold from step 1, `run_days.py` lifts it when the AIs start (after a `pause`, run
+`py runner/run_control.py resume`). A day takes
 about 1.5–2 h of real time. For more days, change `--days`; the next batch continues from the day in the save.
 
 ## 6. Get the MP4

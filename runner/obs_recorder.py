@@ -17,6 +17,7 @@ Usage (OBS open with obs-websocket enabled, game running with the mod):
     py runner/obs_recorder.py --diary-hold 8 --stop-on-exit
     py runner/obs_recorder.py --out runs/run1      # also writes runs/run1/video_map.jsonl
     py runner/obs_recorder.py --no-pause --out runs/run1   # no pauses; cut the still time afterwards
+    py runner/obs_recorder.py --out runs/run1 --stop-on-exit --stop-file runs/run1/recorder.stop   # ends with the batch
 
 Only the standard library is used (a tiny WebSocket client for obs-websocket v5).
 """
@@ -221,6 +222,95 @@ def map_line(ev: str, video_ms, path: str | None = None, ts: datetime | None = N
     return json.dumps(line, ensure_ascii=False)
 
 
+COVERING_KINDS = ("window_capture", "monitor_capture")
+
+
+def game_window(window: str | None) -> bool:
+    """A Window Capture's "window" setting ("title:class:exe", ':' in a title is escaped) names the game's own window.
+    Unknown counts as the game; consoles (runner, recorder, SMAPI) shown over P4's quarter don't."""
+    return window is None or window.split(":")[1:2] == ["SDL_app"]
+
+
+def file_name(day) -> str:
+    """OBS's FilenameFormatting for a file that starts on farm day `day`: "DAY02 2026-10-20 21-15-20.mkv"."""
+    stamp = "%CCYY-%MM-%DD %hh-%mm-%ss"
+    return f"DAY{int(day):02d} {stamp}" if day else stamp
+
+
+def scene_problems(items: list[dict], windows: dict[str, str] | None = None) -> list[str]:
+    """What in the scene would keep the game out of the recording. items: GetSceneItemList's sceneItems; windows:
+    each Window Capture's "window" setting by source name.
+
+    A window or display capture of the game in exclusive fullscreen only gets stale frames; stacked above the
+    Game Capture it recorded a frozen picture (2026-10-19)."""
+    windows = windows or {}
+    games = [i for i in items if i["inputKind"] == "game_capture" and i["sceneItemEnabled"]]
+    if not games:
+        return ["no enabled Game Capture source in the scene"]
+    bottom = min(i["sceneItemIndex"] for i in games)
+    return [f"\"{i['sourceName']}\" ({i['inputKind']}) is enabled above the Game Capture and covers it: disable it"
+            for i in items
+            if i["inputKind"] in COVERING_KINDS and i["sceneItemEnabled"] and i["sceneItemIndex"] > bottom
+            and (i["inputKind"] != "window_capture" or game_window(windows.get(i["sourceName"])))]
+
+
+def bmp_mean_brightness(data: bytes) -> float:
+    """Mean of all colour channels (0..255) of an uncompressed 24/32-bit BMP, as OBS's GetSourceScreenshot returns."""
+    offset, = struct.unpack_from("<I", data, 10)
+    width, height, _, bpp = struct.unpack_from("<iiHH", data, 18)
+    step = bpp // 8
+    row = (abs(width) * step + 3) & ~3
+    total = 0
+    for y in range(abs(height)):
+        px = data[offset + y * row: offset + y * row + abs(width) * step]
+        total += sum(px) - (sum(px[3::4]) if step == 4 else 0)  # drop alpha
+    return total / (abs(width) * abs(height) * 3)
+
+
+def check_scene(obs: Obs, wait_s: float = 15.0):
+    """Refuse to record a scene that shows no game: a covering capture, or a Game Capture still black (not hooked,
+    e.g. the game was started on a hidden desktop or a second monitor)."""
+    scene = obs.request("GetCurrentProgramScene")["currentProgramSceneName"]
+    items = obs.request("GetSceneItemList", {"sceneName": scene})["sceneItems"]
+    windows = {i["sourceName"]: obs.request("GetInputSettings", {"inputName": i["sourceName"]})
+               .get("inputSettings", {}).get("window") for i in items if i["inputKind"] == "window_capture"}
+    problems = scene_problems(items, windows)
+    if problems:
+        raise SystemExit(f"OBS scene \"{scene}\": " + "; ".join(problems))
+    game = min((i for i in items if i["inputKind"] == "game_capture" and i["sceneItemEnabled"]),
+               key=lambda i: i["sceneItemIndex"])["sourceName"]
+    deadline = time.monotonic() + wait_s
+    while True:
+        shot = obs.request("GetSourceScreenshot", {"sourceName": game, "imageFormat": "bmp",
+                                                    "imageWidth": 64, "imageHeight": 36})["imageData"]
+        brightness = bmp_mean_brightness(base64.b64decode(shot.split(",", 1)[1]))
+        if brightness > 2:
+            log(f"OBS scene \"{scene}\": \"{game}\" shows the game (brightness {brightness:.0f})")
+            return
+        if time.monotonic() > deadline:
+            raise SystemExit(f"OBS \"{game}\" is black: it has not hooked the game. Start the game on the main "
+                             "monitor from your own desktop session, check the source's window, then try again.")
+        time.sleep(1)
+
+
+def smapi_console(windows: list[str]) -> str | None:
+    """The host game's SMAPI console among OBS's "title:class:exe" window choices. Its title carries the mod count and
+    the host/farmhand role, so a fixed title in the scene misses it."""
+    return next((w for w in windows if w.startswith("SMAPI ") and "[farmhand]" not in w and ":SDL_app:" not in w), None)
+
+
+def point_smapi_log(obs: Obs, source: str = "Log SMAPI"):
+    """Aim the scene's SMAPI log Window Capture (shown over P4's quarter) at the console that is open now."""
+    try:
+        items = obs.request("GetInputPropertiesListPropertyItems", {"inputName": source, "propertyName": "window"})
+    except RuntimeError:
+        return  # no such source in this scene
+    window = smapi_console([i.get("itemValue", "") for i in items.get("propertyItems", [])])
+    if window:
+        obs.request("SetInputSettings", {"inputName": source, "inputSettings": {"window": window}})
+        log(f"\"{source}\" shows {window.split(':')[0]}")
+
+
 def refresh_overlays(obs: Obs):
     """Reload browser sources that show the mod's pages. If OBS opened before the game, they hold an error page."""
     for inp in obs.request("GetInputList", {"inputKind": "browser_source"}).get("inputs", []):
@@ -253,23 +343,14 @@ def run(args):
             time.sleep(0.1)
         raise ConnectionError(f"OBS recording did not {'start' if want else 'stop'}")
 
-    def start_record():
+    fmt = {"parameterCategory": "Output", "parameterName": "FilenameFormatting"}
+    old_format = obs.request("GetProfileParameter", fmt).get("parameterValue")
+
+    def start_record(day=None):
+        obs.request("SetProfileParameter", {**fmt, "parameterValue": file_name(day)})
         obs.request("StartRecord")
         wait_active(True)
         write_map("start", 0)
-
-    status = obs.request("GetRecordStatus")
-    if not status.get("outputActive"):
-        if args.no_start:
-            raise SystemExit("OBS is not recording (start it, or drop --no-start).")
-        start_record()
-        log("recording started")
-        status = {"outputActive": True, "outputPaused": False}
-    else:
-        write_map("start", status.get("outputDuration", 0))  # attached: anchor to where the file is now
-        if status.get("outputPaused"):
-            write_map("pause", status.get("outputDuration", 0))
-    paused = bool(status.get("outputPaused"))
 
     while True:
         try:
@@ -278,6 +359,21 @@ def run(args):
         except OSError:
             log(f"waiting for the game API at {API} …")
             time.sleep(3)
+    check_scene(obs)
+    point_smapi_log(obs)
+
+    status = obs.request("GetRecordStatus")
+    if not status.get("outputActive"):
+        if args.no_start:
+            raise SystemExit("OBS is not recording (start it, or drop --no-start).")
+        start_record(feed.get("state", {}).get("day"))
+        log("recording started")
+        status = {"outputActive": True, "outputPaused": False}
+    else:
+        write_map("start", status.get("outputDuration", 0))  # attached: anchor to where the file is now
+        if status.get("outputPaused"):
+            write_map("pause", status.get("outputDuration", 0))
+    paused = bool(status.get("outputPaused"))
     seq = max((e.get("seq", 0) for e in feed.get("entries", [])), default=0)
     file_day = feed.get("state", {}).get("day")
     if not args.no_refresh_overlay:
@@ -317,23 +413,30 @@ def run(args):
 
     def stop_record() -> str:
         nonlocal paused, paused_at, paused_total
-        video_ms = obs.request("GetRecordStatus").get("outputDuration", 0)
-        path = obs.request("StopRecord").get("outputPath", "")
-        write_map("stop", video_ms, path)
+        st = obs.request("GetRecordStatus")
+        video_ms = st.get("outputDuration", 0)
+        # Already stopped (in OBS, or while the game was closed): StopRecord would fail with 501 and kill the recorder.
+        path = obs.request("StopRecord").get("outputPath", "") if st.get("outputActive") else ""
+        write_map("stop", video_ms, path or None)
         if paused_at is not None:
             paused_total += time.monotonic() - paused_at
         paused, paused_at = False, None
         return path
 
-    def new_file(why: str):
+    def new_file(why: str, day=None):
         path = stop_record()
         wait_active(False)
-        start_record()
+        start_record(day)
         log(f"new recording file ({why}); previous → {path}")
 
     try:
         while True:
             now = time.monotonic()
+            if args.stop_file and os.path.exists(args.stop_file):
+                os.remove(args.stop_file)
+                log("stop file found: the batch is over")
+                args.stop_on_exit = True
+                return
             try:
                 feed = api_get(f"/api/feed?after={seq}")
             except OSError:
@@ -345,14 +448,14 @@ def run(args):
             entries, state = feed.get("entries", []), feed.get("state", {})
             if api_down:
                 api_down = False
-                new_file("game API back")
+                new_file("game API back", state.get("day"))
                 file_day = None
                 if not args.no_refresh_overlay:
                     refresh_overlays(obs)
             day = feed_day(entries, state)
             if day is not None:
                 if file_day is not None and day != file_day:
-                    new_file(f"farm day {day}")
+                    new_file(f"farm day {day}", day)
                 file_day = day
             for e in entries:
                 seq = max(seq, e.get("seq", 0))
@@ -390,7 +493,7 @@ def run(args):
             time.sleep(args.interval)
     finally:
         try:
-            if paused:
+            if paused and obs.request("GetRecordStatus").get("outputActive"):
                 obs.request("ResumeRecord")
                 write_map("resume")
             if args.stop_on_exit:
@@ -398,6 +501,8 @@ def run(args):
             else:
                 log("left OBS recording (resumed). Stop it in OBS when done.")
         finally:
+            if old_format:  # the user's own OBS recordings keep their usual names
+                obs.request("SetProfileParameter", {**fmt, "parameterValue": old_format})
             obs.close()
 
 
@@ -423,6 +528,8 @@ def main():
                     help="Stop recording and exit once the (cut) video is this long. 0 = no limit")
     ap.add_argument("--no-start", action="store_true", help="Don't start recording; require it to be running already")
     ap.add_argument("--stop-on-exit", action="store_true", help="Stop the OBS recording when this script exits")
+    ap.add_argument("--stop-file", default="",
+                    help="Stop recording and exit once this file appears (record_day.ps1 creates it when the runner ends)")
     ap.add_argument("--no-refresh-overlay", action="store_true",
                     help="Don't reload the overlay browser source in OBS when the game API comes up")
     ap.add_argument("--out", default="",

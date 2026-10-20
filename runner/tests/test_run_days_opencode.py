@@ -62,6 +62,7 @@ def play_opencode(tmp_path, monkeypatch):
 
     monkeypatch.setattr(run_days.subprocess, "Popen", popen)
     monkeypatch.setattr(run_days, "api_post", api_post)
+    monkeypatch.setattr(run_days, "git_init", lambda folder: (folder / ".git").mkdir())
 
     def run(sample: str = "opencode_stream_day.jsonl", *, day: int = 2, part: int = 1, seat: str = "p1",
             model: str = "opencode-go/gpt-6-luna", max_turns: int = 600,
@@ -95,6 +96,8 @@ def test_opencode_launch_command(play_opencode):
     assert cfg["tools"]["edit"] is False
     assert cfg["permission"]["stardew_*"] == "allow"
     assert cfg["permission"]["*"] == "deny"
+    # outside a git repo opencode shows the stardew server without its tools
+    assert (s.out_dir / "workdir" / ".git").is_dir()
 
 
 def test_opencode_stream_parsing_and_tool_counts(play_opencode, capsys):

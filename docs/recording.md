@@ -34,9 +34,8 @@ The recording holds only the game; the VO is written from the logs and recorded 
     | think P2 | `http://localhost:8770/overlay?player=p2` | 1920, 0 |
     | think P3 | `http://localhost:8770/overlay?player=p3` | 0, 1080 |
 
-    Add `&mock=1` to see sample text without the game. Speech bubbles stay below the top `BubbleTopMargin` (part of
-    the screen height, default 0.12, in `Mods/StardewMCP/config.json`) so a strip never covers what is said; raise it
-    if a strip grows taller.
+    Add `&mock=1` to see sample text without the game. Speech bubbles and the names above the farmers are drawn at
+    their real place in the world, the same on every screen, and are cut at the screen edge like the game's own.
 
 ## Once per farm, before day 1
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +14,19 @@ import multi_runner
 import personas
 import run_days
 import sessions
+
+
+def test_script_run_shares_its_module_with_multi_runner():
+    """Run as a script, run_days must be the module multi_runner sees: its GUARD is the live watchdog there."""
+    runner = Path(run_days.__file__).parent
+    code = ("import runpy, sys\n"
+            "sys.argv = ['run_days.py', '--help']\n"
+            "try:\n    runpy.run_path('run_days.py', run_name='__main__')\n"
+            "except SystemExit:\n    pass\n"
+            "import multi_runner\n"
+            "print(multi_runner.run_days.__name__)\n")
+    out = subprocess.run([sys.executable, "-c", code], cwd=runner, capture_output=True, text=True, timeout=60)
+    assert out.stdout.strip().splitlines()[-1] == "__main__", out.stderr
 
 
 def test_parse_multi_config_defaults():
@@ -291,8 +306,72 @@ def test_multi_day_seat_stopped_by_system_exit_is_not_relaunched(tmp_path, monke
     multi_runner.run_multi_day(args, out_dir, log_dir, 1, {"p1": "S1", "p2": "S2"}, cfg,
                                api_get_fn=api_get, api_post_fn=lambda p, b: posted.append((p, b)) or {},
                                wait_ready_fn=lambda: state)
-    assert [c for c in calls if c[0] == "p1"] == [("p1", 1)]  # not burned through all 4 parts
+    assert [c for c in calls if c[0] == "p1"] == [("p1", 1), ("p1", 2)]  # one more session, not all 4 parts
     assert ("/api/release_freeze", {"seat": "p1"}) in posted
+
+
+def test_multi_day_seat_stopped_on_its_bed_at_6am_still_releases_the_world(tmp_path, monkeypatch):
+    # every farmer wakes up on its bed: without today's diary that is not "in bed for the night", and the other seat,
+    # still mid-action, waited on the stopped one's hold (2026-10-19)
+    import threading
+    out_dir = tmp_path / "out"
+    log_dir = out_dir / "logs"
+    log_dir.mkdir(parents=True)
+    posted, released, waited = [], threading.Event(), []
+
+    def fake_run_session(args, out_d, day, prompt, sys_prompt, part=1, attempt=1, seat="p1"):
+        if seat == "p1":
+            raise SystemExit("Disallowed tool call aborted: run_command")
+        waited.append(released.wait(10))  # p2's action only finishes once the world runs
+        (log_dir / "diary_001_p2.md").write_text("done", encoding="utf-8")
+        return sessions.PartResult(2, False)
+
+    def api_post(path, body):
+        posted.append((path, body))
+        if path == "/api/release_freeze" and body.get("seat") == "p1":
+            released.set()
+        return {}
+
+    monkeypatch.setattr(run_days, "run_session", fake_run_session)
+    state = {"ready": True, "day": 1,
+             "players": [{"id": "p1", "state": {"inBed": True}}, {"id": "p2", "state": {"inBed": True}}]}
+
+    def api_get(path):
+        if path == "/api/state" and waited:
+            state["day"] = 2
+        return state
+
+    args = SimpleNamespace(multi=True, seats="p1,p2", max_parts=2, max_breaks=0, pass_out_timeout=60)
+    cfg = multi_runner.parse_multi_config(args)
+    multi_runner.run_multi_day(args, out_dir, log_dir, 1, {"p1": "S1", "p2": "S2"}, cfg,
+                               api_get_fn=api_get, api_post_fn=api_post, wait_ready_fn=lambda: state)
+    assert waited == [True]  # released while p2 was still playing, not after it gave up
+    assert ("/api/release_freeze", {"seat": "p2"}) not in posted
+
+
+def test_multi_day_seat_woken_from_bed_gets_its_next_part(tmp_path, monkeypatch):
+    # woken from bed, a farmer still stands on it with today's diary written; its session ending there is not
+    # "asleep" (2026-10-20: GPT was never relaunched and the sleep check stayed at 1/3)
+    out_dir = tmp_path / "out"
+    log_dir = out_dir / "logs"
+    log_dir.mkdir(parents=True)
+    multi_runner.memory.diary_path(log_dir, 1, "p1").write_text("done", encoding="utf-8")
+    state = {"ready": True, "day": 1, "players": [{"id": "p1", "state": {"inBed": True}}]}
+    parts = []
+
+    def fake_run_session(args, out_d, day, prompt, sys_prompt, part=1, attempt=1, seat="p1"):
+        parts.append(part)
+        if part == 1:
+            return sessions.PartResult(3, True)  # a session break while awake on its bed
+        state["day"] = 2
+        return sessions.PartResult(1, False)
+
+    monkeypatch.setattr(run_days, "run_session", fake_run_session)
+    args = SimpleNamespace(multi=True, seats="p1", max_parts=3, max_breaks=2, pass_out_timeout=60)
+    cfg = multi_runner.parse_multi_config(args)
+    multi_runner.run_multi_day(args, out_dir, log_dir, 1, {"p1": "S1"}, cfg,
+                               api_get_fn=lambda path: state, api_post_fn=lambda path, body: {}, wait_ready_fn=lambda: state)
+    assert parts == [1, 2]
 
 
 def test_multi_day_stop_now_launches_no_further_parts(tmp_path, monkeypatch):

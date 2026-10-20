@@ -19,6 +19,8 @@ import stream_events as se
 def test_mcp_url_opts_in_to_breaks():
     assert sessions.mcp_url("http://localhost:8770") == "http://localhost:8770/mcp?breaks=1"
     assert sessions.mcp_url("http://localhost:8770", breaks=False) == "http://localhost:8770/mcp"
+    assert sessions.mcp_url("http://localhost:8770", seat="p2", reply_within=170) == "http://localhost:8770/mcp/p2?breaks=1&reply_within=170"
+    assert sessions.mcp_url("http://localhost:8770", breaks=False, reply_within=170) == "http://localhost:8770/mcp?reply_within=170"
 
 
 def test_saw_break_in_list_content():

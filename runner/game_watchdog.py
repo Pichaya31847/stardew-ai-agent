@@ -290,6 +290,47 @@ class SystemProcesses:
                         close_fds=True)
 
 
+_JOB = None
+
+
+def die_with_runner(proc, windows: bool = IS_WINDOWS) -> None:
+    """Put an AI CLI (and every process it starts) in a Windows job that is killed when this process ends, however it
+    ends: closing the runner's window runs no `finally`, and orphaned CLIs kept spending the subscription. The game is
+    never put in it, so the world stays held after the runner exits."""
+    global _JOB
+    handle = getattr(proc, "_handle", None)
+    if not windows or handle is None:
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("Basic", Basic), ("IoInfo", ctypes.c_uint64 * 6), ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    if _JOB is None:
+        job = k32.CreateJobObjectW(None, None)
+        info = Extended()
+        info.Basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not job or not k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):  # 9 = extended limits
+            print(f"[watchdog] could not set up the kill-on-exit job (error {ctypes.get_last_error()})", flush=True)
+            return
+        _JOB = job  # never closed: the handle closes, and the job's processes die, when this process exits
+    if not k32.AssignProcessToJobObject(_JOB, int(handle)):
+        print(f"[watchdog] pid {proc.pid} not tied to the runner (error {ctypes.get_last_error()})", flush=True)
+
+
 def kill_tree(proc, run: Callable = subprocess.run, windows: bool = IS_WINDOWS) -> None:
     """Stop a subprocess and its children (the `claude` CLI may start helpers). Safe on None / exited."""
     if proc is None or proc.poll() is not None:
