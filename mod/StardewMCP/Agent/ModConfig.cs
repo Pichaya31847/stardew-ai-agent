@@ -74,7 +74,7 @@ public class ModConfig
     /// <summary>Port for the MCP endpoint (/mcp), overlay (/overlay) and replay (/replay).</summary>
     public int HttpPort { get; set; } = 8770;
 
-    /// <summary>Stop the in-game clock while no agent action is running (the AI is thinking).</summary>
+    /// <summary>Stop the in-game clock while no agent action is running (the AI is thinking). Starts with the seat's first AI contact, so a seat nobody plays never holds the clock.</summary>
     public bool FreezeTimeWhileThinking { get; set; } = true;
 
     /// <summary>Folder for per-day JSONL logs and diaries. Empty = "logs" inside the mod folder.</summary>

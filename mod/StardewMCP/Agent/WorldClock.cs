@@ -72,8 +72,10 @@ public static class WorldClock
     private static bool IsThinking(PlayerSlot slot, bool split)
     {
         var watch = _thinking[slot.Screen];
-        bool candidate = slot.Role == SeatRole.Ai && !slot.Runtime.ActionRunning &&
-                         (split ? slot.Connected && slot.Active : slot.Screen == 0);
+        // Only a seat an AI has talked to (an MCP call, or its built-in brain) holds the world: a fresh install with
+        // nothing connected must not stop the clock on every save.
+        bool candidate = slot.Role == SeatRole.Ai && !slot.Runtime.ActionRunning && slot.Connected &&
+                         (split ? slot.Active : slot.Screen == 0);
         if (!candidate || slot.TimedOut || slot.Released)
         {
             watch.Reset();
