@@ -24,7 +24,7 @@ Two test suites run without Stardew Valley:
 
 ```bash
 dotnet test mod/StardewMCP.Tests                                  # C#: xUnit, .NET 6 SDK
-pip install pytest && python -m pytest -q runner/tests studio     # Python: runner and studio
+pip install pytest && python -m pytest -q mod/tests                 # Python: tool schema lint, overlay i18n, fishing and crop math
 ```
 
 The mod project itself needs the game's DLLs (ModBuildConfig finds them in your game folder), so it
