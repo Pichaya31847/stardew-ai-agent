@@ -53,7 +53,7 @@ Then give each AI its look from `runner/looks.json` (PowerShell):
 
 ```
 $looks = Get-Content runner/looks.json -Raw | ConvertFrom-Json
-foreach ($p in 'p1','p2','p3') { Invoke-RestMethod -Method Post "http://localhost:8770/api/debug/$p/set_look" -Body ($looks.$p | ConvertTo-Json -Compress) }
+foreach ($p in 'p1','p2','p3') { Invoke-RestMethod -Method Post "http://127.0.0.1:8770/api/debug/$p/set_look" -Body ($looks.$p | ConvertTo-Json -Compress) }
 ```
 
 Separate wallets: `run_days.py --multi` refuses a shared one. The game itself saves only at the end of a day, so keep
