@@ -34,8 +34,7 @@ public static partial class AgentTools
     // Str, Int, Tiles, Obj (schema) and Reason, ArgsForLog, S, I, Has, TileList (arguments) are in ToolArgs.cs.
 
     /// <summary>Language for text shown to viewers (config ThoughtLanguage).</summary>
-    private static string Lang =>
-        string.IsNullOrWhiteSpace(Config.ThoughtLanguage) ? "Thai" : Config.ThoughtLanguage.Trim();
+    private static string Lang => Config.LanguageName();
 
     private static string ReasonDesc => Lang.Equals("Thai", StringComparison.OrdinalIgnoreCase)
         ? "Short reason IN THAI shown to viewers on screen (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"

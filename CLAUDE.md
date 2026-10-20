@@ -29,6 +29,9 @@ add an HTTP endpoint or an event here and consume it there.
   to what they claimed; mentions, whispers, gifts, theft, arrivals and weather interrupt a running
   long action and come back as `Events:`.
 - **Memory**: `journal` (diary, lessons, plan, notes), `self` / `people` notes that emerge from play.
+- **Seats** (`ModConfig.Seats`, `SeatRole`): each of P1–P4 is `ai`, `human` (P1 only, keyboard and mouse,
+  never frozen by the clock), `camera` or `off`. An `ai` seat is driven either by an external MCP client
+  (`Brain: none`, the studio runner) or by the mod's own loop (`Brain: anthropic | openai | gemini`).
 - Separate wallets, a personal plot and chest per player are game options the save provides.
 
 ## Layout
@@ -37,7 +40,7 @@ add an HTTP endpoint or an event here and consume it there.
 mod/StardewMCP/
   ModEntry.cs          SMAPI entry: config, events, auto-load, mcp_freeze command
   Pathfinder.cs        A* walking routes; IsWalkable uses the game's own collision check
-  assets/              overlay.html and replay.html, served at /overlay and /replay
+  assets/              overlay.html and replay.html (served at /overlay and /replay), system_prompt.md (the built-in AI's prompt)
   Agent/
     AgentHttp.cs       HttpListener on localhost:8770: /mcp, /overlay, /replay, /api/*
     AgentRuntime.cs    Runs tool calls on the game thread as coroutines; freezes time between calls
@@ -59,6 +62,15 @@ mod/StardewMCP/
     SplitScreen.cs     Joins P2-P4 without gamepads, per-screen zoom, gamepad-hint cleanup
     SplitScreenPatches.cs  Harmony: P1 input lock, clean frozen frames, hidden join lines, frame capture
     RunControl.cs      Pause / stop_after_day / stop_now (F8, POST /api/control), unknown-menu watch for go_to_bed
+    Hud.cs             In-game panel per AI screen (name, model, action or thinking time, last think / say); fed by AgentLog.Added
+    ConfigMenu.cs      Generic Mod Config Menu pages (optional dependency; IGenericModConfigMenuApi.cs is the copied API)
+    Cabins.cs          Builds the farmhands' cabins (AutoBuildCabins, debug build_cabins)
+    Brain/             The built-in AI loop ("viewer edition": the mod plays a seat itself with the user's API key)
+      Llm.cs           Provider-neutral chat types, ILlmProvider, LlmProviders factory, SchemaFilter (game-free)
+      AnthropicProvider.cs / OpenAiProvider.cs / GeminiProvider.cs   Wire formats (game-free; OpenAI = any compatible server)
+      Prompts.cs       System prompt from assets/system_prompt.md + memory files; morning / meeting / nudge / handoff texts (game-free)
+      SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; meeting, breaks, retries
+      Brains.cs        Starts a SeatBrain per configured seat on save load; meeting barrier; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source and the overlay pages (see Tests)
 docs/coverage.md       Which game features the tools cover, and how to add one
@@ -111,6 +123,7 @@ mod/StardewMCP/Agent/ToolArgs.cs     Schema and argument helpers (Obj, Str, Int,
 mod/StardewMCP/Agent/ToolContract.cs Rules for tools/list (valid schema, required in properties, reason on actions); logged at startup
 mod/StardewMCP/Agent/McpDispatcher.cs JSON-RPC handling over IMcpSeat; McpSeat.cs adapts a real seat for AgentHttp
 mod/StardewMCP/Agent/WorldText.Format.cs  FormatTime, DirName, part of WorldText
+mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts
 ```
 
 New logic that can run without the game goes into such a file with a test; keep moves small and leave a

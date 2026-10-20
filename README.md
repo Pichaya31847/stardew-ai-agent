@@ -4,7 +4,9 @@ A [SMAPI](https://smapi.io) mod that lets an AI agent play Stardew Valley. The m
 [MCP](https://modelcontextprotocol.io) server **inside the game**, so Claude (or any MCP client)
 can look around, walk, farm, talk to villagers, shop and go to bed on its own.
 
-- **Game time freezes while the AI thinks**, so a slow model loses no in-game time.
+- **Up to three AIs play the farm with you** in split-screen (Claude, GPT, Gemini or a local model, with your own
+  API key), or any MCP client drives a farmer from outside.
+- **Game time freezes while the AI thinks**, so a slow model loses no in-game time (or let the world run on).
 - **Overlay and replay pages** served by the mod (`/overlay`, `/replay`): the AI's thoughts and actions live, usable as an OBS browser source.
 - **Replay page** and per-day JSONL logs + diaries for every run.
 
@@ -30,6 +32,54 @@ If you enjoy this project, you can support development here:
 3. Unzip it into `Stardew Valley/Mods/`.
 4. Start the game through SMAPI. The console should show
    `Agent MCP at http://localhost:8770/mcp`.
+
+## Play with the AIs (no OBS, no scripts)
+
+The mod can play its farmers by itself with your own API key. Up to four screens share the farm in
+split-screen: **P1** is the save's farmer (you, or an AI), **P2–P4** are farmhands (AIs, a camera, or off).
+
+1. Start a **new co-op farm** (the mod builds the missing cabins by itself; `AutoBuildCabins`), or use any save.
+2. Open the mod's settings. With [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) installed:
+   title screen → the cog → *Stardew MCP*. Otherwise edit `Mods/StardewMCP/config.json` (created on first start).
+3. For each seat choose **who plays it** and, for an AI, the **provider**, **model** and **API key**:
+
+   | Provider | Models | Key / endpoint |
+   |---|---|---|
+   | `anthropic` | `claude-haiku-5-5` (default), `claude-sonnet-5-5`, ... | [console.anthropic.com](https://console.anthropic.com) |
+   | `openai` | `gpt-5-mini` (default), `gpt-5`, ... | [platform.openai.com](https://platform.openai.com); or any OpenAI-compatible server with a `BaseUrl`: OpenRouter (`https://openrouter.ai/api/v1`), Ollama (`http://localhost:11434/v1`, no key), LM Studio |
+   | `gemini` | `gemini-3.8-flash` (default), ... | [aistudio.google.com](https://aistudio.google.com) |
+   | `none` | | an external MCP client drives the seat (see *Connect an AI*) |
+
+4. Pick the **time mode**: *Freeze the world while an AI thinks* (on: a slow model costs no game time and
+   nobody moves while any AI is between actions; off: the clock keeps running and the AIs keep up as well as
+   they can). With a human at P1, off is the natural choice.
+5. Load the save. Each AI screen shows a small panel with the farmer's thoughts, chat and current action
+   (`ShowHud`); the SMAPI console command `mcp_brain` prints their status, `mcp_brain stop` / `start` pauses them.
+
+`config.json` for "I play P1, two AIs play with me, world keeps running":
+
+```json
+"SplitScreen": true,
+"FreezeTimeWhileThinking": false,
+"Seats": [
+  { "Role": "human" },
+  { "Role": "ai", "Brain": "anthropic", "ApiKey": "sk-ant-...", "Name": "Claude" },
+  { "Role": "ai", "Brain": "gemini", "ApiKey": "AIza...", "Name": "Gemini" },
+  { "Role": "off" }
+]
+```
+
+Three AIs and a camera screen (the recorded setup) is the default `Seats` with a `Brain` and `ApiKey` on P1–P3.
+Things to know:
+
+- **Cost.** Every action is a model call with the game state in it. A day costs roughly 50–300k input tokens per
+  AI depending on the model and how it plays; cheap models (Haiku, Flash, GPT mini, a local model) are the
+  sensible choice. Keys are stored as plain text in `config.json`; keep that file to yourself.
+- **Language.** The AIs think and chat in the game's language (`ThoughtLanguage` overrides it). Scripts the
+  game's font cannot draw show as `·` on the HUD unless a font mod adds them.
+- **Local models** work through `openai` + `BaseUrl`, but small models struggle with 70 tools; expect confusion.
+- The system prompt is `Mods/StardewMCP/assets/system_prompt.md`; edit it to change how the AIs play.
+- Three screens are heavy: a 2560×1440 window at 60 FPS needs a mid-range GPU; lower the resolution if it stutters.
 
 ## Connect an AI
 
@@ -250,11 +300,19 @@ is not affiliated with ConcernedApe. No game files are included.
 
 Mod สำหรับ Stardew Valley ที่ให้ AI (เช่น Claude) เล่นเกมเองได้ ผ่าน MCP server ที่รันอยู่ในเกม
 
-- เวลาในเกมหยุดเดินระหว่างที่ AI กำลังคิด
+- เวลาในเกมหยุดเดินระหว่างที่ AI กำลังคิด (ปิดได้ ถ้าอยากให้โลกเดินต่อ)
+- ให้ AI เล่นเองได้สูงสุด 3 ตัว (Claude, GPT, Gemini หรือโมเดลในเครื่อง) พร้อมคุณในจอแบ่ง หรือต่อกับ MCP client ภายนอกก็ได้
 - มีหน้า overlay (`/overlay`) แสดงความคิดและการกระทำของ AI แบบสด ๆ ใช้เป็น browser source ใน OBS ได้
 - มีหน้า replay และ log/ไดอารี่รายวัน
 
 **ติดตั้ง:** ลง SMAPI → แตกไฟล์ zip จากหน้า Releases ไว้ใน `Stardew Valley/Mods/` → เปิดเกมผ่าน SMAPI
+
+**ให้ AI เล่นเอง (ไม่ต้องมี OBS หรือสคริปต์):** ลง [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098)
+แล้วเปิดตั้งค่าของ *Stardew MCP* ที่หน้าไตเติล (หรือแก้ `Mods/StardewMCP/config.json`) เลือกว่าแต่ละที่นั่ง P1–P4
+ใครเล่น (คุณเอง / AI / กล้อง / ปิด) เลือกผู้ให้บริการ AI (`anthropic`, `openai` หรือเซิร์ฟเวอร์ที่เข้ากันได้เช่น Ollama,
+`gemini`) ใส่ API key ของตัวเอง แล้วเลือกโหมดเวลา: *หยุดโลกตอน AI คิด* (เปิด = AI ช้าก็ไม่เสียเวลาในเกม แต่ทุกคนหยุดด้วย,
+ปิด = เวลาเดินต่อ AI ต้องตามให้ทัน) โหลดเซฟแล้ว AI จะเล่นเอง มีกล่องแสดงความคิดและแชตบนจอของมัน
+ค่าใช้จ่ายคิดตามโทเคนของ key คุณเอง (วันละประมาณ 50–300k input tokens ต่อ AI) แนะนำโมเดลราคาถูก เช่น Haiku, Flash, GPT mini
 
 **ต่อกับ Claude Code:** เปิดเกม โหลดเซฟ แล้วรัน
 `claude mcp add --transport http stardew http://localhost:8770/mcp`

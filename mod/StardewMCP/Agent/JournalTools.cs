@@ -34,8 +34,7 @@ public static class JournalTools
 
     private static readonly Regex Bullet = new(@"^(?:[-*•]+|\d+[.)])\s+", RegexOptions.CultureInvariant);
 
-    private static string Lang =>
-        string.IsNullOrWhiteSpace(AgentTools.Config.ThoughtLanguage) ? "Thai" : AgentTools.Config.ThoughtLanguage.Trim();
+    private static string Lang => AgentTools.Config.LanguageName();
 
     public static List<ToolDef> All() => new()
     {

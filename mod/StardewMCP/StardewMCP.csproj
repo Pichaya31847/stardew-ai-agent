@@ -17,6 +17,7 @@
   <ItemGroup>
     <None Include="assets\overlay.html" CopyToOutputDirectory="PreserveNewest" />
     <None Include="assets\replay.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="assets\system_prompt.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

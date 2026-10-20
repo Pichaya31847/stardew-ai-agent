@@ -53,7 +53,7 @@ public class AgentHttp
         _monitor = monitor;
         _assetDir = assetDir;
         _tools = AgentTools.All().ToDictionary(t => t.Name);
-        _mcp = new McpDispatcher(_tools, _config.SplitScreen);
+        _mcp = new McpDispatcher(_tools, () => _config.SplitScreen);
         foreach (var problem in ToolContract.Check(_tools.Values))
             _monitor.Log("Tool contract: " + problem, LogLevel.Warn);
     }
@@ -338,9 +338,8 @@ public class AgentHttp
         await Text(res, await System.IO.File.ReadAllTextAsync(path, Encoding.UTF8), "text/html");
     }
 
-    /// <summary>ThoughtLanguage from config.json (blank = "Thai"); the overlay, replay and runner follow it.</summary>
-    private string ThoughtLanguageName =>
-        string.IsNullOrWhiteSpace(_config.ThoughtLanguage) ? "Thai" : _config.ThoughtLanguage.Trim();
+    /// <summary>ThoughtLanguage from config.json (blank = the game's language); the overlay, replay and runner follow it.</summary>
+    private string ThoughtLanguageName => _config.LanguageName();
 
     /// <summary>Refresh the overlay state snapshot (call on the host screen's tick, ~4x/sec).</summary>
     public void RefreshState()
@@ -353,7 +352,8 @@ public class AgentHttp
                 return new
                 {
                     id = s.Id,
-                    role = s.Role == SeatRole.Ai ? "ai" : "camera",
+                    role = s.Role.ToString().ToLowerInvariant(),
+                    brain = Brain.Brains.Describe(s.Id),
                     active = s.Active,
                     connected = s.Connected,
                     state = s.State,
