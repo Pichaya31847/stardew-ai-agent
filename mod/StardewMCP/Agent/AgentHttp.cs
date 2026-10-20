@@ -310,6 +310,7 @@ public class AgentHttp
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         SessionBreaks.Observe(seat.Id, root, req.QueryString["breaks"]); // "initialize" starts a session; /mcp?breaks=1 opts in (#30)
+        seat.ReplyWithinSeconds = int.TryParse(req.QueryString["reply_within"], out var within) ? within : 0; // agy gives up after 3 minutes
 
         var reply = await _mcp.Handle(root, new McpSeat(seat));
         if (reply.Body == null) { res.StatusCode = reply.Status; res.Close(); return; }
@@ -380,6 +381,8 @@ public class AgentHttp
             ready = true,
             heartbeat = ++_beat,
             saveFolder = SaveFolder.Name,
+            logDir = _log.Dir, // run_days.py checks it is <out>/logs
+            separateWallets = p.team.useSeparateWallets.Value, // a multi-seat run_days.py refuses a shared wallet
             thoughtLanguage = ThoughtLanguageName,
             day = AgentLog.FarmDay,
             season = Game1.currentSeason,
@@ -405,7 +408,6 @@ public class AgentHttp
             paused = RunControl.Paused,
             stopAfterDay = RunControl.StopAfterDay,
             stopNow = RunControl.StopNow,
-            plan = PlanBoard.Snapshot(),
             owned = Ownership.OwnedObjects(),
             pendingJournalDay = hostPass.PendingDay,
             pendingJournalDays = hostPass.PendingDays.Count > 0 ? hostPass.PendingDays : null,

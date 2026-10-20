@@ -23,8 +23,6 @@ public static class Hud
         public DateTime ThinkAt;
         public string? Say;
         public DateTime SayAt;
-        public string? Whisper;
-        public DateTime WhisperAt;
     }
 
     private const int ThinkSeconds = 90;
@@ -58,10 +56,6 @@ public static class Hud
             case "say":
                 v.Say = e.Text;
                 v.SayAt = now;
-                break;
-            case "whisper":
-                v.Whisper = e.Text;
-                v.WhisperAt = now;
                 break;
         }
     }
@@ -111,8 +105,6 @@ public static class Hud
             lines.Add(("* " + v.Think, Color.LightSkyBlue));
         if (v.Say != null && (now - v.SayAt).TotalSeconds < ChatSeconds)
             lines.Add(("\" " + v.Say, Color.PaleGreen));
-        if (v.Whisper != null && (now - v.WhisperAt).TotalSeconds < ChatSeconds)
-            lines.Add(("(whisper) " + v.Whisper, Color.Plum));
 
         var wrapped = new List<(string, Color)>();
         foreach (var (text, color) in lines)

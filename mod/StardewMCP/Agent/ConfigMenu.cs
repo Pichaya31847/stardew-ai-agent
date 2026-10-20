@@ -50,10 +50,10 @@ public static class ConfigMenu
             () => "On: the clock and everyone stop while any AI is between actions (a slow model costs no game time, but you stand still too). Off: the world keeps running and the AIs have to keep up.");
         api.AddNumberOption(manifest, () => config.ThinkTimeoutSeconds, v => config.ThinkTimeoutSeconds = v,
             () => "Thinking timeout (seconds)", () => "An AI that thinks longer than this stops holding the world frozen. 0 = never.", 0, 900, 15);
-        api.AddNumberOption(manifest, () => config.MeetingCalls, v => config.MeetingCalls = v,
-            () => "Morning meeting calls", () => "Built-in AIs: chat and plan-board calls each AI gets before free play when several AIs share the farm. 0 = no meeting.", 0, 20, 1);
 
         api.AddSectionTitle(manifest, () => "Display");
+        api.AddNumberOption(manifest, () => config.ChatSeconds, v => config.ChatSeconds = v,
+            () => "Chat line seconds", () => "Longest time an AI's `say` stays up, as the bubble above its head and the line in the chat box.", 1, 10, 1);
         api.AddBoolOption(manifest, () => config.ShowHud, v => config.ShowHud = v,
             () => "Show AI thoughts on screen", () => "A panel on each AI's screen with its thoughts, chat and current action.");
         api.AddTextOption(manifest, () => config.ThoughtLanguage, v => config.ThoughtLanguage = v,

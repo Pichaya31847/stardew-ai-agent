@@ -64,7 +64,6 @@
   .textwrap { overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
   #thinkPanel .textwrap { min-height: 0; }
   #replyPanel .textwrap { max-height: 230px; } /* column must end above the game's dialogue box (~y 684) */
-  .caret { color: var(--think); }
 
   body.npc #logPanel, body.npc #thinkPanel { display: none; }
   body:not(.npc) #replyPanel { display: none; }
@@ -103,6 +102,21 @@
   #diaryText.long { font-size: 34px; } #diaryText.longer { font-size: 28px; }
   #diary .foot { display: flex; justify-content: space-between; align-items: center; font-size: 18px; color: var(--ink-3); }
   #diary .zzz { font-weight: 600; font-size: 40px; color: var(--wood); }
+
+  /* ?player=pN: one AI's think / diary / self note as a 1920x360 box, laid in OBS on the top edge of that AI's
+     own quadrant: transparent, only the latest text, top left. The game's chat sits bottom left and the mod pins the
+     toolbar to the bottom; the box stops short of the clock and money in the top right */
+  body.strip { width: 1920px; height: 360px; background: transparent; --seat: var(--act); }
+  body.strip > :not(#col), body.strip #col > :not(#thinkPanel) { display: none !important; }
+  body.strip #col { position: absolute; inset: 0; width: auto; font-family: inherit; }
+  body.strip #col > #thinkPanel { margin: 0; height: 100%; border: 0; border-radius: 0; box-shadow: none; background: none;
+                                  padding: 24px 0 0 24px; font-size: 36px; line-height: 1.4; }
+  body.strip #thinkPanel .label { display: none; }
+  body.strip #thinkPanel .textwrap { flex: 1; justify-content: flex-start; align-items: flex-start; }
+  body.strip .it { flex: none; white-space: pre-line; max-width: 1440px; padding: 12px 26px; border-radius: 10px;
+                   background: rgba(18, 18, 24, .8); border-left: 10px solid var(--seat); }
+  body.strip .it.long { font-size: 30px; } body.strip .it.longer { font-size: 25px; }
+  body.strip .it .k { color: var(--seat); font-size: 26px; font-weight: 600; margin-right: 14px; }
 </style>
 </head>
 <body>
@@ -135,7 +149,7 @@
     </div>
 
     <div id="thinkPanel" class="panel">
-      <div class="label" data-i18n="labelThinking"></div>
+      <div class="label" id="thinkLabel" data-i18n="labelThinking"></div>
       <div class="textwrap"><div id="thinkText">…</div></div>
     </div>
   </div>
@@ -194,6 +208,8 @@ const I18N = {
     dayCardSeason: (season, dom, year) => `${season} ${dom} · Year ${year}`,
     diarySub: (day, season, dom, year) => `Night of day ${day} · ${season} ${dom} · Year ${year}`,
     diaryTitle: who => `${who}'s diary`,
+    // ?player=pN strip: "<farmer name> · <kind>"
+    seatNick: { p1: "Claude", p2: "Gemini", p3: "GPT" },  // what the strip calls each seat
     // result lines
     optionN: n => `option ${n}`, optionNext: "continue",
     resultDone: "done", resultFailed: "failed",
@@ -210,7 +226,9 @@ const I18N = {
     tool: {
       walk_to: "walking", use_tool: "using a tool", plant: "planting", harvest: "harvesting", interact: "interacting",
       talk_to: "talking", travel_to: "traveling", buy: "buying", ship: "shipping", eat: "eating", wait: "waiting",
-      go_to_bed: "going to bed", respond: "replying", close_menu: "closing the menu", shop_list: "browsing the shop"
+      go_to_bed: "going to bed", respond: "replying", close_menu: "closing the menu", shop_list: "browsing the shop",
+      water_all: "watering", harvest_all: "harvesting", till_area: "hoeing", clear_area: "clearing", fish: "fishing",
+      sell: "selling", journal: "writing the journal", farm_summary: "checking the farm"
     },
     // short terminal-style name for the LOG column
     toolLog: {
@@ -231,7 +249,11 @@ const I18N = {
       goFarm: "Head out to the farm", breakRocks: "[sample] Break rocks in front of the house", greet: "[sample] Say hi to Pierre",
       thinkReply: "[sample] Haiku's thoughts on how to answer Pierre", replyPolite: "[sample] Pick the polite answer",
       goBed: "[sample] Go home to bed", diary: "[sample] Tonight's diary entry",
-      mockWait: "Waiting for usage limit reset (until 03:00)"
+      mockWait: "Waiting for usage limit reset (until 03:00)",
+      stripThink: "[sample] Mali said she would water the north plot, but she has been fishing at the river for an hour. I will check before I say anything.",
+      stripDiary: "[sample] Long day. I cleared the rocks by the pond and sold the first parsnips. Ton thinks I took his seeds. I didn't, but I didn't argue either.",
+      stripSelfBefore: "[sample] I am a careful farmer who likes plans and keeps every promise.",
+      stripSelfAfter: "[sample] I still like plans, but I keep a few of them to myself now. On this farm trust has to be earned."
     }
   },
   th: {
@@ -250,6 +272,7 @@ const I18N = {
     dayCardSeason: (season, dom, year) => `${season} วันที่ ${dom} · ปี ${year}`,
     diarySub: (day, season, dom, year) => `คืนวันที่ ${day} · ${season} ${dom} · ปี ${year}`,
     diaryTitle: who => `บันทึกของ ${who}`,
+    seatNick: { p1: "พี่ส้ม", p2: "พี่ฟ้า", p3: "พี่เขียว" },
     optionN: n => `ข้อ ${n}`, optionNext: "กดคุยต่อ",
     resultDone: "สำเร็จ", resultFailed: "ไม่สำเร็จ",
     stoppedShort: (x, y) => `ไปไม่ถึง หยุดที่ (${x},${y})`,
@@ -281,7 +304,9 @@ const I18N = {
     tool: {
       walk_to: "เดิน", use_tool: "ใช้เครื่องมือ", plant: "ปลูก", harvest: "เก็บเกี่ยว", interact: "กดใช้",
       talk_to: "คุย", travel_to: "เดินทาง", buy: "ซื้อ", ship: "ส่งขาย", eat: "กิน", wait: "รอเวลา",
-      go_to_bed: "เข้านอน", respond: "ตอบ", close_menu: "ปิดเมนู", shop_list: "ดูของในร้าน"
+      go_to_bed: "ไปนอน", respond: "ตอบ", close_menu: "ปิดเมนู", shop_list: "ดูของในร้าน",
+      water_all: "รดน้ำ", harvest_all: "เก็บผัก", till_area: "พรวนดิน", clear_area: "ถางที่", fish: "ตกปลา",
+      sell: "ขายของ", journal: "เขียนบันทึก", farm_summary: "ดูฟาร์ม"
     },
     place: {
       FarmHouse: "ในบ้าน", Farm: "ฟาร์ม", BusStop: "ป้ายรถเมล์", Town: "ในเมือง", SeedShop: "ร้าน Pierre",
@@ -295,7 +320,11 @@ const I18N = {
       goFarm: "ออกไปที่ฟาร์ม", breakRocks: "[ตัวอย่าง] ทุบหินหน้าบ้าน", greet: "[ตัวอย่าง] ทักทาย Pierre",
       thinkReply: "[ตัวอย่าง] ความคิดของ Haiku ว่าจะตอบ Pierre ยังไง", replyPolite: "[ตัวอย่าง] เลือกตอบแบบสุภาพ",
       goBed: "[ตัวอย่าง] กลับบ้านไปนอน", diary: "[ตัวอย่าง] ไดอารี่ของคืนนั้น",
-      mockWait: "รอ usage limit รีเซ็ต (ถึง 03:00)"
+      mockWait: "รอ usage limit รีเซ็ต (ถึง 03:00)",
+      stripThink: "[ตัวอย่าง] Mali บอกว่าจะรดน้ำแปลงทางเหนือ แต่ไปตกปลาที่แม่น้ำมาชั่วโมงนึงแล้ว ขอไปดูให้แน่ก่อนค่อยพูดอะไร",
+      stripDiary: "[ตัวอย่าง] วันนี้เหนื่อย ทุบหินข้างบ่อจนโล่งแล้วขายพาร์สนิปชุดแรกได้ Ton คิดว่าฉันเอาเมล็ดของเขาไป ฉันไม่ได้เอา แต่ก็ไม่ได้เถียง",
+      stripSelfBefore: "[ตัวอย่าง] ฉันเป็นชาวไร่ที่รอบคอบ ชอบวางแผน และรักษาสัญญาทุกครั้ง",
+      stripSelfAfter: "[ตัวอย่าง] ฉันยังชอบวางแผน แต่ตอนนี้เก็บบางแผนไว้คนเดียว ในฟาร์มนี้ความไว้ใจต้องหามาเอง"
     }
   },
 };
@@ -372,7 +401,7 @@ function target(tool, args) {
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-let after = 0, typing = null, lastDay = null, booted = false;
+let after = 0, lastDay = null, booted = false;
 let modelShort = "", meta = {};             // from feed meta, so the overlay follows whichever model is playing
 const who = () => modelShort || "AI";
 let cur = { action: null, result: null };   // current act → result
@@ -383,15 +412,8 @@ let pendingDiary = null, diaryAt = 0, diaryTimer = null;
 let newDayFor = null, sleepDone = false;
 const DIARY_MIN_MS = 12000;                 // keep the diary up at least this long before the day card replaces it
 
-function typeText(text) {
-  clearInterval(typing);
-  let i = 0;
-  const draw = () => {
-    const shown = esc(text.slice(0, i)) + (i < text.length ? '<span class="caret"> ▍</span>' : "");
-    $("thinkText").innerHTML = shown; $("replyText").innerHTML = shown;
-  };
-  draw();
-  typing = setInterval(() => { i++; draw(); if (i >= text.length) clearInterval(typing); }, 22);
+function typeText(text) {  // shown whole at once: no typewriter, so nothing lags behind the game
+  $("thinkText").innerHTML = esc(text); $("replyText").innerHTML = esc(text);
 }
 
 function finishAction() { if (cur.action) hist.push(cur); if (hist.length > 30) hist = hist.slice(-30); cur = { action: null, result: null }; }
@@ -543,6 +565,59 @@ async function poll() {
   setTimeout(poll, 400);
 }
 
+// ?player=p1|p2|p3: that AI's latest think / diary / self note as a 1920x360 strip, shown at once
+const STRIP = (new URLSearchParams(location.search).get("player") || "").toLowerCase();
+const STRIP_ON = /^p[1-3]$/.test(STRIP);
+const SEAT_COLOR = { p1: "#F2A93B", p2: "#5AA9FF", p3: "#5CC46A" };
+let names = {};
+if (STRIP_ON) {
+  document.body.classList.add("strip");
+  document.body.style.setProperty("--seat", SEAT_COLOR[STRIP]);
+  $("thinkText").textContent = "";  // no box over the game until the AI has a thought
+}
+
+// safety net for the viewers when a model slips (the prompt already forbids these): tile coordinates, decimal stats,
+// "8/270" readings and tool_names become plain words or go away
+const plain = (s, word) => s
+  .replace(/\s*\(\s*-?\d+(?:\.\d+)?(?:[\s,]+-?\d+(?:\.\d+)?)+\s*\)/g, "")
+  .replace(/\s*[+-]\d+\.\d+/g, "").replace(/\s*\b\d+\/\d+\b/g, "")
+  .replace(/\b[a-z]+(?:_[a-z]+)+\b/g, m => word(m) || m.replace(/_/g, " "))
+  .replace(/[ \t]{2,}/g, " ").trim();
+
+function stripItem(e) {
+  if (e.player !== STRIP) return null;
+  const a = e.args || {};
+  // all of it is the AI's own mind, so no kind label
+  const say = s => plain(s || "", w => lk("tool", w));
+  if (e.kind === "think" || e.kind === "diary") return { text: say(e.text) };
+  if (e.kind === "journal" && a.self) return { text: say(a.self) };
+  return null;
+}
+
+// a seat id ("p2") or farmer name ("Gemini") -> the seat's nickname, else the name as given
+function nick(x) {
+  const id = /^p\d$/i.test(x || "") ? x.toLowerCase() : Object.keys(names).find(k => names[k] === x);
+  return (id && lk("seatNick", id)) || (id && names[id]) || x;
+}
+
+function stripShow(it) {
+  const size = it.text.length > 750 ? " longer" : it.text.length > 450 ? " long" : "";
+  const who = it.label ? `${nick(STRIP)} ${it.label}` : nick(STRIP);
+  $("thinkText").innerHTML = `<div class="it${size}"><span class="k">${esc(who)}</span>${esc(it.text)}</div>`;
+}
+
+async function stripPoll() {
+  try {
+    const d = await fetchFeed(after);
+    setLang(d.thoughtLanguage);
+    for (const p of (d.state || {}).players || []) if (p.state && p.state.name) names[p.id] = p.state.name;
+    const mine = [];
+    for (const e of d.entries || []) { after = Math.max(after, e.seq); if (stripItem(e)) mine.push(e); }
+    if (mine.length) stripShow(stripItem(mine[mine.length - 1]));
+  } catch (e) { if (!L) setLang(null); /* game not running yet */ }
+  setTimeout(stripPoll, 400);
+}
+
 // ?mock=1 replays a short scripted feed so the overlay can be designed without the game
 const MOCK = new URLSearchParams(location.search).has("mock");
 let mockT = 0, mockLog = [], mockState = {}, mockSteps = null;
@@ -575,6 +650,14 @@ async function fetchFeed(after) {
   const mockLang = pickLang(LANG_PARAM);
   const M = { ...I18N.en.mock, ...I18N[mockLang].mock };
   if (!mockSteps) mockSteps = mockScript(M);
+  if (STRIP_ON) {  // every seat gets a think, diary and self note in turn, one every ~8 s
+    const steps = [{ kind: "think", text: M.stripThink }, { kind: "diary", text: M.stripDiary },
+                   { kind: "journal", text: "", args: { self: M.stripSelfAfter, self_before: M.stripSelfBefore } }];
+    if (mockT++ % 20 === 0) for (const p of ["p1", "p2", "p3"])
+      mockLog.push({ seq: mockLog.length + 1, player: p, args: { to: p === "p1" ? "p2" : "p1" }, ...steps[(mockT / 20 | 0) % steps.length] });
+    const players = [["p1", "Haru"], ["p2", "Mali"], ["p3", "Ton"]].map(([id, name]) => ({ id, role: "ai", state: { name } }));
+    return { state: { ready: true, players }, thoughtLanguage: LANG_PARAM, meta: {}, entries: mockLog.filter(e => e.seq > after) };
+  }
   if (!mockT) mockState = { ready: true, day: 1, season: "spring", dayOfMonth: 1, year: 1, location: "FarmHouse", money: 500, frozen: true, action: null, dialogue: null };
   const i = Math.floor(mockT++ / 10); // one scripted step every ~4 s
   if (mockT % 10 === 1 && mockSteps[i]) {
@@ -593,7 +676,7 @@ async function fetchDay(n) {
   } catch (e) { return null; }
 }
 
-poll();
+STRIP_ON ? stripPoll() : poll();
 </script>
 </body>
 </html>

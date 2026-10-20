@@ -32,7 +32,7 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
 ## Payments
 
 `pay(to, amount, reason)`: needs separate wallets, any distance, the receiver sees it on its next tool result,
-the viewers see a `pay` entry with both wallets before/after. Loans stay on the plan board.
+the viewers see a `pay` entry with both wallets before/after. Loans are promises made face to face.
 
 ## End of the day
 
@@ -81,5 +81,5 @@ Design decisions left open (not done):
   event. NPCs are `CurrentEvent.actors` (not `Loc.characters`), so `talk_to`/`look` do not see them yet (#11).
 - Lewis' "start the main event" (`answerDialogueQuestion("yes")` -> `forceFestivalContinue`) broadcasts the
   `festivalEvent` message to the other screens only when answered by the **host** (`Game1.IsServer`, no dedicated
-  host). Decision: P1 starts the main event; the others join through the plan board/chat.
+  host). Decision: P1 starts the main event; the others join after hearing it in chat.
 - Minigames (egg hunt, fishing, grange) are per screen (`Game1.currentMinigame`).

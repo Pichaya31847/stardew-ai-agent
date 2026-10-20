@@ -239,7 +239,11 @@ public static partial class WorldText
         return ('.', null);
     }
 
-    private static string OwnerNote(string? owner, string before, string after = "") => owner == null ? "" : before + owner + after;
+    private static string OwnerNote(string? owner, string before, string after = "") => owner == null ? "" : before + OwnerName(owner) + after;
+
+    // ownership is stored by seat id; the AIs only ever see farmer names (or "you")
+    private static string OwnerName(string seat) => seat == Players.Current.Id ? "you"
+        : Players.Slots.FirstOrDefault(s => s.Id == seat) is { } slot ? SocialTools.Label(slot) : "another farmer";
 
     public static string ClumpName(int index) => index switch
     {

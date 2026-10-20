@@ -54,7 +54,7 @@ public static class WorldClock
                       !Game1.newDay && !NightMenuOpen() && !Players.Slots.Any(s => s.Runtime.WakingUp);
         // Paused / stopped by the operator: let the running actions finish, then stand still whoever is thinking.
         if (RunControl.Holding)
-            freeze = Context.IsWorldReady && !Game1.newDay && !NightMenuOpen() && !RunControl.AnyActionRunning;
+            freeze = Context.IsWorldReady && !Game1.newDay && !NightMenuOpen() && !RunControl.AnyActionRunningAwake;
 
         if (split)
         {

@@ -22,12 +22,13 @@ add an HTTP endpoint or an event here and consume it there.
   movement) is frozen whenever any connected AI is thinking, i.e. between its last tool result and
   its next action, so a slow model never loses game time. A thinking timeout (config) lets the
   world continue when an AI is stuck.
-- **Communication**: `say` (in-game chat + bubble), `whisper` (one player), `think` (private,
-  overlay only), `emote`, `give`, and a shared plan board (`plan_read` / `plan_edit`) with an
-  edit history.
+- **Communication** (decided 2026-10-19: no whisper, no shared plan board): `say` (in-game chat + bubble,
+  heard only by the AIs whose screen shows the speaker, so plans and deals are made face to face; a line
+  stays up `ChatSeconds`), `think` (private, overlay only), `emote`, `give`.
 - **Perception and interrupts**: observations show what nearby players are *actually* doing next
-  to what they claimed; mentions, whispers, gifts, theft, arrivals and weather interrupt a running
+  to what they last heard them say; mentions, gifts, theft, arrivals and weather interrupt a running
   long action and come back as `Events:`.
+- The AIs only ever read farmer names, never seat ids (`p1`, `p2`...), in prompts, results and tool descriptions.
 - **Memory**: `journal` (diary, lessons, plan, notes), `self` / `people` notes that emerge from play.
 - **Seats** (`ModConfig.Seats`, `SeatRole`): each of P1–P4 is `ai`, `human` (P1 only, keyboard and mouse,
   never frozen by the clock), `camera` or `off`. An `ai` seat is driven either by an external MCP client
@@ -46,7 +47,7 @@ mod/StardewMCP/
     AgentRuntime.cs    Runs tool calls on the game thread as coroutines; freezes time between calls
     AgentTools.cs      Tool definitions (ToolDef) and their coroutines
     MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters
-    SocialTools.cs     say / whisper / emote / give / plan board; per-seat inbox appended to the next tool result
+    SocialTools.cs     say (heard only by screens that show the speaker) / emote / give; per-seat inbox appended to the next tool result
     Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat interrupt events
     CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound shared with Joja
     JojaTools.cs       joja: membership (confirm guard) / projects / buy_project
@@ -68,9 +69,9 @@ mod/StardewMCP/
     Brain/             The built-in AI loop ("viewer edition": the mod plays a seat itself with the user's API key)
       Llm.cs           Provider-neutral chat types, ILlmProvider, LlmProviders factory, SchemaFilter (game-free)
       AnthropicProvider.cs / OpenAiProvider.cs / GeminiProvider.cs   Wire formats (game-free; OpenAI = any compatible server)
-      Prompts.cs       System prompt from assets/system_prompt.md + memory files; morning / meeting / nudge / handoff texts (game-free)
-      SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; meeting, breaks, retries
-      Brains.cs        Starts a SeatBrain per configured seat on save load; meeting barrier; mcp_brain console command
+      Prompts.cs       System prompt from assets/system_prompt.md + memory files; morning / nudge / handoff texts (game-free)
+      SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; breaks, retries (no meeting phase)
+      Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source and the overlay pages (see Tests)
 docs/coverage.md       Which game features the tools cover, and how to add one
@@ -123,6 +124,8 @@ mod/StardewMCP/Agent/ToolArgs.cs     Schema and argument helpers (Obj, Str, Int,
 mod/StardewMCP/Agent/ToolContract.cs Rules for tools/list (valid schema, required in properties, reason on actions); logged at startup
 mod/StardewMCP/Agent/McpDispatcher.cs JSON-RPC handling over IMcpSeat; McpSeat.cs adapts a real seat for AgentHttp
 mod/StardewMCP/Agent/WorldText.Format.cs  FormatTime, DirName, part of WorldText
+mod/StardewMCP/Agent/BubbleText.cs   Line breaking for the speech bubbles (Thai-aware)
+mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, timed only while the world runs
 mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts
 ```
 

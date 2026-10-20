@@ -105,6 +105,12 @@ public class DayStats
         Snapshot(force: true);
     }
 
+    /// <summary>go_to_bed was woken before the night began: the farmer is up again.</summary>
+    public void OnSleepCancelled()
+    {
+        if (_day != null) _day.WentToBed = false;
+    }
+
     /// <summary>Seeds that took root (the plant tool counts these, not fertilizer).</summary>
     public void CropsPlanted(int n)
     {

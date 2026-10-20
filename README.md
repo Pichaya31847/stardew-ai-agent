@@ -115,7 +115,7 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `menu` | Read any open menu, then use it: take/put (chests), choose (mine elevator), amount (send money), type (names), ok/cancel, or click a listed button |
 | `craft`, `place`, `chest` | Craft from the recipes you know (`craft()` lists them), put items, machines and chests on the ground, store or take items in a chest or the fridge in one call (by name and quality, several items, "everything") |
 | `cook` | Cook the dishes you know in the farmhouse kitchen from your pack and the fridge (`cook()` lists them) |
-| `quests`, `accept_quest` | Quest journal with story, giver, progress and reward; today's Help Wanted request and who took it; Special Orders; `share` posts yours to the plan board; `accept_quest` takes the Help Wanted request |
+| `quests`, `accept_quest` | Quest journal with story, giver, progress and reward; today's Help Wanted request and who took it; Special Orders; `accept_quest` takes the Help Wanted request |
 | `crack_geode`, `trash`, `watch_tv` | Clint cracks geodes (25g each); throw items away (valuables need `confirm`); watch a TV channel (weather, fortune, Queen of Sauce, tips) |
 | `shop_list`, `buy`, `sell`, `ship`, `eat` | Shopping, selling to an open shop for gold at once, shipping bin (pays overnight), food |
 | `equip` | Put on a ring, boots or hat from the inventory (the old one goes back), or attach bait/tackle to the fishing rod; `status` and `inventory` show what is worn and what is on the rod |
@@ -128,11 +128,10 @@ Any client that speaks MCP over streamable HTTP can use the same URL.
 | `crops`, `item_info` | Game knowledge read from the game's own data, no game time: `crops` is a season planner (growth and regrow days, last day to plant, harvests that fit, seed and sell prices, gold per tile per day, marks the seeds you carry); `item_info` gives an object's sell prices by quality, what it restores, shops that sell it and recipes that use it |
 | `wait`, `go_to_bed` | Let time pass, end the day (`go_to_bed` refuses until today's `journal` is written) |
 | `journal` | The AI's memory across days, costs no game time: a diary for the viewers, lessons (appended), a plan with Season / Week / Today sections (replaced section by section) and optional facts. Written to `diary_NNN.md`, `lessons.md`, `plan.md`, `notes.md` in the log folder; `day` catches up a missed day |
-| `say`, `whisper`, `emote`, `give` | Multi-player (split-screen): chat to everyone, tell one player privately, show an emote, hand an item to a nearby player. All cost no game time |
+| `say`, `emote`, `give` | Multi-player (split-screen): chat heard by the players who can see you, show an emote, hand an item to a nearby player. All cost no game time |
 | `wear`, `wardrobe` | Put on a hat, shirt or pants from the inventory; see what you wear and carry (rings and boots are `equip`, #27) |
 | `search_trash` | Dig through a trash can; a watching villager costs friendship and a `trash_dive` event with `seen_by` is logged |
 | `mount`, `dismount` | Ride the horse (needs a Stable); also night events show up as an `Overnight:` line after `go_to_bed` |
-| `plan_read`, `plan_edit` | Shared plan board with an edit history (author and time) |
 | `bundles` | Community Center bundles room by room: what each needs, what is donated (and by whom), the reward, and which of your items fit. Costs no game time |
 | `donate_bundle` | Donate an inventory item (or gold, for the Vault) to the first Community Center bundle that needs it, through the game's own bundle page |
 | `joja` | The Joja route at the JojaMart: `projects` lists the five Community Development projects with price and state, `membership` buys the permanent 5,000g membership only with `confirm=true` (without it: a warning of what every player loses and gains), `buy_project` pays one project through the game's Joja form |
@@ -202,6 +201,7 @@ Every tool reply keeps its plain text and adds a machine-readable part (MCP `str
 | `SessionBreakResultChars` | `120000` | Planned break after this many characters of tool results in one session, about 30k tokens (0 = off) |
 | `SessionBreaksForAll` | `false` | Planned breaks for every MCP client; by default only clients that connect to `/mcp?breaks=1` |
 | `PauseKey` | `"F8"` | Key (an XNA `Keys` name) that toggles pause / resume while the game window has focus; empty = off |
+| `ChatSeconds` | `5` | Longest time an AI's `say` stays up, as the bubble above its head and its line in the chat box |
 
 The SMAPI console command `mcp_freeze [on|off]` toggles time freezing at runtime.
 
@@ -222,8 +222,8 @@ never loses game time. `/api/state` lists every seat with its current action and
 The first time the game starts its local co-op server, Windows Firewall may ask once; allow it.
 
 AI players notice each other. `look` and `status` list the other players in view with what each is *actually*
-doing (running tool, its reason, game minutes so far) next to what it last said and wrote on the plan board.
-An @name or @pN in `say`, a whisper, a gift, a player coming into view or entering your house, a theft from
+doing (running tool, its reason, game minutes so far) next to what you last heard it say.
+An @name or @pN in `say`, a gift, a player coming into view or entering your house, a theft from
 your chest or plot, rain starting, or crows on the farm are added to your next tool result as `Events:` and
 stop a running `wait`, `walk_to`, `travel_to` or farm action, so a model never sleeps through them.
 

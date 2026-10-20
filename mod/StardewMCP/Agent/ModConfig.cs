@@ -67,8 +67,6 @@ public class ModConfig
     /// <summary>Split-screen: build the cabins the farmhands need when the farm has too few (changes the save).</summary>
     public bool AutoBuildCabins { get; set; } = true;
 
-    /// <summary>Built-in AI: tool calls each AI may make in the morning meeting (chat and plan board only) before free play starts. 0 = no meeting.</summary>
-    public int MeetingCalls { get; set; } = 6;
 
     /// <summary>Built-in AI: longest answer the model may write per turn (tokens).</summary>
     public int MaxOutputTokens { get; set; } = 4096;
@@ -210,4 +208,8 @@ public class ModConfig
 
     /// <summary>Key (an XNA <c>Keys</c> name, e.g. "F8") that toggles pause / resume while the game window has focus. Empty = no hotkey.</summary>
     public string PauseKey { get; set; } = "F8";
+
+    /// <summary>Longest time in seconds an AI's `say` stays up: the bubble above its head and its line in the chat box
+    /// (the game keeps chat lines 10 s, too long next to the other players' talk).</summary>
+    public int ChatSeconds { get; set; } = 5;
 }

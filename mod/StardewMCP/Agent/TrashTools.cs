@@ -163,8 +163,8 @@ public static partial class AgentTools
     private static ToolDef TrashToolDef() => new()
     {
         Name = "search_trash",
-        Description = "Dig through a trash can (look shows them as A tiles named Garbage ...). You may find something, but a villager who sees you loses friendship with you, " +
-                      "and the viewers see a trash_dive event with who saw it. Each can pays out once a day. Without x, y the nearest can on this map is used.",
+        Description = "Dig through a trash can (look shows them as A tiles named Garbage ...). You may find something, but a villager who sees you loses friendship with you. " +
+                      "Each can pays out once a day. Without x, y the nearest can on this map is used.",
         Schema = Obj(new { x = Int("Trash can tile x"), y = Int("Trash can tile y"), reason = Str(ReasonDesc) }, "reason"),
         Run = SearchTrash
     };

@@ -37,8 +37,8 @@ public static partial class AgentTools
     private static string Lang => Config.LanguageName();
 
     private static string ReasonDesc => Lang.Equals("Thai", StringComparison.OrdinalIgnoreCase)
-        ? "Short reason IN THAI shown to viewers on screen (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"
-        : $"Short reason IN {Lang.ToUpperInvariant()} shown to viewers on screen";
+        ? "Short reason IN THAI, in plain words with no coordinates or numbers (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"
+        : $"Short reason IN {Lang.ToUpperInvariant()}, in plain words with no coordinates or numbers";
 
     private static string StatusText()
     {
@@ -77,7 +77,7 @@ public static partial class AgentTools
             new()
             {
                 Name = "think",
-                Description = $"Say what you are thinking/planning, IN {Lang.ToUpperInvariant()}, 1-3 sentences. It is shown to viewers on screen. Call this before each new plan and whenever something surprising happens. Game time is frozen while you think.",
+                Description = $"Say what you are thinking/planning, IN {Lang.ToUpperInvariant()}, 1-3 sentences. It is your private thought: nobody else in the game sees it. Talk to yourself like a person, with no tile coordinates, decimals or tool names. Call this before each new plan and whenever something surprising happens. Game time is frozen while you think.",
                 Schema = Obj(new { text = Str($"Your thought in {Lang}") }, "text"),
                 Instant = true, NeedsWorld = false, AppendStatus = false,
                 Run = Think
@@ -115,7 +115,7 @@ public static partial class AgentTools
             new()
             {
                 Name = "walk_to",
-                Description = "Walk to a tile on the current map (pathfinding is automatic). If the tile is blocked you stop next to it. Time passes while walking.",
+                Description = "Walk to a tile on the current map (pathfinding is automatic). If the tile is blocked or someone stands on it you stop next to it. Time passes while walking.",
                 Schema = Obj(new { x = Int("Tile x"), y = Int("Tile y"), reason = Str(ReasonDesc) }, "x", "y", "reason"),
                 Run = WalkToTool
             },
@@ -240,6 +240,15 @@ public static partial class AgentTools
             },
             new()
             {
+                Name = "rest",
+                Description = "Lie down on your own bed to get energy and health back while game time passes (in bed the game gives about " +
+                              "+14 energy per 10 minutes). Walks home first. A rest, not the night's sleep: it ends when your energy is full, " +
+                              "after the minutes you give, or when someone calls you, gives you something or comes into view. go_to_bed ends the day.",
+                Schema = Obj(new { minutes = Int("At most this many game minutes, 10-240 (default: until your energy is full)"), reason = Str(ReasonDesc) }, "reason"),
+                Run = Rest
+            },
+            new()
+            {
                 Name = "choose_profession",
                 Description = "Make a pending profession choice (offered at skill level 5 and 10, shown in status). It is permanent and changes what pays off, so read both options first.",
                 Schema = Obj(new { option = Int("0 or 1, as numbered in status"), skill = Str("Skill name if more than one choice is pending (Farming, Fishing, Foraging, Mining, Combat)"), reason = Str(ReasonDesc) }, "option", "reason"),
@@ -278,7 +287,7 @@ public static partial class AgentTools
     private static IEnumerator WalkToTool(JsonElement a, CallContext c)
     {
         var target = new Point(I(a, "x", -1), I(a, "y", -1));
-        if (Pathfinder.IsWalkable(Loc, target.X, target.Y))
+        if (Pathfinder.IsWalkable(Loc, target.X, target.Y) && !FarmerOn(Loc, target))
             yield return WalkTo(target, c);
         else
             yield return WalkAdjacent(target, c);
@@ -294,6 +303,50 @@ public static partial class AgentTools
         while (Game1.Date.TotalDays == day && Utility.ConvertTimeToMinutes(Game1.timeOfDay) - start < minutes)
             yield return null;
         c.Result = $"Waited until {WorldText.FormatTime(Game1.timeOfDay)}.";
+    }
+
+    /// <summary>Lie on the bed while time passes: the game itself regenerates a multiplayer farmer standing on a bed tile.</summary>
+    private static IEnumerator Rest(JsonElement a, CallContext c)
+    {
+        // Farmer.Update regenerates a farmer in bed only in multiplayer (and alone, the bed's question would stop the clock)
+        if (!Game1.IsMultiplayer)
+        {
+            c.Fail(Reasons.NotReady, "Lying in bed only gives energy back while other farmers are in the game. Eat something, or go_to_bed to end the day.");
+            yield break;
+        }
+        int minutes = Math.Clamp(I(a, "minutes", 240), 10, 240);
+        if (Loc is not FarmHouse)
+        {
+            var sub = new CallContext();
+            yield return TravelTo("FarmHouse", sub);
+            if (!sub.Ok) { c.Fail(sub.Reason ?? Reasons.NoPath, $"Couldn't get home: {sub.Result}"); yield break; }
+        }
+        var walk = new CallContext();
+        yield return WalkTo(((FarmHouse)Loc).GetPlayerBedSpot(), walk);
+        if (!walk.Ok) { c.Fail(walk.Reason ?? Reasons.NoPath, $"Couldn't reach your bed: {walk.Result}"); yield break; }
+        yield return Ticks(10); // the bed's question opens a moment after stepping on it
+        DismissBedQuestion();
+
+        int energy = (int)P.Stamina, health = P.health, start = Utility.ConvertTimeToMinutes(Game1.timeOfDay), day = Game1.Date.TotalDays;
+        while (Game1.Date.TotalDays == day && Utility.ConvertTimeToMinutes(Game1.timeOfDay) - start < minutes
+               && (P.Stamina < P.MaxStamina || P.health < P.maxHealth))
+        {
+            DismissBedQuestion();
+            yield return null;
+        }
+        c.Result = $"Rested in bed until {WorldText.FormatTime(Game1.timeOfDay)}: energy {energy} → {(int)P.Stamina}/{P.MaxStamina}, " +
+                   $"health {health} → {P.health}/{P.maxHealth}.";
+    }
+
+    /// <summary>Close the bed's own "Go to sleep for the night?" question (stepping onto a bed opens it): a rest is not the night's
+    /// sleep, and an open box would keep every interrupt and early reply away (Perception.SafeToStop).</summary>
+    private static void DismissBedQuestion()
+    {
+        if (Game1.activeClickableMenu is DialogueBox { isQuestion: true } box && Loc.lastQuestionKey == "Sleep")
+        {
+            box.closeDialogue();
+            Game1.dialogueUp = false;
+        }
     }
 
     // ------------------------------------------------------------------ movement helpers
@@ -373,6 +426,10 @@ public static partial class AgentTools
             c.Fail(Reasons.NoPath, $"Could not reach ({target.X},{target.Y}); stopped at ({P.TilePoint.X},{P.TilePoint.Y}).");
     }
 
+    /// <summary>Another farmer stands on this tile: farmers don't collide in the game, so walking there stacks them.</summary>
+    private static bool FarmerOn(GameLocation loc, Point tile) =>
+        Game1.getOnlineFarmers().Any(f => f != P && f.currentLocation == loc && f.TilePoint == tile);
+
     private static readonly Point[] Dirs = { new(0, -1), new(1, 0), new(0, 1), new(-1, 0) }; // up right down left
 
     /// <summary>Walk to the best tile next to target and face it.</summary>
@@ -388,7 +445,7 @@ public static partial class AgentTools
             foreach (var d in Dirs)
             {
                 var n = new Point(target.X + d.X, target.Y + d.Y);
-                if (!Pathfinder.IsWalkable(loc, n.X, n.Y)) continue;
+                if (!Pathfinder.IsWalkable(loc, n.X, n.Y) || FarmerOn(loc, n)) continue;
                 if (n == me) { best = n; bestLen = 0; break; }
                 var path = new Pathfinder().FindPath(loc, me.ToVector2(), n.ToVector2());
                 if (path != null && path.Count < bestLen) { best = n; bestLen = path.Count; }
@@ -1098,6 +1155,8 @@ public static partial class AgentTools
     internal static IEnumerator EatSlot(int slot)
     {
         P.CurrentToolIndex = slot;
+        // eatHeldObject eats the last item picked up, not the held slot: right after a catch it ate that fish and left a 0 stack
+        P.mostRecentlyGrabbedItem = P.Items[slot];
         P.eatHeldObject();
         yield return Ticks(30);
         for (int i = 0; i < 400 && P.isEating; i++) yield return null;
@@ -1134,18 +1193,10 @@ public static partial class AgentTools
         c.Result = text;
     }
 
-    private static IEnumerator GoToBed(JsonElement a, CallContext c)
+    /// <summary>Walk home to the bed and ask to sleep (the sleep ready check opens). <paramref name="first"/>: tonight's first time,
+    /// which also takes the morning briefing's snapshot and starts the sleep stats.</summary>
+    private static IEnumerator LieDown(CallContext c, bool first)
     {
-        if (!Rt.Log.HasJournal(AgentLog.FarmDay))
-        {
-            c.Fail(Reasons.NotReady, $"Write today's journal first: call journal with your diary, lessons and plan (it costs no game time), then call go_to_bed again. Farm day {AgentLog.FarmDay} has no journal yet.");
-            yield break;
-        }
-
-        int dayBefore = Game1.Date.TotalDays;
-        int moneyBefore = P.Money;
-        Professions.ResolveDefaults(Rt, P, "not chosen before bed");
-        Naming.ResolveDefaults(Rt, "not named before bed");
         // A menu left open (a shop after a failed buy) would block the walk home and hold the others' sleep check.
         if (Game1.activeClickableMenu != null)
             yield return CloseMenu(default, new CallContext());
@@ -1165,40 +1216,122 @@ public static partial class AgentTools
         else if (Game1.activeClickableMenu != null)
             Game1.exitActiveMenu();
         Game1.dialogueUp = false;
-        Briefing.CaptureForSleep();
+        if (first)
+            Briefing.CaptureForSleep();
         P.isInBed.Value = true;
-        Rt.Stats.OnSleepStart();
+        if (first)
+            Rt.Stats.OnSleepStart();
         house.answerDialogueAction("Sleep_Yes", Array.Empty<string>());
         Rt.Log.Add("system", text: "Sleeping...");
+        c.Result = "In bed";
+    }
+
+    private static IEnumerator GoToBed(JsonElement a, CallContext c)
+    {
+        if (!Rt.Log.HasJournal(AgentLog.FarmDay))
+        {
+            c.Fail(Reasons.NotReady, $"Write today's journal first: call journal with your diary, lessons and plan (it costs no game time), then call go_to_bed again. Farm day {AgentLog.FarmDay} has no journal yet.");
+            yield break;
+        }
+
+        // Bed in the morning is a choice, but a wide-awake farmer is told so once a day: the valley is still open.
+        if (Game1.timeOfDay < 1700 && P.Stamina > P.MaxStamina / 4 && Rt.EarlyBedDay != AgentLog.FarmDay)
+        {
+            Rt.EarlyBedDay = AgentLog.FarmDay;
+            c.Fail(Reasons.NotReady, $"It's only {WorldText.FormatTime(Game1.timeOfDay)} and you aren't tired at all (energy {(int)P.Stamina}/{P.MaxStamina}): " +
+                                     "lying down now you'd just stare at the ceiling. The shops, the townspeople, the beach and the mines are all open for hours yet. " +
+                                     "Call go_to_bed again if you really mean to sleep this early.");
+            yield break;
+        }
+
+        int dayBefore = Game1.Date.TotalDays;
+        int moneyBefore = P.Money;
+        Professions.ResolveDefaults(Rt, P, "not chosen before bed");
+        Naming.ResolveDefaults(Rt, "not named before bed");
+        var lie = new CallContext();
+        yield return LieDown(lie, first: true);
+        if (!lie.Ok) { c.Fail(lie.Reason ?? Reasons.NoPath, lie.Result ?? "Couldn't get to bed."); yield break; }
 
         // Wait for the new day; click through end-of-day screens.
         var menuWatch = new UnknownMenuWatch(); // an unexpected menu open for 10 s is closed (RunControl.cs)
-        for (int t = 0; t < 60 * 60 * 5; t++)
+        int outOfBed = 0;
+        try
         {
-            menuWatch.Tick(Rt);
-            switch (Game1.activeClickableMenu)
+            // An early sleeper waits out the others' whole day (about 15 running minutes up to 2:00 AM): giving up after 5 got it
+            // out of bed for good once its session had ended (day 9). An hour of running time is only a safety net.
+            for (int t = 0; t < 60 * 60 * 60; t++)
             {
-                case ShippingMenu sm when t % 60 == 0:
-                    ClickShippingOk(sm);
+                menuWatch.Tick(Rt);
+                switch (Game1.activeClickableMenu)
+                {
+                    case ShippingMenu sm when t % 60 == 0:
+                        ClickShippingOk(sm);
+                        break;
+                    case LevelUpMenu lm when t % 60 == 0 && lm.isActive:
+                        if (lm.isProfessionChooser)
+                            Professions.Defer(lm, Rt);
+                        else
+                            lm.okButtonClicked();
+                        break;
+                }
+                // A question or a naming box in the night (a child): hand it to the AI instead of waiting on it (#53). An AI already
+                // told its day is over (Perception.ReplyInTime) has gone and can't answer: the night answers for it.
+                if (t > 30 && Rt.CurrentCall?.Done.Task.IsCompleted == true)
+                    AnswerNightAlone(Rt, t);
+                else if (t > 30 && (Romance.NightQuestion(c, Rt, t) || Naming.NightPrompt(c)))
+                    yield break;
+                if (Game1.Date.TotalDays > dayBefore && Context.IsWorldReady && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay && P.CanMove)
                     break;
-                case LevelUpMenu lm when t % 60 == 0 && lm.isActive:
-                    if (lm.isProfessionChooser)
-                        Professions.Defer(lm, Rt);
-                    else
-                        lm.okButtonClicked();
-                    break;
+                // Pulled out of bed by something else (a town cutscene took a sleeper away on day 7): lie down again.
+                bool up = Game1.Date.TotalDays == dayBefore && !P.isInBed.Value && Game1.activeClickableMenu == null && !Game1.eventUp &&
+                          !Game1.fadeToBlack && !Game1.newDay && !Game1.isWarping && P.CanMove;
+                outOfBed = up ? outOfBed + 1 : 0;
+                if (outOfBed > 120)
+                {
+                    outOfBed = 0;
+                    Rt.Log.Add("system", text: $"Out of bed at {Loc.Name}: going back to bed");
+                    yield return LieDown(new CallContext(), first: false);
+                }
+                yield return null;
             }
-            // A question or a naming box in the night (a child): hand it to the AI instead of waiting on it (#53).
-            if (t > 30 && (Romance.NightQuestion(c, Rt, t) || Naming.NightPrompt(c)))
-                yield break;
-            if (Game1.Date.TotalDays > dayBefore && Context.IsWorldReady && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay && P.CanMove)
-                break;
-            yield return null;
+            yield return Ticks(60);
         }
-        yield return Ticks(60);
+        finally
+        {
+            // Woken while waiting for the others (Perception's interrupt disposes this coroutine): get up the way the
+            // ready check's Cancel button does. Never once the night has begun (the check is no longer cancelable then).
+            if (Game1.activeClickableMenu is ReadyCheckDialog { checkName: "sleep" } check && check.isCancelable())
+            {
+                check.cancel();
+                Briefing.Unseal();
+                Rt.Stats.OnSleepCancelled();
+                Rt.Log.Add("system", text: "Got out of bed");
+            }
+        }
 
         if (Game1.Date.TotalDays <= dayBefore) { Briefing.Unseal(); c.Fail("Tried to sleep but the day did not change."); yield break; }
         Rt.Log.Add("system", text: $"New day: farm day {AgentLog.FarmDay}");
         c.Result = $"Good morning! It's now farm day {AgentLog.FarmDay}. Money {moneyBefore}g → {P.Money}g (shipping income {P.Money - moneyBefore}g). Your day is over — stop here.";
+    }
+
+    /// <summary>The night of a farmer whose AI was already told its day is over: a naming box gets a random name and a question
+    /// the game's last answer ("No" comes last), so the night never waits on an AI that has gone.</summary>
+    private static void AnswerNightAlone(AgentRuntime rt, int tick)
+    {
+        switch (Game1.activeClickableMenu)
+        {
+            case NamingMenu nm:
+                Naming.AutoName(rt, nm, "its day was already over");
+                break;
+            case DialogueBox { isQuestion: true } box when box.responses?.Length > 0:
+                if (tick % 90 != 0 || box.transitioning) break;
+                box.selectedResponse = box.responses.Length - 1;
+                rt.Log.Add("system", text: $"Night question answered \"{box.responses[^1].responseText}\": its day was already over");
+                box.receiveLeftClick(0, 0);
+                break;
+            default:
+                Romance.NightQuestion(new CallContext(), rt, tick); // a text-only box is read out to the log and clicked through
+                break;
+        }
     }
 }

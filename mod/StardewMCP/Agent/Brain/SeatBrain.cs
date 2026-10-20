@@ -12,18 +12,14 @@ namespace StardewMCP.Agent.Brain;
 /// <summary>
 /// The built-in AI loop of one seat: talks to a chat model on a background thread, runs the tools it asks for on the
 /// seat's <see cref="AgentRuntime"/> (game thread), and plays day after day. It is the in-mod stand-in for an MCP
-/// client plus the studio runner: morning briefing, a short morning meeting when several AIs share the farm,
-/// free play, the journal and bed, session breaks with a handoff, and retries around the model's HTTP errors.
+/// client plus the studio runner: morning briefing, free play (no meeting phase: farmers who want to plan together
+/// go and find each other), the journal and bed, session breaks with a handoff, and retries around the model's HTTP errors.
 /// Between a tool result and the next tool call the seat counts as thinking, so <see cref="WorldClock"/> freezes the world.
 /// </summary>
 public sealed class SeatBrain
 {
     private const int MaxIdleTurns = 3;
     private const int MaxRetries = 8;
-    private const int MeetingTimeoutSeconds = 180;
-
-    /// <summary>Tools that are not game actions and therefore allowed in the morning meeting (plus every instant tool).</summary>
-    private static readonly HashSet<string> MeetingTools = new() { "say", "whisper", "emote", "plan_read", "plan_edit", "think", "journal" };
 
     private readonly PlayerSlot _slot;
     private readonly ILlmProvider _llm;
@@ -122,16 +118,15 @@ public sealed class SeatBrain
     {
         string system = BuildSystem();
         var others = Brains.OtherPlayers(_slot);
-        bool meeting = _cfg.MeetingCalls > 0 && Brains.MeetingSeats() > 1;
         NewSession();
 
         string briefing = await BriefingText(ct);
         var pass = PassOut.View(Id);
         var messages = new List<ChatMessage>
         {
-            ChatMessage.User(Prompts.Morning(day, briefing, pass.PendingDay, meeting, _cfg.MeetingCalls, others.Select(o => o.Name), Time))
+            ChatMessage.User(Prompts.Morning(day, briefing, pass.PendingDay, others.Select(o => o.Name), Time))
         };
-        int meetingCalls = 0, idle = 0;
+        int idle = 0;
         bool dayDone = false;
         string? lastThink = null;
         var lastResults = new Queue<string>();
@@ -164,13 +159,6 @@ public sealed class SeatBrain
 
             if (resp.ToolCalls.Count == 0)
             {
-                if (meeting)
-                {
-                    meeting = false;
-                    await EndMeeting(day, ct);
-                    messages.Add(ChatMessage.User(Prompts.FreePlay(Time)));
-                    continue;
-                }
                 if (State?.InBed == true)
                 {
                     Status = "in bed";
@@ -191,10 +179,7 @@ public sealed class SeatBrain
             bool breakNow = false;
             foreach (var call in resp.ToolCalls)
             {
-                var (ok, text) = await RunTool(call, meeting, _cfg.MeetingCalls - meetingCalls - 1, ct);
-                // Rejected game actions count too, or a model that keeps trying to farm would hold the meeting forever.
-                if (meeting && call.Name != "think")
-                    meetingCalls++;
+                var (ok, text) = await RunTool(call, ct);
                 results.Add(new LlmToolResult(call.Id, call.Name, text, !ok));
                 lastResults.Enqueue($"{call.Name}: {Prompts.Clip(text, 400)}");
                 while (lastResults.Count > 3) lastResults.Dequeue();
@@ -205,14 +190,7 @@ public sealed class SeatBrain
                 Calls++;
             }
 
-            string? extra = null;
-            if (meeting && meetingCalls >= _cfg.MeetingCalls)
-            {
-                meeting = false;
-                await EndMeeting(day, ct);
-                extra = Prompts.FreePlay(Time);
-            }
-            messages.Add(new ChatMessage { Role = "tool", ToolResults = results, Text = extra });
+            messages.Add(new ChatMessage { Role = "tool", ToolResults = results });
             if (dayDone)
                 break;
 
@@ -313,7 +291,7 @@ public sealed class SeatBrain
         }
     }
 
-    private async Task<(bool ok, string text)> RunTool(LlmToolCall call, bool meeting, int meetingLeft, CancellationToken ct)
+    private async Task<(bool ok, string text)> RunTool(LlmToolCall call, CancellationToken ct)
     {
         if (!_tools.TryGetValue(call.Name, out var tool))
             return (false, $"Unknown tool {call.Name}. Use only the tools you were given.");
@@ -329,11 +307,8 @@ public sealed class SeatBrain
             return (false, "The arguments were not a JSON object.");
         }
 
-        bool instant = tool.Instant || tool.InstantFor?.Invoke(args) == true;
-        if (meeting && !instant && !MeetingTools.Contains(tool.Name))
-            return (false, Prompts.MeetingLimit(meetingLeft));
         if (!_slot.Active)
-            return (false, $"Player {Id} is not in the game yet. Wait a moment and try again.");
+            return (false, "You are not in the game yet. Wait a moment and try again.");
 
         _slot.MarkContact();
         Status = tool.Name;
@@ -350,11 +325,5 @@ public sealed class SeatBrain
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException) { }
         return (ok, text);
-    }
-
-    private async Task EndMeeting(int day, CancellationToken ct)
-    {
-        Status = "meeting: waiting for the others";
-        await Brains.MeetingDone(Id, day, TimeSpan.FromSeconds(MeetingTimeoutSeconds), ct);
     }
 }

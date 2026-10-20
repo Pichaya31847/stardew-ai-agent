@@ -96,7 +96,7 @@ public class McpDispatcher
                     capabilities = new { tools = new { listChanged = false } },
                     serverInfo = new { name = "stardew", version = "2.0.0" },
                     instructions = _splitScreen()
-                        ? $"You are player {seat.Id} on a three-player Stardew Valley farm. The whole world is frozen while you or another player is thinking, and only moves while actions run."
+                        ? "You live on a shared Stardew Valley farm with other newcomers. The whole world is frozen while you or another player is thinking, and only moves while actions run."
                         : "You are playing Stardew Valley. Game time is frozen while you think and only moves while an action runs."
                 });
             case "ping":
@@ -112,7 +112,7 @@ public class McpDispatcher
                 if (!_tools.TryGetValue(name, out var tool))
                     return Ok(id, seat.ErrorReply("not_found", $"Unknown tool {name}"));
                 if (!seat.Active)
-                    return Ok(id, seat.ErrorReply("not_ready", $"Player {seat.Id} is not in the game yet (title screen, loading or still joining). Wait and try again."));
+                    return Ok(id, seat.ErrorReply("not_ready", "Your farmer is not in the game yet (title screen, loading or still joining). Wait and try again."));
                 return Ok(id, await seat.CallToolReply(tool, args));
             default:
                 return new { jsonrpc = "2.0", id, error = new { code = -32601, message = $"Method not found: {method}" } };

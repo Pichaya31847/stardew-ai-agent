@@ -143,7 +143,7 @@ def test_core_tools_are_listed(tools):
     names = {t.name for t in tools}
     core = {"think", "status", "look", "inventory", "walk_to", "use_tool", "plant", "harvest", "interact",
             "talk_to", "respond", "close_menu", "menu", "travel_to", "buy", "ship", "eat", "wait", "go_to_bed",
-            "say", "whisper", "emote", "give", "plan_read", "plan_edit"}
+            "say", "emote", "give"}
     assert core <= names, f"missing from the C# sources: {sorted(core - names)}"
 
 

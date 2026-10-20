@@ -12,7 +12,7 @@ namespace StardewMCP.Agent.Brain;
 
 /// <summary>
 /// Starts and stops the built-in AI (<see cref="SeatBrain"/>) of every seat whose config names a provider, and holds
-/// what the seats share: the HTTP client, the tool list and the morning-meeting barrier.
+/// what the seats share: the HTTP client and the tool list.
 /// </summary>
 public static class Brains
 {
@@ -26,10 +26,6 @@ public static class Brains
     private static readonly Dictionary<string, SeatBrain> Running = new();
     private static Dictionary<string, ToolDef>? _tools;
     private static List<LlmTool>? _llmTools;
-
-    // Morning meeting barrier: seats that finished talking on a given day.
-    private static int _meetingDay;
-    private static readonly HashSet<string> MeetingFinished = new();
 
     public static void Init(IModHelper helper, IMonitor monitor, ModConfig config, AgentLog log, string assetDir)
     {
@@ -52,12 +48,6 @@ public static class Brains
 
     /// <summary>"anthropic/claude-haiku-5-5" for a seat the mod plays itself, else null.</summary>
     public static string? Describe(string seatId) => For(seatId) is { } b ? $"{b.Provider}/{b.Model}" : null;
-
-    /// <summary>AI seats the mod plays itself (the morning meeting needs more than one).</summary>
-    public static int MeetingSeats()
-    {
-        lock (Gate) return Running.Values.Count(b => !b.Failed);
-    }
 
     /// <summary>Called on the host screen once a save is loaded: one brain per configured seat.</summary>
     public static void StartAll()
@@ -100,7 +90,6 @@ public static class Brains
             foreach (var b in Running.Values)
                 b.Stop();
             Running.Clear();
-            MeetingFinished.Clear();
         }
     }
 
@@ -140,30 +129,6 @@ public static class Brains
             list.Add((s.Id, name, kind));
         }
         return list;
-    }
-
-    /// <summary>A seat finished its morning meeting: wait until every brain did, or the timeout passed.</summary>
-    public static async Task MeetingDone(string seatId, int day, TimeSpan timeout, CancellationToken ct)
-    {
-        lock (Gate)
-        {
-            if (_meetingDay != day)
-            {
-                _meetingDay = day;
-                MeetingFinished.Clear();
-            }
-            MeetingFinished.Add(seatId);
-        }
-        var start = DateTime.UtcNow;
-        while (!ct.IsCancellationRequested && DateTime.UtcNow - start < timeout)
-        {
-            lock (Gate)
-            {
-                if (Running.Values.Where(b => !b.Failed).All(b => MeetingFinished.Contains(b.Id)))
-                    return;
-            }
-            await Task.Delay(500, ct);
-        }
     }
 
     /// <summary>SMAPI console: mcp_brain [status|start|stop].</summary>

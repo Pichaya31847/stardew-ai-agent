@@ -8,7 +8,7 @@ namespace StardewMCP.Agent.Brain;
 
 /// <summary>
 /// The texts the built-in AI loop sends: the system prompt (assets/system_prompt.md with its placeholders filled from
-/// the seat's memory files) and the day's messages (morning, meeting end, nudges, session handoff).
+/// the seat's memory files) and the day's messages (morning, nudges, session handoff).
 /// </summary>
 public static class Prompts
 {
@@ -32,7 +32,7 @@ public static class Prompts
         }
         catch (IOException)
         {
-            return _templateCache ?? "You are {MODEL_NAME}, playing Stardew Valley as {PLAYER_NAME} ({SEAT}). Use the tools; think and write in {LANGUAGE}.\n{TIME_MODE}\n{OTHERS}\n{SELF}\n{PEOPLE}\n{LESSONS}\n{PLAN}\n{NOTES}";
+            return _templateCache ?? "You are {MODEL_NAME}, playing Stardew Valley as {PLAYER_NAME}. Use the tools; think and write in {LANGUAGE}.\n{TIME_MODE}\n{OTHERS}\n{SELF}\n{PEOPLE}\n{LESSONS}\n{PLAN}\n{NOTES}";
         }
     }
 
@@ -54,7 +54,7 @@ public static class Prompts
         {
             var sb = new StringBuilder("Other players on this farm:");
             foreach (var o in i.Others)
-                sb.Append($"\n- {o.Name} ({o.Seat}, {o.Kind})");
+                sb.Append($"\n- {o.Name} ({o.Kind})");
             others = sb.ToString();
         }
 
@@ -83,7 +83,8 @@ public static class Prompts
         return "(older lines left out)\n" + string.Join("\n", all.Skip(all.Length - lines)).Trim();
     }
 
-    public static string Morning(int day, string briefing, int? pendingJournalDay, bool meeting, int meetingCalls, IEnumerable<string> otherNames, string time)
+    /// <summary>The day's first message. There is no meeting phase: farmers who want to plan together go and find each other.</summary>
+    public static string Morning(int day, string briefing, int? pendingJournalDay, IEnumerable<string> otherNames, string time)
     {
         var sb = new StringBuilder();
         sb.Append($"Good morning. It is {time} on farm day {day}.\n");
@@ -92,28 +93,16 @@ public static class Prompts
         if (pendingJournalDay is int pd)
             sb.Append($"\nYou passed out on day {pd} and never wrote its journal. Write it first with `journal(day={pd})` (what happened, what it cost, what you will do differently).\n");
         var names = otherNames.ToList();
-        if (meeting && names.Count > 0)
+        if (names.Count > 0)
         {
-            sb.Append($"\n[Morning meeting] The world is frozen while you and {Join(names)} talk. You have {meetingCalls} tool calls for this (`think` is free): " +
-                      "`say` what you plan to do today, read the plan board (`plan_read`), claim work on it (`plan_edit`), ask the others for help or warn them. " +
-                      "Only chat, the plan board and observations work now; farm work starts after the meeting. Start with a `think` about your goals, then talk. " +
-                      "When you have nothing more to say, end your turn without calling a tool.");
+            if (day <= 1)
+                sb.Append($"\nThis is your first morning here. {Join(names)} {(names.Count == 1 ? "lives" : "live")} in the cabins near yours on this farm.");
+            sb.Append("\n`say` is heard only by people who can see you, so to talk with someone, go where they are.");
         }
-        else
-        {
-            sb.Append("\nStart the day: `think` about your plan, then get to work. End the day with `journal` and `go_to_bed`.");
-        }
+        sb.Append("\nStart the day: `think` about your plan, then get to work. When the work is done or it gets late, write your `journal` " +
+                  "(diary, lessons, plan, and your `self` / `people` notes), then `go_to_bed`.");
         return sb.ToString();
     }
-
-    public static string FreePlay(string time) =>
-        $"[Meeting over] It is {time}. Free play: carry out your plan. Talk with `say` or `whisper` whenever it helps. " +
-        "When the work is done or it gets late, write your `journal` (diary, lessons, plan, and your `self` / `people` notes), then `go_to_bed`.";
-
-    public static string MeetingLimit(int left) =>
-        left > 0
-            ? $"Morning meeting: only chat (`say`, `whisper`, `emote`), the plan board and observations work now. Farm work begins after the meeting ({left} meeting calls left)."
-            : "Morning meeting: this was your last meeting call; the day begins in a moment.";
 
     public static string Nudge(string time, bool inBed) =>
         inBed

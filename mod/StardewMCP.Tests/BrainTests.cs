@@ -245,7 +245,8 @@ public class BrainTests
             new[] { ("p2", "Gemini", "an AI") }, Self: "", People: "", Lessons: "l1\nl2", Plan: "## Today\nwater", Notes: ""));
         Assert.DoesNotContain("{", text);
         Assert.Contains("keeps running", text);
-        Assert.Contains("Gemini (p2, an AI)", text);
+        Assert.Contains("Gemini (an AI)", text);
+        Assert.DoesNotContain("p2", text); // the AIs only ever read farmer names, never seat ids
         Assert.Contains("(nothing yet", text); // empty self
     }
 

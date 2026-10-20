@@ -266,7 +266,7 @@ public static class Briefing
         bool waiting = b.Pending || NightFlow() || (b.Before != null && b.Before.Day < AgentLog.FarmDay && b.Overnight?.Day != AgentLog.FarmDay);
         var sections = BuildSections();
 
-        var sb = new StringBuilder($"Morning briefing, farm day {AgentLog.FarmDay} ({seat.Id})");
+        var sb = new StringBuilder($"Morning briefing, farm day {AgentLog.FarmDay}");
         foreach (var s in sections)
             sb.Append('\n').Append(s.Text);
 
@@ -287,7 +287,8 @@ public static class Briefing
     public static string MailHint()
     {
         int n = Game1.player.mailbox.Count;
-        return n > 0 ? $"📬 {n} {(n == 1 ? "letter" : "letters")} in the mailbox" : "";
+        var box = Game1.player.getMailboxPosition(); // a farmhand's is at its own cabin, not the farmhouse
+        return n > 0 ? $"📬 {n} {(n == 1 ? "letter" : "letters")} in your mailbox at Farm ({box.X},{box.Y})" : "";
     }
 
     // ------------------------------------------------------------------ taking and comparing pictures
@@ -476,7 +477,7 @@ public static class Briefing
         var r = Overnight();
         if (r != null && r.NewMail.Count > 0)
             sb.Append($" {r.NewMail.Count} arrived overnight.");
-        sb.Append(" Letters can hold rewards, recipes and quests: walk to the mailbox next to your house on the Farm and use interact on it; attached items are claimed when you close each letter.");
+        sb.Append($" Letters can hold rewards, recipes and quests: walk to your mailbox at Farm ({p.getMailboxPosition().X},{p.getMailboxPosition().Y}) and use interact on it; attached items are claimed when you close each letter.");
         return sb.ToString();
     }
 

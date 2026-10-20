@@ -47,6 +47,11 @@ public static class RunControl
     /// <summary>An AI seat has an action running (an action that lets game time pass).</summary>
     public static bool AnyActionRunning => Players.Slots.Any(s => s.Role == SeatRole.Ai && s.Runtime.ActionRunning);
 
+    /// <summary>Like <see cref="AnyActionRunning"/> but a farmer asleep in bed doesn't count: go_to_bed runs until morning
+    /// and already stands still while held, so counting it would keep a pause from ever freezing the world.</summary>
+    public static bool AnyActionRunningAwake =>
+        Players.Slots.Any(s => s.Role == SeatRole.Ai && s.Runtime.ActionRunning && s.Runtime.CurrentTool != "go_to_bed");
+
     public static void Init(ModConfig config)
     {
         // An empty or unknown key name turns the hotkey off.

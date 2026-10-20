@@ -32,13 +32,6 @@ public static partial class AgentTools
         return found;
     }
 
-    /// <summary>"Gemini (p2)": a farmer's name with the seat that plays them, as the chat and plan board name players.</summary>
-    private static string SeatLabel(Farmer f)
-    {
-        var slot = Players.Slots.FirstOrDefault(s => (s.State as ScreenState)?.Name == f.Name);
-        return slot == null ? f.Name : $"{f.Name} ({slot.Id})";
-    }
-
     /// <summary>The farmers who are playing: everyone online except the camera seat's farmer.</summary>
     private static IEnumerable<Farmer> PlayingFarmers()
     {

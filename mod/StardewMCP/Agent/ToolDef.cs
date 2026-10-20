@@ -34,6 +34,6 @@ public class ToolDef
     public Func<JsonElement, bool>? InstantFor;
     public bool NeedsWorld = true;
     public bool AppendStatus = true;
-    /// <summary>Chat and whispers waiting for the player are appended to this tool's result (false for debug ops).</summary>
+    /// <summary>Chat waiting for the player are appended to this tool's result (false for debug ops).</summary>
     public bool Mail = true;
 }
