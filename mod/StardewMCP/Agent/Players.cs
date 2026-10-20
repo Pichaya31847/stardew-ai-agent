@@ -24,7 +24,8 @@ public class PlayerSlot
 {
     public int Screen { get; }
     public string Id => $"p{Screen + 1}";
-    public SeatRole Role { get; }
+    /// <summary>Set again by <see cref="Players.Resolve"/> on each save load (the config menu can change it).</summary>
+    public SeatRole Role { get; internal set; }
     public AgentRuntime Runtime { get; }
 
     /// <summary>Game ticks seen on this screen; the HTTP thread uses it to tell whether the screen exists.</summary>
@@ -135,6 +136,18 @@ public static class Players
 
     public static void Init(IModHelper helper, IMonitor monitor, ModConfig config, AgentLog log)
     {
+        Slots = Enumerable.Range(0, Seats)
+            .Select(i => new PlayerSlot(i, SeatRole.Ai, new AgentRuntime(helper, monitor, config, log.For($"p{i + 1}"))))
+            .ToArray();
+        Resolve(config, monitor);
+    }
+
+    /// <summary>
+    /// Seat roles and <see cref="ScreenCount"/> from the config. Runs at startup and again when the host loads a save,
+    /// so seat and split-screen changes made in the config menu apply to the next save; the seats keep their runtimes.
+    /// </summary>
+    public static void Resolve(ModConfig config, IMonitor monitor)
+    {
         var roles = new SeatRole[Seats];
         int last = 0;
         for (int i = 0; i < Seats; i++)
@@ -157,10 +170,8 @@ public static class Players
                 roles[i] = SeatRole.Camera;
             }
         ScreenCount = config.SplitScreen ? last + 1 : 1;
-
-        Slots = Enumerable.Range(0, Seats)
-            .Select(i => new PlayerSlot(i, roles[i], new AgentRuntime(helper, monitor, config, log.For($"p{i + 1}"))))
-            .ToArray();
+        for (int i = 0; i < Seats; i++)
+            Slots[i].Role = roles[i];
     }
 
     /// <summary>The seat of the screen being updated. Only valid on the game thread.</summary>

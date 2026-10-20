@@ -15,8 +15,11 @@ namespace StardewMCP.Agent.Brain;
 /// <summary>A tool offered to the model: the MCP tool's name, description and JSON schema.</summary>
 public sealed record LlmTool(string Name, string Description, JsonElement Schema);
 
-/// <summary>A tool the model asked for. <see cref="Id"/> is the provider's call id (Gemini has none, so one is made up).</summary>
-public sealed record LlmToolCall(string Id, string Name, string ArgumentsJson);
+/// <summary>
+/// A tool the model asked for. <see cref="Id"/> is the provider's call id (Gemini has none, so one is made up).
+/// <see cref="Signature"/> is Gemini's opaque <c>thoughtSignature</c>, which must go back unchanged with the call.
+/// </summary>
+public sealed record LlmToolCall(string Id, string Name, string ArgumentsJson, string? Signature = null);
 
 /// <summary>What a tool answered, going back to the model.</summary>
 public sealed record LlmToolResult(string CallId, string Name, string Text, bool IsError);

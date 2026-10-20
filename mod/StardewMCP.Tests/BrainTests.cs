@@ -114,6 +114,28 @@ public class BrainTests
         Assert.Equal((11, 7), (r.InputTokens, r.OutputTokens));
     }
 
+    [Fact]
+    public void OpenAi_reply_with_object_arguments_and_number_id_is_parsed()
+    {
+        // Some compatible servers send arguments as an object rather than a JSON string.
+        var json = JsonNode.Parse("""
+            {"choices":[{"message":{"tool_calls":[{"id":7,"function":{"name":"walk_to","arguments":{"x":1,"y":2}}}]}}]}
+            """)!;
+        var call = Assert.Single(OpenAiProvider.Parse(json).ToolCalls);
+        Assert.Equal("7", call.Id);
+        Assert.Equal(2, JsonDocument.Parse(call.ArgumentsJson).RootElement.GetProperty("y").GetInt32());
+    }
+
+    [Fact]
+    public void OpenAi_empty_assistant_turn_gets_placeholder_text()
+    {
+        var p = new OpenAiProvider(Http, "gpt-x", "key", null, 500);
+        var body = p.BuildBody("SYS", new List<ChatMessage> { ChatMessage.User("hi"), ChatMessage.Assistant("", new List<LlmToolCall>()), ChatMessage.User("go on") }, Tools);
+        var assistant = body["messages"]![2]!;
+        Assert.Equal("(no text)", assistant["content"]!.GetValue<string>()); // null content is only valid with tool_calls
+        Assert.Null(assistant["tool_calls"]);
+    }
+
     // ------------------------------------------------------------------ Gemini
 
     [Fact]
@@ -152,6 +174,30 @@ public class BrainTests
         Assert.StartsWith("gem_", call.Id);
         Assert.Equal(5, JsonDocument.Parse(call.ArgumentsJson).RootElement.GetProperty("x").GetInt32());
         Assert.Equal((40, 9), (r.InputTokens, r.OutputTokens));
+    }
+
+    [Fact]
+    public void Gemini_thought_signature_goes_back_with_its_call()
+    {
+        // Gemini 3 answers 400 when a function call is replayed without the signature it came with.
+        var json = JsonNode.Parse("""
+            {"candidates":[{"content":{"role":"model","parts":[
+               {"functionCall":{"name":"status","args":{}},"thoughtSignature":"c2lnLTE="}]}}]}
+            """)!;
+        int seq = 0;
+        var call = Assert.Single(GeminiProvider.Parse(json, ref seq).ToolCalls);
+        Assert.Equal("c2lnLTE=", call.Signature);
+
+        var p = new GeminiProvider(Http, "gemini-x", "key", null, 800);
+        var messages = new List<ChatMessage>
+        {
+            ChatMessage.User("hi"),
+            ChatMessage.Assistant("", new[] { call }),
+            ChatMessage.Tool(new[] { new LlmToolResult(call.Id, "status", "ok", false) })
+        };
+        var part = p.BuildBody("SYS", messages, Tools)["contents"]![1]!["parts"]![0]!;
+        Assert.Equal("status", part["functionCall"]!["name"]!.GetValue<string>());
+        Assert.Equal("c2lnLTE=", part["thoughtSignature"]!.GetValue<string>());
     }
 
     // ------------------------------------------------------------------ shared pieces

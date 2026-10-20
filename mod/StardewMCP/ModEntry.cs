@@ -88,6 +88,8 @@ public class ModEntry : Mod
         Game1.options.pauseWhenOutOfFocus = false;
         if (Context.ScreenId != 0)
             return;
+        // Seat roles and split-screen may have changed in the config menu; farmhands join on later host ticks.
+        Players.Resolve(_config, Monitor);
         SaveFolder.OnSaveLoaded();
         EconomyTools.CheckWallets(Monitor, _config);
         Players.Host.Runtime.Log.Add("system", text: $"Save loaded: {Game1.player.Name} / {Game1.player.farmName} Farm");

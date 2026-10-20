@@ -53,7 +53,7 @@ public class AgentHttp
         _monitor = monitor;
         _assetDir = assetDir;
         _tools = AgentTools.All().ToDictionary(t => t.Name);
-        _mcp = new McpDispatcher(_tools, _config.SplitScreen);
+        _mcp = new McpDispatcher(_tools, () => _config.SplitScreen);
         foreach (var problem in ToolContract.Check(_tools.Values))
             _monitor.Log("Tool contract: " + problem, LogLevel.Warn);
     }

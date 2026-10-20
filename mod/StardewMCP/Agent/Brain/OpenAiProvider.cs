@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
@@ -40,8 +41,19 @@ public sealed class OpenAiProvider : ILlmProvider
         if (!string.IsNullOrWhiteSpace(_apiKey))
             req.Headers.Add("Authorization", "Bearer " + _apiKey);
         var json = await LlmHttp.PostJson(_http, req, body, ct).ConfigureAwait(false);
-        return Parse(json);
+        try
+        {
+            return Parse(json);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            throw new LlmException(0, $"unreadable reply: {ex.Message}");
+        }
     }
+
+    /// <summary>A string field, or the JSON text of whatever else a compatible server put there.</summary>
+    private static string? Str(JsonNode? n) =>
+        n == null ? null : n is JsonValue v && v.TryGetValue<string>(out var s) ? s : n.ToJsonString();
 
     public JsonObject BuildBody(string system, IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmTool> tools)
     {
@@ -51,7 +63,9 @@ public sealed class OpenAiProvider : ILlmProvider
             switch (m.Role)
             {
                 case "assistant":
-                    var a = new JsonObject { ["role"] = "assistant", ["content"] = string.IsNullOrEmpty(m.Text) ? null : m.Text };
+                    // Null content is only valid next to tool_calls; an empty reply gets the same placeholder as the other providers.
+                    string? content = !string.IsNullOrEmpty(m.Text) ? m.Text : m.ToolCalls.Count > 0 ? null : "(no text)";
+                    var a = new JsonObject { ["role"] = "assistant", ["content"] = content };
                     if (m.ToolCalls.Count > 0)
                     {
                         var calls = new JsonArray();
@@ -126,9 +140,9 @@ public sealed class OpenAiProvider : ILlmProvider
                 var fn = c?["function"];
                 if (fn == null) continue;
                 r.ToolCalls.Add(new LlmToolCall(
-                    c!["id"]?.GetValue<string>() ?? $"call_{r.ToolCalls.Count}",
-                    fn["name"]?.GetValue<string>() ?? "",
-                    LlmHttp.ArgsOrEmpty(fn["arguments"]?.GetValue<string>())));
+                    Str(c!["id"]) ?? $"call_{r.ToolCalls.Count}",
+                    Str(fn["name"]) ?? "",
+                    LlmHttp.ArgsOrEmpty(Str(fn["arguments"]))));
             }
         r.InputTokens = LlmHttp.Int(json["usage"]?["prompt_tokens"]);
         r.OutputTokens = LlmHttp.Int(json["usage"]?["completion_tokens"]);

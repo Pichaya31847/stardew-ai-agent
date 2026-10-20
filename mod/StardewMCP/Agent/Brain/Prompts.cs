@@ -94,9 +94,9 @@ public static class Prompts
         var names = otherNames.ToList();
         if (meeting && names.Count > 0)
         {
-            sb.Append($"\n[Morning meeting] The world is frozen while you and {Join(names)} talk. You have {meetingCalls} tool calls for this: " +
+            sb.Append($"\n[Morning meeting] The world is frozen while you and {Join(names)} talk. You have {meetingCalls} tool calls for this (`think` is free): " +
                       "`say` what you plan to do today, read the plan board (`plan_read`), claim work on it (`plan_edit`), ask the others for help or warn them. " +
-                      "Only chat, the plan board and free observations work now; farm work starts after the meeting. Start with a `think` about your goals, then talk. " +
+                      "Only chat, the plan board and observations work now; farm work starts after the meeting. Start with a `think` about your goals, then talk. " +
                       "When you have nothing more to say, end your turn without calling a tool.");
         }
         else
@@ -112,7 +112,7 @@ public static class Prompts
 
     public static string MeetingLimit(int left) =>
         left > 0
-            ? $"Morning meeting: only chat (`say`, `whisper`, `emote`), the plan board and free observations work now. Farm work begins after the meeting ({left} meeting calls left)."
+            ? $"Morning meeting: only chat (`say`, `whisper`, `emote`), the plan board and observations work now. Farm work begins after the meeting ({left} meeting calls left)."
             : "Morning meeting: this was your last meeting call; the day begins in a moment.";
 
     public static string Nudge(string time, bool inBed) =>

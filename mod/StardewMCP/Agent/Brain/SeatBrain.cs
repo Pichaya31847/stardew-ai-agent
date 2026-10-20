@@ -191,8 +191,9 @@ public sealed class SeatBrain
             bool breakNow = false;
             foreach (var call in resp.ToolCalls)
             {
-                var (ok, text) = await RunTool(call, meeting, _cfg.MeetingCalls - meetingCalls, ct);
-                if (meeting && MeetingTools.Contains(call.Name) && call.Name != "think")
+                var (ok, text) = await RunTool(call, meeting, _cfg.MeetingCalls - meetingCalls - 1, ct);
+                // Rejected game actions count too, or a model that keeps trying to farm would hold the meeting forever.
+                if (meeting && call.Name != "think")
                     meetingCalls++;
                 results.Add(new LlmToolResult(call.Id, call.Name, text, !ok));
                 lastResults.Enqueue($"{call.Name}: {Prompts.Clip(text, 400)}");

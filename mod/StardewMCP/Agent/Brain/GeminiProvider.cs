@@ -55,10 +55,14 @@ public sealed class GeminiProvider : ILlmProvider
                     foreach (var c in m.ToolCalls)
                     {
                         callNames[c.Id] = c.Name;
-                        parts.Add(new JsonObject
+                        var part = new JsonObject
                         {
                             ["functionCall"] = new JsonObject { ["name"] = c.Name, ["args"] = JsonNode.Parse(LlmHttp.ArgsOrEmpty(c.ArgumentsJson)) }
-                        });
+                        };
+                        // Gemini 3 answers 400 when a call comes back without the signature it was sent with.
+                        if (!string.IsNullOrEmpty(c.Signature))
+                            part["thoughtSignature"] = c.Signature;
+                        parts.Add(part);
                     }
                     if (parts.Count == 0)
                         parts.Add(new JsonObject { ["text"] = "(no text)" });
@@ -126,7 +130,8 @@ public sealed class GeminiProvider : ILlmProvider
                     r.ToolCalls.Add(new LlmToolCall(
                         $"gem_{++callSeq}",
                         fc["name"]?.GetValue<string>() ?? "",
-                        fc["args"]?.ToJsonString() ?? "{}"));
+                        fc["args"]?.ToJsonString() ?? "{}",
+                        p["thoughtSignature"] is JsonValue sv && sv.TryGetValue<string>(out var sig) ? sig : null));
             }
         r.Text = sb.ToString();
         r.InputTokens = LlmHttp.Int(json["usageMetadata"]?["promptTokenCount"]);
