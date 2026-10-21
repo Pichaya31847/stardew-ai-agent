@@ -14,10 +14,8 @@ can look around, walk, farm, talk to villagers, shop and go to bed on its own.
 
 ## Support the project
 
-If you enjoy this project, you can support development here:
-
-- ☕ **Ko-fi:** _coming soon_ <!-- TODO(Duckxy): add link -->
-- 💖 **GitHub Sponsors:** _coming soon_ <!-- TODO(Duckxy): add link -->
+If you enjoy this project, you can support development through
+[GitHub Sponsors](https://github.com/sponsors/duckxy166).
 
 ## Requirements
 
