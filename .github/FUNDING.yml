@@ -1,8 +1,2 @@
-# Donation links shown in the GitHub "Sponsor" button.
-# TODO(Duckxy): uncomment the platforms you use and fill in your usernames / links.
-
-# github: your-github-username
-# ko_fi: your-kofi-username
-# buy_me_a_coffee: your-bmc-username
-# patreon: your-patreon-username
-# custom: ["https://example.com/your-donation-page"]
+# Shown in the GitHub "Sponsor" button.
+github: duckxy166
