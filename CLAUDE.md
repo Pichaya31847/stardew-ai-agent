@@ -122,6 +122,7 @@ mod/StardewMCP/PathSearch.cs         A* over IWalkableGrid (Pathfinder.cs suppli
 mod/StardewMCP/Agent/ToolDef.cs      ToolDef, CallContext, ToolRunner
 mod/StardewMCP/Agent/ToolArgs.cs     Schema and argument helpers (Obj, Str, Int, Tiles, S, I, TileList), part of AgentTools
 mod/StardewMCP/Agent/ToolContract.cs Rules for tools/list (valid schema, required in properties, reason on actions); logged at startup
+mod/StardewMCP/Agent/LoopDetector.cs GuardKind, GuardNote, LoopDetector: repeat-failure and no-progress rules (LoopGuard.cs feeds it from the game)
 mod/StardewMCP/Agent/McpDispatcher.cs JSON-RPC handling over IMcpSeat; McpSeat.cs adapts a real seat for AgentHttp
 mod/StardewMCP/Agent/Peek.cs         Fail-soft reflection and Netcode unwrapping for QuestTools / QuestEvents
 mod/StardewMCP/Agent/KnowledgeMath.cs CropMath, RecipeMath behind crops / item_info (Python twin: mod/tests/test_crop_math.py)
