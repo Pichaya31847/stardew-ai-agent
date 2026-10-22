@@ -34,6 +34,7 @@
     <Compile Include="..\StardewMCP\Agent\ToolArgs.cs" Link="Mod\ToolArgs.cs" />
     <Compile Include="..\StardewMCP\Agent\ToolContract.cs" Link="Mod\ToolContract.cs" />
     <Compile Include="..\StardewMCP\Agent\McpDispatcher.cs" Link="Mod\McpDispatcher.cs" />
+    <Compile Include="..\StardewMCP\Agent\Peek.cs" Link="Mod\Peek.cs" />
     <Compile Include="..\StardewMCP\Agent\KnowledgeMath.cs" Link="Mod\KnowledgeMath.cs" />
     <Compile Include="..\StardewMCP\Agent\BobberController.cs" Link="Mod\BobberController.cs" />
     <Compile Include="..\StardewMCP\Agent\WorldText.Format.cs" Link="Mod\WorldText.Format.cs" />

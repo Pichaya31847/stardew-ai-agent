@@ -142,7 +142,7 @@ public class CropMathTests
         Assert.Equal((Summer, 4), CropMath.Advance(Spring, 20, 12));
         Assert.Equal((Spring, 5), CropMath.Advance(Spring, 1, 4));
         Assert.Equal((Winter, 4), CropMath.Advance(Fall, 20, 12));
-        Assert.Equal((4, 4), CropMath.Advance(Winter, 20, 12));
+        Assert.Equal((4, 4), CropMath.Advance(Winter, 20, 12)); // season 4 = next year's spring
     }
 
     // ------------------------------------------------------------------ multi season
@@ -198,7 +198,7 @@ public class CropMathTests
     [InlineData(3, 3, 0.0, 3.0)]
     [InlineData(1, 3, 0.0, 2.0)]
     [InlineData(1, 1, 0.2, 1.2)]
-    [InlineData(0, 0, 0.0, 1.0)]
+    [InlineData(0, 0, 0.0, 1.0)] // bad data still gives one item
     public void Expected_yield(int minStack, int maxStack, double extraChance, double expected)
     {
         Assert.Equal(expected, CropMath.ExpectedYield(minStack, maxStack, extraChance), 5);
@@ -239,7 +239,7 @@ public class CropMathTests
 
     [Theory]
     [InlineData(20, 10, 20, false)]
-    [InlineData(-1, 10, 20, true)]
+    [InlineData(-1, 10, 20, true)] // no listed price: twice the base value
     [InlineData(0, 0, 0, true)]
     public void Shop_price(int listedPrice, int objectBasePrice, int expectedPrice, bool expectedEstimated)
     {
@@ -299,8 +299,8 @@ public class CropMathTests
     }
 
     [Theory]
-    [InlineData(COOK, "176", -5, 1, true)]
-    [InlineData(COOK, "245", -5, 1, false)]
+    [InlineData(COOK, "176", -5, 1, true)] // -5 means any egg: used via its category
+    [InlineData(COOK, "245", -5, 1, false)] // the direct match wins
     [InlineData(COOK, "176", 0, 0, false)]
     [InlineData(COOK, "176", -6, 0, false)]
     public void Category_ingredient(string recipe, string itemId, int category, int expectedCount, bool expectedViaCategory)
