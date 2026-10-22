@@ -123,6 +123,7 @@ mod/StardewMCP/Agent/ToolDef.cs      ToolDef, CallContext, ToolRunner
 mod/StardewMCP/Agent/ToolArgs.cs     Schema and argument helpers (Obj, Str, Int, Tiles, S, I, TileList), part of AgentTools
 mod/StardewMCP/Agent/ToolContract.cs Rules for tools/list (valid schema, required in properties, reason on actions); logged at startup
 mod/StardewMCP/Agent/McpDispatcher.cs JSON-RPC handling over IMcpSeat; McpSeat.cs adapts a real seat for AgentHttp
+mod/StardewMCP/Agent/Peek.cs         Fail-soft reflection and Netcode unwrapping for QuestTools / QuestEvents
 mod/StardewMCP/Agent/WorldText.Format.cs  FormatTime, DirName, part of WorldText
 mod/StardewMCP/Agent/BubbleText.cs   Line breaking for the speech bubbles (Thai-aware)
 mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, timed only while the world runs
