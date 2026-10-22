@@ -27,10 +27,6 @@ jobs:
   dotnet:
     name: Game-free C# tests (dotnet test)
     runs-on: ubuntu-latest
-    # Best effort for now: mod/StardewMCP.Tests compiles only the mod's game-free source files (it does
-    # not reference the mod project), but it was written without a .NET SDK at hand and has not had a
-    # green CI run yet. Remove continue-on-error once it has.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
