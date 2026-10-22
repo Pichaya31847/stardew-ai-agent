@@ -98,7 +98,7 @@ public class LoopDetectorTests
         notes = _detector.After(key1, instant: false, ok: false, result: "Failed.", snapshot: "snap1");
         Assert.Empty(notes);
 
-        // 4th call, no progress - _quietCalls=3
+        // 4th call, no progress
         notes = _detector.After(key2, instant: false, ok: false, result: "Failed.", snapshot: "snap1");
         Assert.Empty(notes);
 
@@ -119,13 +119,17 @@ public class LoopDetectorTests
         var key3 = LoopDetector.KeyOf("move", JsonDocument.Parse("{\"dir\":\"down\"}").RootElement);
         var key4 = LoopDetector.KeyOf("use_tool", JsonDocument.Parse("{\"dir\":\"up\"}").RootElement);
 
-        // Keys ignore argument ordering and specific layout, if it was more complex
+        // Argument order does not matter
         var key5 = LoopDetector.KeyOf("build", JsonDocument.Parse("{\"a\":1,\"b\":2}").RootElement);
         var key6 = LoopDetector.KeyOf("build", JsonDocument.Parse("{\"b\":2,\"a\":1}").RootElement);
+
+        // Free-text arguments (reason, diary) differ on every call and are left out of the key
+        var key7 = LoopDetector.KeyOf("move", JsonDocument.Parse("{\"dir\":\"up\",\"reason\":\"to the farm\"}").RootElement);
 
         Assert.Equal(key1, key2);
         Assert.NotEqual(key1, key3);
         Assert.NotEqual(key1, key4);
         Assert.Equal(key5, key6);
+        Assert.Equal(key1, key7);
     }
 }

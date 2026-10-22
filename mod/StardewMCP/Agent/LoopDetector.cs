@@ -55,7 +55,7 @@ public sealed class GuardNote
 /// No-progress detector: <c>noProgressAfter</c> calls in a row (25 by default) with an unchanged snapshot
 /// (game time, inventory, position) get a hint. A successful action (not instant) counts as progress too.
 ///
-/// Not unit-tested yet: the dev sandbox has no .NET SDK. runner/smoke.py case "loop_guard" covers it in game.
+/// Tests: mod/StardewMCP.Tests/LoopDetectorTests.cs; runner/smoke.py case "loop_guard" covers it in game.
 /// </summary>
 public sealed class LoopDetector
 {
