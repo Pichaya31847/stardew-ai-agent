@@ -63,7 +63,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Get_FieldsAndProperties_DeclaredAndInherited()
+    public void Get_reads_fields_and_properties_declared_or_inherited()
     {
         var target = new FakeDerived();
 
@@ -93,7 +93,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Get_Methods()
+    public void Get_calls_a_method_without_arguments_when_the_name_ends_in_parentheses()
     {
         var target = new FakeDerived();
 
@@ -103,21 +103,21 @@ public class PeekTests
         // Inherited method without arguments
         Assert.Equal(42, Peek.Get(target, "BaseMethod()"));
 
-        // Method with arguments should read as not there (null) when called with ()
+        // A method that takes arguments is not called
         Assert.Null(Peek.Get(target, "MethodWithArgs()"));
-        // A "Name()" method that takes parameters is not called (reads as null)
+        // Without "()" a method name is not a field or property
         Assert.Null(Peek.Get(target, "MethodWithArgs"));
     }
 
     [Fact]
-    public void GetStatic_ReadsStaticMembers()
+    public void GetStatic_reads_static_members()
     {
         Assert.Equal(100, Peek.GetStatic(typeof(FakeDerived), "StaticField"));
         Assert.Equal("static_prop", Peek.GetStatic(typeof(FakeDerived), "StaticProperty"));
     }
 
     [Fact]
-    public void Get_IndexerOrWriteOnlyProperty_ReturnsNull()
+    public void An_indexer_or_a_write_only_property_reads_as_null()
     {
         var target = new FakeDerived();
 
@@ -129,7 +129,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Get_MissingOrThrowingMember_ReturnsNull()
+    public void A_missing_or_throwing_member_reads_as_null()
     {
         var target = new FakeDerived();
 
@@ -140,7 +140,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Get_NetcodeWrappers_UnwrapsToValue()
+    public void Netcode_wrappers_are_unwrapped_to_their_value_up_to_three_deep()
     {
         var target = new FakeDerived();
 
@@ -159,11 +159,10 @@ public class PeekTests
     }
 
     [Fact]
-    public void Text_ReturnsFirstNonEmptyTrimmedString()
+    public void Text_returns_the_first_non_blank_value_trimmed()
     {
         var target = new FakeDerived();
         target.PublicProperty = "  "; // Empty after trim
-        // Use a property we can modify for the test
         target.OverriddenField = "   valid_text  ";
 
         var result = Peek.Text(target, "MissingProp", "PublicProperty", "OverriddenField", "VirtualProp");
@@ -174,7 +173,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Int_ConvertsAndClampsNumerics()
+    public void Int_converts_and_clamps_numbers()
     {
         var target = new FakeDerived();
 
@@ -203,7 +202,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Flag_ReturnsFirstBool()
+    public void Flag_returns_the_first_bool()
     {
         var target = new { Flag1 = "not_bool", Flag2 = true, Flag3 = false };
 
@@ -213,7 +212,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Items_ReturnsCollectionElements()
+    public void Items_lists_the_elements_without_nulls()
     {
         var target = new FakeDerived();
 
@@ -237,7 +236,7 @@ public class PeekTests
     }
 
     [Fact]
-    public void Clean_ReplacesCarrotsAndCollapsesWhitespace()
+    public void Clean_turns_carets_into_spaces_and_collapses_whitespace()
     {
         Assert.Equal("", Peek.Clean(null));
         Assert.Equal("", Peek.Clean("   "));
@@ -247,12 +246,12 @@ public class PeekTests
     }
 
     [Fact]
-    public void Clip_TruncatesLongStringsWithEllipsis()
+    public void Clip_shortens_long_text_with_an_ellipsis()
     {
         Assert.Equal("short", Peek.Clip("short", 10));
         Assert.Equal("exact_10__", Peek.Clip("exact_10__", 10));
         Assert.Equal("long...", Peek.Clip("long_string", 7));
         Assert.Equal("...", Peek.Clip("toolong", 3)); // Max 3 length test
-        Assert.Equal("...", Peek.Clip("toolong", 2)); // Edge case: length < 3
+        Assert.Equal("...", Peek.Clip("toolong", 2)); // max below 3 still gives the three dots
     }
 }

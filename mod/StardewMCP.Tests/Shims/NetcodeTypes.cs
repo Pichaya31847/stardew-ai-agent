@@ -1,3 +1,5 @@
+// Fakes of the game's Netcode wrappers for PeekTests. Peek unwraps any type in the "Netcode" namespace that has
+// a Value property, so these only need the namespace and Value; they are not copies of the real classes.
 namespace Netcode
 {
     public class NetString
@@ -5,16 +7,6 @@ namespace Netcode
         public string? Value { get; set; }
 
         public NetString(string? value)
-        {
-            Value = value;
-        }
-    }
-
-    public class NetInt
-    {
-        public int Value { get; set; }
-
-        public NetInt(int value)
         {
             Value = value;
         }
