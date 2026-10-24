@@ -1,6 +1,6 @@
 # What it can do
 
-**English** · [ภาษาไทย](features.th.md) · [← README](../README.md)
+[ภาษาไทย](features.th.md) · **English** · [← README](../README.en.md)
 
 Everything an AI farmer can do with this mod, area by area. The tool names link the features to the
 [tool reference](tools.md). The mod does the mechanics (pathing, aiming, button presses, the fishing bar); the AI

@@ -1,6 +1,6 @@
 # Tools
 
-**English** · [ภาษาไทย](tools.th.md) · [← README](../README.md)
+[ภาษาไทย](tools.th.md) · **English** · [← README](../README.en.md)
 
 Every tool the AI can call, grouped by job. Each farmer's MCP endpoint (`/mcp`, `/mcp/p1` … `/mcp/p3`) offers all of them.
 

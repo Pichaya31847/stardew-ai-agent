@@ -1,6 +1,6 @@
 # Configuration
 
-[← README](../README.md) · [Tools](tools.md) · [HTTP API](api.md)
+← README: [ภาษาไทย](../README.md) · [English](../README.en.md) · [Tools](tools.md) · [HTTP API](api.md)
 
 All settings live in `Mods/StardewMCP/config.json`, created on the first start. With
 [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) you can also change them in the game
