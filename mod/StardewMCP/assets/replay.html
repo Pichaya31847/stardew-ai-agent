@@ -32,6 +32,7 @@
   .cta { margin-left: auto; flex: none; height: 48px; padding: 0 24px; border: 0; border-radius: 32px; background: var(--primary);
          color: #fff; font: 700 14px/1.1 var(--font); cursor: pointer; }
   .cta:hover, .cta:active { background: var(--primary-deep); }
+  .cta:disabled { cursor: progress; }
 
   /* hero: the day, its numbers as chips, orbs floating on the right */
   .hero { position: relative; padding: 48px 0 32px; }
@@ -226,11 +227,14 @@ async function initLang() {
 let request = 0;
 async function loadDays() {
   const id = ++request;
-  const days = await (await fetch(`${API}/api/days`)).json();
-  if (id !== request) return;
-  $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
-  $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
-  if (days.length) show(days[days.length - 1]);
+  $("latest").disabled = true;  // one day-list load at a time; a failed one can be retried
+  try {
+    const days = await (await fetch(`${API}/api/days`)).json();
+    if (id !== request) return;
+    $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
+    $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
+    if (days.length) show(days[days.length - 1]);
+  } finally { $("latest").disabled = false; }
 }
 
 async function show(d) {
