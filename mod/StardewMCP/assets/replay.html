@@ -74,6 +74,7 @@
 
   /* log rows: editorial, hairline dividers, no card fill */
   .row { display: grid; grid-template-columns: 52px 140px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--hairline); }
+  .row > :last-child { overflow-wrap: anywhere; }  /* long paths and identifiers wrap instead of widening the page */
   .row .t { padding-top: 2px; font-size: 14px; color: var(--ink-meta); font-variant-numeric: tabular-nums; }
   .row .k { display: flex; align-items: flex-start; gap: 8px; padding-top: 2px; font-size: 14px; font-weight: 500; color: var(--ink-soft); overflow-wrap: anywhere; }
   .row.think .txt { font-size: 20px; line-height: 1.5; letter-spacing: -0.2px; }
@@ -221,8 +222,11 @@ async function initLang() {
   setLang(name);
 }
 
+let daysRequest = 0;  // "Latest day" can start a load while another is pending: only the newest one renders
 async function loadDays() {
+  const request = ++daysRequest;
   const days = await (await fetch(`${API}/api/days`)).json();
+  if (request !== daysRequest) return;
   $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
   $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
   if (days.length) show(days[days.length - 1]);
@@ -233,7 +237,9 @@ async function show(d) {
   $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === d));
   const nav = $("days"), on = nav.querySelector(".on");  // center the open day in the track (the page itself stays put)
   if (on) nav.scrollLeft = on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2;
-  data = await (await fetch(`${API}/api/day?n=${d}`)).json();
+  const day = await (await fetch(`${API}/api/day?n=${d}`)).json();
+  if (d !== current) return;  // another day was picked while this one loaded
+  data = day;
   render();
 }
 
