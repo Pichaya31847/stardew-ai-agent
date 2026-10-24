@@ -96,7 +96,10 @@ public sealed class LlmException : Exception
             string? msg = err is JsonObject ? err["message"]?.GetValue<string>() : err?.ToString();
             if (!string.IsNullOrWhiteSpace(msg)) return Trim(msg!);
         }
-        catch (JsonException) { }
+        catch (JsonException)
+        {
+            // not JSON: fall back to the raw body below
+        }
         return Trim(body);
     }
 
