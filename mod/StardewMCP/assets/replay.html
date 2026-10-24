@@ -222,23 +222,25 @@ async function initLang() {
   setLang(name);
 }
 
-let daysRequest = 0;  // "Latest day" can start a load while another is pending: only the newest one renders
+// one counter for loadDays and show: the newest click wins, an older response never replaces what it asked for
+let request = 0;
 async function loadDays() {
-  const request = ++daysRequest;
+  const id = ++request;
   const days = await (await fetch(`${API}/api/days`)).json();
-  if (request !== daysRequest) return;
+  if (id !== request) return;
   $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
   $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
   if (days.length) show(days[days.length - 1]);
 }
 
 async function show(d) {
+  const id = ++request;
   current = d;
   $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === d));
   const nav = $("days"), on = nav.querySelector(".on");  // center the open day in the track (the page itself stays put)
   if (on) nav.scrollLeft = on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2;
   const day = await (await fetch(`${API}/api/day?n=${d}`)).json();
-  if (d !== current) return;  // another day was picked while this one loaded
+  if (id !== request) return;
   data = day;
   render();
 }
