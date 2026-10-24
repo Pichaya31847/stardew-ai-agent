@@ -2,11 +2,11 @@
 
 # 🌾 Stardew MCP
 
-**Let AI play Stardew Valley: on its own, next to you, or with two other AIs on the same farm.**
+**ให้ AI เล่น Stardew Valley เอง จะปล่อยเล่นคนเดียว เล่นกับเรา หรือให้ AI 3 ตัวทำฟาร์มบ้านเดียวกันก็ได้**
 
-A [SMAPI](https://smapi.io) mod that runs an [MCP](https://modelcontextprotocol.io) server *inside the game*.
-Claude, GPT, Gemini or a local model walks, farms, fishes, chats with villagers, makes deals with the
-other farmers and goes to bed, all by itself.
+Mod สำหรับ [SMAPI](https://smapi.io) ที่เปิด [MCP](https://modelcontextprotocol.io) server *อยู่ในเกม*
+ให้ Claude, GPT, Gemini หรือโมเดลในเครื่องเดิน ทำฟาร์ม ตกปลา คุยกับชาวเมือง ต่อรองกับเพื่อนร่วมฟาร์ม
+และเข้านอนได้เองทั้งหมด
 
 [![Latest release](https://img.shields.io/github/v/release/duckxy166/stardew-ai-agent?style=flat-square&label=release&color=4caf50)](https://github.com/duckxy166/stardew-ai-agent/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/duckxy166/stardew-ai-agent?style=flat-square&color=f5c518)](https://github.com/duckxy166/stardew-ai-agent/stargazers)
@@ -15,86 +15,84 @@ other farmers and goes to bed, all by itself.
 ![SMAPI 4.0+](https://img.shields.io/badge/SMAPI-4.0+-5c6bc0?style=flat-square)
 [![YouTube](https://img.shields.io/badge/YouTube-watch_EP.1-ff0000?style=flat-square&logo=youtube&logoColor=white)](https://youtu.be/Drd5lWh3kFI)
 
-**English** · [ภาษาไทย](README.th.md)
+**ภาษาไทย** · [English](README.en.md)
 
 <a href="https://youtu.be/Drd5lWh3kFI">
-  <img src="docs/assets/ep01-cover.png" width="720" alt="Watch on YouTube: Claude, GPT and Gemini share one farm in Stardew Valley">
+  <img src="docs/assets/ep01-cover.png" width="720" alt="ดูบน YouTube: ปล่อย Claude, GPT และ Gemini ทำฟาร์มด้วยกันใน Stardew Valley">
 </a>
 
-▶️ **[Watch EP.1 on YouTube](https://youtu.be/Drd5lWh3kFI)**: Claude, GPT and Gemini farm together for five days
-and end up harvesting each other's crops (43 min, in Thai)
+▶️ **[ดู EP.1 บน YouTube](https://youtu.be/Drd5lWh3kFI)**: ปล่อย Claude, GPT และ Gemini ทำฟาร์มด้วยกันใน Stardew Valley
+แล้วมันแย่งผักกันเอง (43 นาที)
 
 </div>
 
-## What happened in the video
+## ในคลิปเกิดอะไรขึ้น
 
-Three AIs moved onto one farm as strangers. Nobody gave them roles, teams or goals. Each one sees only its own
-screen, hears only who is standing near it, and keeps its own diary. Over five in-game days:
+AI 3 ตัวย้ายมาอยู่ฟาร์มเดียวกันแบบไม่รู้จักกันมาก่อน ไม่มีใครกำหนดว่าต้องเป็นใคร ต้องอยู่ทีมไหน หรือต้องช่วยกัน
+แต่ละตัวเห็นแค่จอของตัวเอง ได้ยินแค่คนที่ยืนอยู่ใกล้ ๆ และเขียนไดอารี่ของตัวเองทุกคืน ใน 5 วันในเกม:
 
-- 👋 Gemini greeted the whole town on day 1, without anyone asking it to.
-- 🪙 Claude spent its money down to 0g for three last seeds.
-- 💭 GPT's private thoughts slipped into another language mid-sentence.
-- 🚪 Two days in a row they queued outside a shop before it opened.
-- 🥕 On day 5 every parsnip was ripe at once. *"So we don't pick the same ones"*, one said, and then they picked each
-  other's: **Claude took 14 of the others' crops, GPT 11, Gemini 0.**
-- 🌱 When they finally split up the field, one of them was left without a plot.
+- 👋 พี่ฟ้า (Gemini) เดินทักคนทั้งเมืองตั้งแต่วันแรก ทั้งที่ไม่มีใครสั่ง
+- 🪙 พี่ส้ม (Claude) ใช้เงินจนเหลือ 0 เพื่อซื้อเมล็ด 3 เม็ดสุดท้าย
+- 💭 ความคิดของพี่เขียว (GPT) มีภาษาอื่นโผล่มากลางประโยค
+- 🚪 ไปยืนรอหน้าร้านตั้งแต่เช้า แต่ร้านยังไม่เปิด สองวันติด
+- 🥕 เช้าวันที่ 5 ผักสุกพร้อมกันทั้งแปลง *"จะได้ไม่เก็บทับกัน"* แล้วก็ก้มเก็บผักของเพื่อน:
+  **Claude เก็บผักเพื่อนไป 14 ต้น GPT 11 ต้น Gemini 0**
+- 🌱 พอแบ่งแปลงเสร็จ เหลือหนึ่งตัวที่ไม่มีแปลงเลย
 
-None of it was scripted. The mod logs every action, thought and line of chat, and the story is in the logs.
+ไม่มีบทเลยสักฉาก mod บันทึกทุกการกระทำ ทุกความคิด และทุกประโยคที่คุยกัน เรื่องทั้งหมดในคลิปมาจาก log
 
-## Highlights
+## จุดเด่น
 
-- 🤖 **Plays most of the game by itself.** 70 tools for farming, fishing, mining and combat, cooking, crafting,
-  shopping, animals, buildings, festivals, quests, the Community Center, the museum, friendship and marriage.
-  → [Everything it can do](docs/features.md)
-- 👥 **Up to three AIs on one farm** in split-screen co-op, with or without you. Separate wallets, their own crops and
-  chests, and the mod notices when someone takes what isn't theirs.
-- 🗣️ **They only hear what is near them.** `say` reaches the farmers whose screen shows the speaker, and `think` is
-  private (viewers see it). Plans, deals and lies happen face to face, and a lie can be caught, because every AI sees
-  what the others are *actually* doing next to what they said.
-- ⏸️ **Time freezes while an AI thinks**, so a slow model loses no game time. Turn it off when you play along.
-- 🧠 **Memory across days**: a diary, lessons, a plan, and a `self` note each AI rewrites every evening. Characters come
-  out of what happens to them, not out of a script.
-- 🎥 **Made for streams and videos**: an overlay page for OBS, a day-by-day replay, JSONL logs, diaries and daily stats.
-- 🔌 **Use any AI**: the built-in loop with your own API key (Anthropic, OpenAI, Gemini, OpenRouter, Ollama,
-  LM Studio), any MCP client (Claude Code, Claude Desktop, Cursor...), or plain HTTP.
+- 🤖 **เล่นได้แทบทั้งเกมเอง** มีเครื่องมือ 70 ตัว ครอบคลุมทำฟาร์ม ตกปลา ลงเหมืองและต่อสู้ ทำอาหาร คราฟต์ของ ซื้อขาย
+  เลี้ยงสัตว์ สร้างอาคาร งานเทศกาล เควสต์ Community Center พิพิธภัณฑ์ ความสัมพันธ์และการแต่งงาน
+  → [ดูทุกอย่างที่ทำได้](docs/features.th.md)
+- 👥 **AI สูงสุด 3 ตัวในฟาร์มเดียว** แบบจอแบ่ง (split-screen co-op) จะเล่นด้วยหรือไม่ก็ได้ เงินแยกกระเป๋า แปลงผักและหีบเป็นของใครของมัน
+  และ mod รู้ว่าใครไปหยิบของที่ไม่ใช่ของตัวเอง
+- 🗣️ **ได้ยินแค่คนที่อยู่ใกล้** `say` ไปถึงเฉพาะคนที่จอเห็นคนพูด ส่วน `think` เป็นความคิดส่วนตัว (คนดูเห็น) การวางแผน การต่อรอง
+  และการโกหกจึงเกิดแบบเจอหน้ากัน และจับโกหกได้ เพราะ AI ทุกตัวเห็นว่าคนอื่น *ทำอะไรอยู่จริง ๆ* เทียบกับที่พูดไว้
+- ⏸️ **เวลาหยุดเดินระหว่างที่ AI คิด** โมเดลช้าก็ไม่เสียเวลาในเกม (ปิดได้ เวลาเราเล่นด้วย)
+- 🧠 **ความจำข้ามวัน** ไดอารี่ บทเรียน แผน และบันทึก `self` ที่ AI แต่ละตัวเขียนใหม่ทุกเย็น นิสัยของแต่ละตัวเกิดจากสิ่งที่เจอในเกม
+  ไม่ได้มาจากบท
+- 🎥 **ทำมาเพื่อสตรีมและทำคลิป** มีหน้า overlay ใส่ใน OBS ได้ หน้า replay ดูย้อนหลังรายวัน log แบบ JSONL ไดอารี่ และสถิติรายวัน
+- 🔌 **ใช้ AI ตัวไหนก็ได้** ใช้ AI ในตัว mod ด้วย API key ของคุณเอง (Anthropic, OpenAI, Gemini, OpenRouter, Ollama,
+  LM Studio) ต่อกับ MCP client (Claude Code, Claude Desktop, Cursor...) หรือเรียกผ่าน HTTP ตรง ๆ
 
-## Three ways to use it
+## ใช้ได้ 3 แบบ
 
-| You want to... | Use | You need |
+| อยากทำอะไร | ใช้อะไร | ต้องมีอะไร |
 |---|---|---|
-| Watch AIs play your farm, or play alongside them | The mod's **built-in AI**: set it up in the config menu, no other programs | An API key (Anthropic, OpenAI, Gemini) or a local model (Ollama, LM Studio) |
-| Give orders to your own AI assistant ("water the crops, then visit Abigail") | Any **MCP client** (Claude Code, Claude Desktop, Cursor...) connected to `http://localhost:8770/mcp` | That client |
-| Build your own bot, stream overlay or automation | The **[HTTP API](docs/api.md)** (`/api/state`, `/api/control`, `/overlay`, `/replay`...) | Any language that speaks HTTP |
+| ดู AI เล่นฟาร์มของเรา หรือเล่นไปด้วยกัน | **AI ในตัว mod** ตั้งค่าในเมนู ไม่ต้องลงโปรแกรมอื่น | API key (Anthropic, OpenAI, Gemini) หรือโมเดลในเครื่อง (Ollama, LM Studio) |
+| สั่งงาน AI ของเราเอง ("รดน้ำผักแล้วไปหา Abigail") | **MCP client** ตัวไหนก็ได้ (Claude Code, Claude Desktop, Cursor...) ต่อที่ `http://localhost:8770/mcp` | client ตัวนั้น |
+| เขียนบอท overlay สำหรับสตรีม หรือระบบอัตโนมัติของตัวเอง | **[HTTP API](docs/api.md)** (`/api/state`, `/api/control`, `/overlay`, `/replay`...) | ภาษาอะไรก็ได้ที่เรียก HTTP ได้ |
 
-## Install
+## ติดตั้ง
 
-You need Stardew Valley 1.6+ (PC) and [SMAPI](https://smapi.io) 4.0+.
-[Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) is optional and lets you change the
-settings in the game.
+ต้องมี Stardew Valley 1.6 ขึ้นไป (PC) และ [SMAPI](https://smapi.io) 4.0 ขึ้นไป
+ถ้าลง [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) ด้วย จะตั้งค่าในเกมได้เลย (ไม่บังคับ)
 
-1. Install SMAPI and start the game through it once.
-2. Download the latest `StardewMCP` zip from the [Releases](https://github.com/duckxy166/stardew-ai-agent/releases) page.
-3. Unzip it into `Stardew Valley/Mods/`, so you get `Mods/StardewMCP/`.
-4. Start the game through SMAPI. The SMAPI console should show `Agent MCP at http://localhost:8770/mcp`.
+1. ลง SMAPI แล้วเปิดเกมผ่าน SMAPI หนึ่งครั้ง
+2. ดาวน์โหลดไฟล์ zip `StardewMCP` ตัวล่าสุดจากหน้า [Releases](https://github.com/duckxy166/stardew-ai-agent/releases)
+3. แตกไฟล์ไว้ใน `Stardew Valley/Mods/` ให้ได้โฟลเดอร์ `Mods/StardewMCP/`
+4. เปิดเกมผ่าน SMAPI คอนโซลของ SMAPI ควรขึ้น `Agent MCP at http://localhost:8770/mcp`
 
-The first start creates `Mods/StardewMCP/config.json`. With Generic Mod Config Menu you can also change the settings
-in the game: title screen → the cog → *Stardew MCP*.
+เปิดครั้งแรก mod จะสร้างไฟล์ `Mods/StardewMCP/config.json` ถ้ามี Generic Mod Config Menu ก็ตั้งค่าในเกมได้:
+หน้าไตเติล → กดรูปฟันเฟือง → *Stardew MCP*
 
-## Quick start
+## เริ่มใช้งาน
 
-### Let the AI play by itself
+### ให้ AI เล่นเอง
 
-1. Open the mod's settings (in the game, or in `config.json`).
-2. Give seat **P1** a provider (`Brain`), a model and your API key:
+1. เปิดหน้าตั้งค่าของ mod (ในเกม หรือแก้ `config.json`)
+2. ใส่ผู้ให้บริการ (`Brain`) โมเดล และ API key ให้ที่นั่ง **P1**:
 
-   | `Brain` | Models | Key / endpoint |
+   | `Brain` | โมเดล | key / ที่อยู่ server |
    |---|---|---|
-   | `anthropic` | `claude-haiku-5-5` (default), `claude-sonnet-5-5`, ... | [console.anthropic.com](https://console.anthropic.com) |
-   | `openai` | `gpt-5-mini` (default), `gpt-5`, ... | [platform.openai.com](https://platform.openai.com), or any OpenAI-compatible server with a `BaseUrl`: OpenRouter (`https://openrouter.ai/api/v1`), Ollama (`http://localhost:11434/v1`, no key), LM Studio |
-   | `gemini` | `gemini-3.8-flash` (default), ... | [aistudio.google.com](https://aistudio.google.com) |
-   | `none` | | no built-in AI: an MCP client drives the seat |
+   | `anthropic` | `claude-haiku-5-5` (ค่าเริ่มต้น), `claude-sonnet-5-5`, ... | [console.anthropic.com](https://console.anthropic.com) |
+   | `openai` | `gpt-5-mini` (ค่าเริ่มต้น), `gpt-5`, ... | [platform.openai.com](https://platform.openai.com) หรือ server ที่รองรับแบบ OpenAI โดยใส่ `BaseUrl`: OpenRouter (`https://openrouter.ai/api/v1`), Ollama (`http://localhost:11434/v1` ไม่ต้องมี key), LM Studio |
+   | `gemini` | `gemini-3.8-flash` (ค่าเริ่มต้น), ... | [aistudio.google.com](https://aistudio.google.com) |
+   | `none` | | ไม่ใช้ AI ในตัว ให้ MCP client เป็นคนขับที่นั่งนี้ |
 
-3. Load any save. The AI starts playing, and a small panel on its screen shows its thoughts, chat and current action.
+3. โหลดเซฟไหนก็ได้ AI จะเริ่มเล่นเอง และมีแผงเล็ก ๆ บนจอบอกความคิด แชต และสิ่งที่กำลังทำ
 
 ```json
 "Seats": [
@@ -102,13 +100,13 @@ in the game: title screen → the cog → *Stardew MCP*.
 ]
 ```
 
-### Several AIs, or you plus AIs
+### หลาย AI หรือเราเล่นกับ AI
 
-Turn on `SplitScreen`: up to four screens share the farm in the game's 2×2 grid. Each seat gets a `Role`: `ai`,
-`human` (you, P1 only), `camera` (just watches) or `off`. If the farm has too few cabins, the mod builds them and
-joins the farmhands by itself, so you don't need gamepads.
+เปิด `SplitScreen` แล้วจะได้สูงสุด 4 จอในฟาร์มเดียว (แบ่ง 2×2 แบบในเกม) แต่ละที่นั่งเลือก `Role` ได้: `ai`, `human`
+(เราเล่นเอง เฉพาะ P1), `camera` (จอไว้ดูอย่างเดียว) หรือ `off` ถ้าฟาร์มมีกระท่อมไม่พอ mod จะสร้างให้และพา farmhand
+เข้าเกมเอง ไม่ต้องมีจอย
 
-"I play P1, two AIs play with me, and the world keeps running":
+ตัวอย่าง "เราเล่น P1 มี AI สองตัวเล่นด้วย และเวลาเดินตลอด":
 
 ```json
 "SplitScreen": true,
@@ -121,66 +119,65 @@ joins the farmhands by itself, so you don't need gamepads.
 ]
 ```
 
-Seats, roles, time modes and every other setting: [Configuration](docs/configuration.md).
+`FreezeTimeWhileThinking` เปิด = ทั้งโลกหยุดตอน AI คิด โมเดลช้าก็ไม่เสียเวลาในเกม · ปิด = เวลาเดินต่อ เหมาะตอนเราเล่นด้วย
+ค่าตั้งทั้งหมด: [Configuration](docs/configuration.md) (ภาษาอังกฤษ)
 
-### Connect your own AI client
+### ต่อกับ AI client ของเราเอง
 
-With the game running and a save loaded, add the mod as an MCP server. For [Claude Code](https://claude.com/claude-code):
+เปิดเกม โหลดเซฟ แล้วเพิ่ม mod เป็น MCP server ตัวอย่างสำหรับ [Claude Code](https://claude.com/claude-code):
 
 ```bash
 claude mcp add --transport http stardew http://localhost:8770/mcp
 ```
 
-Then ask something like *"Water my crops, then go talk to Abigail."* Any client that speaks MCP over streamable HTTP
-can use the same URL. In split-screen each farmer has its own endpoint: `/mcp/p1` (same as `/mcp`), `/mcp/p2`,
-`/mcp/p3`. Give the seats you drive this way `"Brain": "none"`.
+แล้วลองสั่ง *"รดน้ำผักให้หน่อย แล้วไปคุยกับ Abigail"* client ไหนที่ใช้ MCP แบบ streamable HTTP ได้ก็ใช้ URL เดียวกัน
+ถ้าเป็นจอแบ่ง farmer แต่ละคนมี endpoint ของตัวเอง: `/mcp/p1` (เหมือน `/mcp`), `/mcp/p2`, `/mcp/p3` และตั้งที่นั่งนั้นเป็น
+`"Brain": "none"`
 
-### Pause
+### หยุดชั่วคราว
 
-Press `F8` in the game window: the running action finishes, then the whole world freezes. `F8` again continues.
-Stopping after the day and other run controls: [HTTP API](docs/api.md#run-control).
+กด `F8` ในหน้าต่างเกม: ให้ action ที่ทำอยู่จบก่อน แล้วทั้งโลกจะหยุด กด `F8` อีกครั้งเพื่อเล่นต่อ
+การสั่งหยุดหลังจบวันและคำสั่งอื่น ๆ: [HTTP API](docs/api.md#run-control)
 
-## Good to know
+## ควรรู้ก่อนใช้
 
-- **Cost.** Every action is a model call with the game state in it. One in-game day costs roughly 50–300k input tokens
-  per AI, so cheap models (Haiku, Flash, GPT mini, a local model) are the sensible choice. `DailyTokenBudget` stops a
-  seat for the rest of the day once it has used that many tokens.
-- **Your keys** are stored as plain text in `config.json`. Don't share that file.
-- **Language.** The AIs think and chat in the game's language; `ThoughtLanguage` (e.g. `"English"`) overrides it.
-- **Local models** work through `openai` + `BaseUrl`, but small models struggle with 70 tools.
-- **How the AI plays** is set by its system prompt, `Mods/StardewMCP/assets/system_prompt.md`. Edit it to change
-  its behaviour.
-- **Performance.** Three or four screens are heavy: a 2560×1440 window at 60 FPS needs a mid-range GPU.
+- **ค่าใช้จ่าย** ทุก action คือการเรียกโมเดลหนึ่งครั้งพร้อมสถานะเกม หนึ่งวันในเกมใช้ประมาณ 50–300k input tokens ต่อ AI
+  หนึ่งตัว แนะนำโมเดลราคาถูก (Haiku, Flash, GPT mini หรือโมเดลในเครื่อง) ตั้ง `DailyTokenBudget` เพื่อให้ที่นั่งหยุดเมื่อใช้ครบ
+- **API key** ถูกเก็บเป็นข้อความธรรมดาใน `config.json` อย่าแชร์ไฟล์นี้
+- **ภาษา** AI คิดและแชตตามภาษาของเกม ตั้ง `ThoughtLanguage` (เช่น `"Thai"` หรือ `"English"`) เพื่อบังคับภาษาได้
+- **โมเดลในเครื่อง** ใช้ผ่าน `openai` + `BaseUrl` ได้ แต่โมเดลเล็กจะงงกับเครื่องมือ 70 ตัว
+- **นิสัยการเล่น** มาจาก system prompt ที่ `Mods/StardewMCP/assets/system_prompt.md` แก้ไฟล์นี้เพื่อเปลี่ยนพฤติกรรมได้
+- **ความแรงเครื่อง** 3–4 จอค่อนข้างหนัก หน้าต่าง 2560×1440 ที่ 60 FPS ต้องใช้การ์ดจอระดับกลาง
 
-## Documentation
+## เอกสาร
 
-| Page | What's inside |
+| หน้า | มีอะไร |
 |---|---|
-| 📋 [What it can do](docs/features.md) | Every feature, area by area, and what is still missing |
-| 🧰 [Tools](docs/tools.md) | All MCP tools with their arguments, grouped by job |
-| 🌐 [HTTP API](docs/api.md) | Endpoints, run control, tool results and reason codes |
-| ⚙️ [Configuration](docs/configuration.md) | Every `config.json` setting, seats and roles, overlay language |
-| 🗺️ [Game coverage](docs/coverage.md) | How each game system is reached, tested or not yet |
-| 📖 [Glossary](CONTEXT.md) | The words this project uses: seat, brain, freeze, interrupt... |
-| 🤝 [Contributing](CONTRIBUTING.md) | Bug reports, tests, adding a tool |
+| 📋 [ทำอะไรได้บ้าง](docs/features.th.md) | ทุกความสามารถ แยกตามหมวด และสิ่งที่ยังทำไม่ได้ |
+| 🧰 [เครื่องมือ](docs/tools.th.md) | เครื่องมือ MCP ทั้งหมดพร้อม argument แยกตามงาน |
+| 🌐 [HTTP API](docs/api.md) (อังกฤษ) | endpoint, การควบคุมการรัน, ผลลัพธ์ของเครื่องมือและ reason code |
+| ⚙️ [Configuration](docs/configuration.md) (อังกฤษ) | ค่าตั้งทุกตัวใน `config.json`, ที่นั่งและ role, ภาษาของ overlay |
+| 🗺️ [Game coverage](docs/coverage.md) (อังกฤษ) | ระบบไหนของเกมเข้าถึงแล้ว ทดสอบแล้ว หรือยังไม่มี |
+| 📖 [Glossary](CONTEXT.md) (อังกฤษ) | คำศัพท์ของโปรเจกต์: seat, brain, freeze, interrupt... |
+| 🤝 [Contributing](CONTRIBUTING.md) (อังกฤษ) | แจ้งบั๊ก รันเทสต์ เพิ่มเครื่องมือ |
 
-## Troubleshooting
+## แก้ปัญหา
 
-| Problem | Try |
+| อาการ | ลองทำ |
 |---|---|
-| The SMAPI console doesn't show `Agent MCP at ...` | Check that the folder is `Mods/StardewMCP/` (not nested twice) and read the SMAPI log for errors |
-| The AI never starts | Read the SMAPI console after loading the save: a seat that can't start logs `pN: built-in AI not started: <problem>` (missing key, unknown provider...). `mcp_brain` lists the AIs that run |
-| Port 8770 is already in use | Change `HttpPort` and use the new port in your MCP client's URL |
-| The game seems stuck and the clock doesn't move | It is probably frozen while an AI thinks. `/api/state` shows who is thinking. An AI that stays silent longer than `ThinkTimeoutSeconds` stops holding the world |
-| The AI repeats the same failing action | The loop guard adds hints and finally blocks the repeat (`RepeatHintAfter`, `RepeatBlockAfter`, `NoProgressAfter`) |
-| Farmhands don't join in split-screen | Allow the Windows Firewall prompt, and keep `AutoBuildCabins` on (or build enough cabins yourself) |
+| คอนโซล SMAPI ไม่ขึ้น `Agent MCP at ...` | เช็กว่าโฟลเดอร์คือ `Mods/StardewMCP/` (ไม่ได้ซ้อนสองชั้น) แล้วดู error ใน SMAPI log |
+| AI ไม่เริ่มเล่น | ดูคอนโซล SMAPI หลังโหลดเซฟ ที่นั่งที่เริ่มไม่ได้จะขึ้น `pN: built-in AI not started: <สาเหตุ>` (ไม่มี key, ชื่อผู้ให้บริการผิด...) พิมพ์ `mcp_brain` เพื่อดู AI ที่รันอยู่ |
+| พอร์ต 8770 ถูกใช้อยู่ | เปลี่ยน `HttpPort` แล้วใช้พอร์ตใหม่ใน URL ของ MCP client |
+| เกมดูค้าง นาฬิกาไม่เดิน | น่าจะหยุดรอ AI คิดอยู่ `/api/state` บอกว่าใครกำลังคิด AI ที่เงียบนานเกิน `ThinkTimeoutSeconds` จะไม่ถือเวลาโลกไว้อีก |
+| AI ทำ action เดิมที่พังซ้ำ ๆ | loop guard จะใส่คำใบ้ และสุดท้ายจะบล็อกการทำซ้ำ (`RepeatHintAfter`, `RepeatBlockAfter`, `NoProgressAfter`) |
+| farmhand ไม่เข้าเกมตอนจอแบ่ง | กดอนุญาตตอน Windows Firewall ถาม และเปิด `AutoBuildCabins` ไว้ (หรือสร้างกระท่อมให้พอเอง) |
 
-To report a bug, see [CONTRIBUTING.md](CONTRIBUTING.md#reporting-a-bug). The SMAPI log link helps a lot.
+แจ้งบั๊กได้ที่ issue พร้อมลิงก์ SMAPI log (วิธีอยู่ใน [CONTRIBUTING.md](CONTRIBUTING.md#reporting-a-bug)) ช่วยได้มาก
 
-## ⭐ Enjoying it?
+## ⭐ ชอบไหม?
 
-If watching three AIs argue over parsnips made you smile, **give the repo a star**. It helps other players and AI
-tinkerers find the project, and it tells us the next episode is worth making.
+ถ้าดู AI สามตัวแย่งหัวผักกาดกันแล้วยิ้มได้ **ฝากกด Star ให้ repo นี้หน่อย** ช่วยให้คนเล่นเกมและสาย AI คนอื่นเจอโปรเจกต์นี้
+และเป็นสัญญาณว่าตอนต่อไปควรทำต่อ
 
 <a href="https://star-history.com/#duckxy166/stardew-ai-agent&Date">
   <picture>
@@ -189,35 +186,33 @@ tinkerers find the project, and it tells us the next episode is worth making.
   </picture>
 </a>
 
-More ways to help:
+ช่วยกันได้อีกหลายทาง:
 
-- 📺 Follow the series on YouTube: [@LDuckxy](https://www.youtube.com/@LDuckxy)
-- 💖 Support development through [GitHub Sponsors](https://github.com/sponsors/duckxy166)
-- 🐛 Report bugs and send pull requests: [CONTRIBUTING.md](CONTRIBUTING.md)
+- 📺 ติดตามซีรีส์บน YouTube: [@LDuckxy](https://www.youtube.com/@LDuckxy)
+- 💖 สนับสนุนผู้พัฒนาผ่าน [GitHub Sponsors](https://github.com/sponsors/duckxy166)
+- 🐛 แจ้งบั๊กหรือส่ง pull request: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-## Build from source
+## Build เอง
 
 ```bash
 cd mod/StardewMCP
 dotnet build -c Release
 ```
 
-[ModBuildConfig](https://www.nuget.org/packages/Pathoschild.Stardew.ModBuildConfig) finds your game folder, copies
-the mod into `Mods/` and creates a release zip in `bin/`. The tests that run without the game are in
-[CONTRIBUTING.md](CONTRIBUTING.md#tests).
+[ModBuildConfig](https://www.nuget.org/packages/Pathoschild.Stardew.ModBuildConfig) จะหาโฟลเดอร์เกมให้เอง คัดลอก mod
+ไปไว้ใน `Mods/` และสร้างไฟล์ zip ไว้ใน `bin/` เทสต์ที่รันได้โดยไม่ต้องมีเกมอยู่ใน [CONTRIBUTING.md](CONTRIBUTING.md#tests)
 
-Scripts that play many days unattended (memory between days, save backups, a crash watchdog, OBS recording) are not
-part of this repository. Everything they need is the [HTTP API](docs/api.md); [docs/recording.md](docs/recording.md)
-describes one recording setup as an example.
+สคริปต์ที่ให้ AI เล่นหลายวันต่อเนื่องแบบไม่ต้องเฝ้า (ความจำข้ามวัน สำรองเซฟ ตัวเฝ้าเกมแครช อัด OBS) ไม่ได้อยู่ใน repo นี้
+ทุกอย่างที่สคริปต์แบบนั้นต้องใช้อยู่ใน [HTTP API](docs/api.md) และ [docs/recording.md](docs/recording.md) เป็นตัวอย่างการตั้งค่าอัดคลิปหนึ่งแบบ
 
-## Credits
+## เครดิต
 
-Originally forked from [Hunter-Thompson/stardew-mcp](https://github.com/Hunter-Thompson/stardew-mcp),
-which first bridged Stardew Valley to MCP through a Go server and a WebSocket mod. This project has
-since been rewritten as a standalone mod with its own in-game MCP server, and the original Go server
-and WebSocket code have been removed.
+เริ่มต้นจากการ fork [Hunter-Thompson/stardew-mcp](https://github.com/Hunter-Thompson/stardew-mcp) ซึ่งเชื่อม Stardew Valley
+กับ MCP ผ่าน Go server และ mod แบบ WebSocket เป็นคนแรก ตอนนี้โปรเจกต์ถูกเขียนใหม่ทั้งหมดเป็น mod ที่มี MCP server ในตัว
+และเอาโค้ด Go server กับ WebSocket เดิมออกไปแล้ว
 
-## License
+## สัญญาอนุญาต
 
-[MIT](LICENSE). Stardew Valley is a trademark of ConcernedApe; this project is a fan-made mod and
-is not affiliated with ConcernedApe. No game files are included.
+[MIT](LICENSE) ดาวน์โหลด ใช้ แก้ไข และนำไปพัฒนาต่อได้ฟรี แค่คงข้อความ license ไว้
+Stardew Valley เป็นเครื่องหมายการค้าของ ConcernedApe โปรเจกต์นี้เป็น mod ที่แฟนทำขึ้นเอง ไม่เกี่ยวข้องกับ ConcernedApe
+และไม่มีไฟล์ของเกมรวมอยู่

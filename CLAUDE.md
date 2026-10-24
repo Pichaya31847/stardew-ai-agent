@@ -75,7 +75,7 @@ mod/StardewMCP/
       Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source, the overlay pages and the docs (see Tests)
-README.md, README.th.md   Landing page (English / Thai): the EP.1 video, install, quick start, links into docs/
+README.md, README.en.md   Landing page (Thai = the front page / English): the EP.1 video, install, quick start, links into docs/
 CONTEXT.md             Glossary: the project's words
 docs/
   features.md, features.th.md   What the AI can do, area by area, and what is missing (for players)

@@ -1,6 +1,6 @@
 # HTTP API
 
-[← README](../README.md) · [Tools](tools.md) · [Configuration](configuration.md)
+← README: [ภาษาไทย](../README.md) · [English](../README.en.md) · [Tools](tools.md) · [Configuration](configuration.md)
 
 Everything the mod serves, on `http://localhost:8770` (`HttpPort`). Scripts, bots and stream overlays use this API;
 nothing else in the mod is a public contract.

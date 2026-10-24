@@ -52,9 +52,10 @@ The docs are split by reader; a PR that changes behaviour updates its page in th
 | Something a player would notice | `docs/features.md` and `docs/features.th.md`, plus its row in `docs/coverage.md` |
 | A new term | `CONTEXT.md` |
 
-`README.md` and `README.th.md` are the landing page: what the mod is, the video, install, quick start, links. Keep
-reference tables out of them. English and Thai pages are twins: change both, keeping the same sections in the same
-order, and write the Thai as natural Thai rather than a word-for-word translation.
+`README.md` (Thai, the repository's front page) and `README.en.md` (English) are the landing page: what the mod
+is, the video, install, quick start, links. Keep reference tables out of them. English and Thai pages are twins:
+change both, keeping the same sections in the same order, and write the Thai as natural Thai rather than a
+word-for-word translation.
 
 ## Leave for a human with the game
 

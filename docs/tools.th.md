@@ -1,6 +1,6 @@
 # เครื่องมือ
 
-[English](tools.md) · **ภาษาไทย** · [← README](../README.th.md)
+**ภาษาไทย** · [English](tools.md) · [← README](../README.md)
 
 เครื่องมือทั้งหมดที่ AI เรียกใช้ได้ แยกตามงาน MCP endpoint ของ farmer ทุกคน (`/mcp`, `/mcp/p1` … `/mcp/p3`) มีครบทุกตัว
 
