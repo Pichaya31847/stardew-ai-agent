@@ -1,3 +1,5 @@
+<p align="right">🌐 <a href="README.md">ภาษาไทย</a> · <b>English</b></p>
+
 <div align="center">
 
 # 🌾 Stardew MCP
@@ -14,8 +16,6 @@ other farmers and goes to bed, all by itself.
 ![Stardew Valley 1.6+](https://img.shields.io/badge/Stardew_Valley-1.6+-7cb342?style=flat-square)
 ![SMAPI 4.0+](https://img.shields.io/badge/SMAPI-4.0+-5c6bc0?style=flat-square)
 [![YouTube](https://img.shields.io/badge/YouTube-watch_EP.1-ff0000?style=flat-square&logo=youtube&logoColor=white)](https://youtu.be/Drd5lWh3kFI)
-
-[ภาษาไทย](README.md) · **English**
 
 <a href="https://youtu.be/Drd5lWh3kFI">
   <img src="docs/assets/ep01-cover.png" width="720" alt="Watch on YouTube: Claude, GPT and Gemini share one farm in Stardew Valley">
