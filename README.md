@@ -1,3 +1,5 @@
+<p align="right">🌐 <b>ภาษาไทย</b> · <a href="README.en.md">English</a></p>
+
 <div align="center">
 
 # 🌾 Stardew MCP
@@ -14,8 +16,6 @@ Mod สำหรับ [SMAPI](https://smapi.io) ที่เปิด [MCP](htt
 ![Stardew Valley 1.6+](https://img.shields.io/badge/Stardew_Valley-1.6+-7cb342?style=flat-square)
 ![SMAPI 4.0+](https://img.shields.io/badge/SMAPI-4.0+-5c6bc0?style=flat-square)
 [![YouTube](https://img.shields.io/badge/YouTube-watch_EP.1-ff0000?style=flat-square&logo=youtube&logoColor=white)](https://youtu.be/Drd5lWh3kFI)
-
-**ภาษาไทย** · [English](README.en.md)
 
 <a href="https://youtu.be/Drd5lWh3kFI">
   <img src="docs/assets/ep01-cover.png" width="720" alt="ดูบน YouTube: ปล่อย Claude, GPT และ Gemini ทำฟาร์มด้วยกันใน Stardew Valley">
