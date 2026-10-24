@@ -318,10 +318,10 @@ public static class PassOut
                         var rec = JsonSerializer.Deserialize<PassOutRecord>(line, AgentLog.Json);
                         if (rec != null) list.Add(rec);
                     }
-                    catch (JsonException) { }
+                    catch (JsonException) { /* skip a malformed line */ }
                 }
         }
-        catch (IOException) { }
+        catch (IOException) { /* unreadable file: no records this time */ }
         Cache[path] = list;
         return list;
     }
