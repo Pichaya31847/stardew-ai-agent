@@ -1,7 +1,8 @@
 # Agent instructions
 
 For coding agents working on this repository without Stardew Valley installed (Jules, Codex and the
-like). `CLAUDE.md` has the full layout and design, `CONTRIBUTING.md` the PR rules.
+like). `CLAUDE.md` has the full layout and design, `CONTRIBUTING.md` the PR rules, and `CONTEXT.md` the
+project's words (seat, brain, freeze, interrupt...): use them in code, docs and PR descriptions.
 
 ## You cannot build the mod
 
@@ -38,6 +39,22 @@ game-free list in `CLAUDE.md`.
   files of `mod/StardewMCP/Agent/`.
 - No game files, saves, logs or personal paths; no code copied from other mods unless their license
   allows it.
+
+## Keep the docs in step
+
+The docs are split by reader; a PR that changes behaviour updates its page in the same PR:
+
+| Change | Update |
+|---|---|
+| A tool added, renamed in its arguments or changed in what it does | `docs/tools.md` and `docs/tools.th.md` (`mod/tests/test_docs.py` fails when a tool is missing from either) |
+| An endpoint, a result field or a log file | `docs/api.md` |
+| A `config.json` setting | `docs/configuration.md` |
+| Something a player would notice | `docs/features.md` and `docs/features.th.md`, plus its row in `docs/coverage.md` |
+| A new term | `CONTEXT.md` |
+
+`README.md` and `README.th.md` are the landing page: what the mod is, the video, install, quick start, links. Keep
+reference tables out of them. English and Thai pages are twins: change both, keeping the same sections in the same
+order, and write the Thai as natural Thai rather than a word-for-word translation.
 
 ## Leave for a human with the game
 

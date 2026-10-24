@@ -48,7 +48,11 @@ Tools live in `mod/StardewMCP/Agent/AgentTools.cs`. Each tool is a `ToolDef` wit
 description, JSON input schema and a coroutine that runs on the game thread. Mark a tool
 `Instant` if it only reads state, so game time stays frozen while it runs. Every other tool takes a
 `reason` string so viewers can read why the AI does it. Names are snake_case, and `required` may only
-list declared properties; `ToolContract` (logged at startup) and `runner/tests/test_tool_sources.py`
+list declared properties; `ToolContract` (logged at startup) and `mod/tests/test_tool_sources.py`
 check this.
+
+Add the tool to [docs/tools.md](docs/tools.md) and its Thai twin [docs/tools.th.md](docs/tools.th.md)
+(`mod/tests/test_docs.py` fails until both list it), and to [docs/features.md](docs/features.md) /
+[docs/features.th.md](docs/features.th.md) when players would notice it. Use the words in [CONTEXT.md](CONTEXT.md).
 
 By contributing you agree that your contribution is licensed under the [MIT License](LICENSE).

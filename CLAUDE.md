@@ -2,7 +2,8 @@
 
 SMAPI mod (C#, net6.0) that hosts an MCP server inside Stardew Valley so AI agents can play.
 MIT licensed, open source. This repository is **the mod only**: gameplay tools, the per-player
-runtime, the HTTP API and the overlay / replay pages the mod serves itself.
+runtime, the HTTP API and the overlay / replay pages the mod serves itself. The project's words
+(seat, brain, freeze, interrupt, self note...) are defined in `CONTEXT.md`; use them.
 
 The YouTube production around it (the runner that drives `claude` / `agy` / `opencode` sessions
 through the day, OBS director and recorder, personas, prompts) lives in a separate private
@@ -73,8 +74,18 @@ mod/StardewMCP/
       SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; breaks, retries (no meeting phase)
       Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
-mod/tests/             pytest lints over the C# source and the overlay pages (see Tests)
-docs/coverage.md       Which game features the tools cover, and how to add one
+mod/tests/             pytest lints over the C# source, the overlay pages and the docs (see Tests)
+README.md, README.th.md   Landing page (English / Thai): the EP.1 video, install, quick start, links into docs/
+CONTEXT.md             Glossary: the project's words
+docs/
+  features.md, features.th.md   What the AI can do, area by area, and what is missing (for players)
+  tools.md, tools.th.md         Every MCP tool with its arguments, grouped by job
+  api.md               HTTP endpoints, run control, tool results and reason codes, log files
+  configuration.md     Every config.json setting, seats and roles, overlay language
+  coverage.md          Which game features the tools cover, and how to add one
+  economy.md           Shared farm economy: wallets, ownership, theft, payments
+  recording.md, howto-record-day.md   One recording setup, as an example of building on the API
+  assets/              Images for the docs (ep01-cover.png = the README's video thumbnail)
 ```
 
 ## How it works
@@ -112,7 +123,8 @@ mod/StardewMCP.Tests/  Does NOT reference the mod project; compiles the game-fre
                        <Compile Include Link> and shims Point/Vector2 (Shims/XnaTypes.cs)
 mod/tests/             test_tool_sources.py: tool schemas read from the C# source (snake_case names, reason
                        on actions, required in properties); test_i18n.py: overlay/replay language tables (needs node);
-                       test_crop_math.py, test_bobber_controller.py: Python twins of KnowledgeMath.cs and BobberController.cs
+                       test_crop_math.py, test_bobber_controller.py: Python twins of KnowledgeMath.cs and BobberController.cs;
+                       test_docs.py: docs/tools.md and docs/tools.th.md list exactly the tools the source defines
 ```
 
 Game-free mod files (no `Game1`, `GameLocation`, `Farmer`; linked into the tests):
@@ -148,4 +160,9 @@ In-game behaviour is checked by the studio repo's smoke tests (`runner/smoke.py`
 - New game features follow `docs/coverage.md`: reuse the game's own entry points, and update the
   feature's row in the same PR.
 - The HTTP API (`/api/*`, `/api/events`) is the contract with the studio repo: add to it, don't break it.
+- Docs change with the code, in the same PR: a tool → `docs/tools.md` + `docs/tools.th.md`; an endpoint or log
+  file → `docs/api.md`; a setting → `docs/configuration.md`; something players notice → `docs/features.md` +
+  `docs/features.th.md`; a new term → `CONTEXT.md` (table in `AGENTS.md`). The READMEs stay a short landing page
+  without reference tables. English and Thai pages are twins with the same sections; the Thai is written as natural
+  Thai, not word for word.
 - Reference: https://stardewvalleywiki.com/Modding:Modder_Guide/APIs
