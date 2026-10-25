@@ -65,6 +65,12 @@ public static partial class AgentTools
     /// </summary>
     private static IEnumerator FestivalEggs(int max, CallContext c)
     {
+        // Any other festival: fail before the loop below advances its dialogue.
+        if (Game1.CurrentEvent is not { } fest || !fest.isSpecificFestival("spring13"))
+        {
+            c.Fail(Reasons.NotHere, "There is no egg hunt here. It is the Egg Festival's main event (spring 13 in Town).");
+            yield break;
+        }
         for (int i = 0; i < 1800 && EggHuntEvent() == null && Game1.eventUp && Game1.CurrentEvent is { isFestival: true }; i++)
         {
             if (Game1.activeClickableMenu is DialogueBox { isQuestion: true }) break; // the AI answers questions with respond
@@ -73,9 +79,7 @@ public static partial class AgentTools
         }
         if (EggHuntEvent() == null)
         {
-            c.Fail(Reasons.NotReady, CalendarData.Today()?.Name == "Egg Festival"
-                ? $"The egg hunt is not running. It starts after festival(start) and Lewis's countdown, and lasts about 50 seconds. {WorldText.MenuState().Trim()}".Trim()
-                : "There is no egg hunt here. It is the Egg Festival's main event (spring 13 in Town).");
+            c.Fail(Reasons.NotReady, $"The egg hunt is not running. It starts after festival(start) and Lewis's countdown, and lasts about 50 seconds. {WorldText.MenuState().Trim()}".Trim());
             yield break;
         }
 
