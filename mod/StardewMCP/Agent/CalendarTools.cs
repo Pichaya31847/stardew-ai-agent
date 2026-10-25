@@ -133,11 +133,13 @@ public static partial class AgentTools
             Name = "festival",
             Description = "On a festival day, standing in the festival's map during its hours. start = walk to Lewis, talk to him and answer yes to begin the main event (egg hunt, dance, luau...); " +
                           "with several farmers the game waits until everyone is ready. leave = walk out of the festival to another map (default Farm) and confirm the leave question. " +
+                          "eggs = at the Egg Festival, once Lewis has started the egg hunt: pick up eggs nearest first until the hunt ends (about 50 seconds); the most eggs wins. " +
                           "Use talk_to for the festival's villagers and booths (shops) and interact with holding for the Luau soup pot. calendar shows when and where each festival is.",
             Schema = Obj(new
             {
-                action = new { type = "string", @enum = new[] { "start", "leave" }, description = "start or leave" },
+                action = new { type = "string", @enum = new[] { "start", "leave", "eggs" }, description = "start, leave or eggs" },
                 to = Str("leave: destination map (default Farm)"),
+                max = Int("eggs: stop after this many eggs (default: as many as you can)"),
                 reason = Str(ReasonDesc)
             }, "action", "reason"),
             Run = FestivalTool
@@ -279,6 +281,7 @@ public static partial class AgentTools
     internal static string? FestivalLine()
     {
         if (!(Game1.eventUp && Game1.CurrentEvent is { isFestival: true })) return null;
+        if (EggHuntLine() is { } hunt) return hunt;
         var name = CalendarData.Today()?.Name ?? "festival";
         return $"A festival is in progress ({name}). talk_to its villagers and booths, festival(start) starts the main event with Lewis, festival(leave) walks out.";
     }
@@ -314,9 +317,10 @@ public static partial class AgentTools
     private static IEnumerator FestivalTool(JsonElement a, CallContext c)
     {
         var action = S(a, "action").Trim().ToLowerInvariant();
-        if (action != "start" && action != "leave") { c.Fail("action must be \"start\" or \"leave\"."); yield break; }
+        if (action != "start" && action != "leave" && action != "eggs") { c.Fail("action must be \"start\", \"leave\" or \"eggs\"."); yield break; }
         if (!(Game1.eventUp && Game1.CurrentEvent is { isFestival: true })) { c.Fail(NoFestivalNow()); yield break; }
         if (action == "start") yield return FestivalStart(c);
+        else if (action == "eggs") yield return FestivalEggs(Math.Max(1, I(a, "max", int.MaxValue)), c);
         else yield return FestivalLeave(a, c);
     }
 
