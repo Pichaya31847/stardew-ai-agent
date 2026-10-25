@@ -25,7 +25,7 @@ public static class Observation
         ["crops"] = "cC!x",
         ["trees"] = "TtYu",
         ["debris"] = "WwSLs",
-        ["forage"] = "F",
+        ["forage"] = "FE",
         ["npcs"] = "NM",
         ["doors"] = "DA",
         ["buildings"] = "HbZf",

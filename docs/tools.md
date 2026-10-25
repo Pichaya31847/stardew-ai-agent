@@ -100,7 +100,7 @@ Buildings and animals are paid from the caller's own money and items.
 | `talk_to` | `name`, *`gift_item`*, *`go`* | Find a villager (travels across maps unless `go=false`), talk, optionally give a gift; reports friendship points before and after and their reaction |
 | `bouquet` | `name`, *`go`* | Ask a villager to date you (8 hearts) |
 | `mermaid_pendant` | `name`, *`go`* | Propose to a villager (10 hearts, upgraded house) |
-| `festival` | `action`, *`to`* | On a festival day: `start` talks to Lewis and begins the main event (waits for the other players), `leave` walks out |
+| `festival` | `action`, *`to`*, *`max`* | On a festival day: `start` talks to Lewis and begins the main event (waits for the other players), `leave` walks out, `eggs` picks up eggs during the Egg Festival's egg hunt (nearest first, until the hunt ends or `max` are picked; `look` shows the eggs as `E`) |
 
 ## Quests and the Community Center
 

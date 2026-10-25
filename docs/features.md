@@ -58,6 +58,7 @@ makes every choice.
 - Date with a bouquet, propose with the Mermaid Pendant, marry (`bouquet`, `mermaid_pendant`)
 - Heart events with their questions answered by the AI (opt-in: `PlayHeartEvents`)
 - Festival calendar, shop hours, joining and leaving festivals (`calendar`, `festival`)
+- The Egg Festival's egg hunt: the farmers see the eggs and race each other for them (`festival(eggs)`)
 
 ## 📜 Quests and the Community Center
 
@@ -115,7 +116,7 @@ makes every choice.
 
 - Tailoring, the dye pots and the forge
 - Crab pots
-- The arcade, darts, the crane game and the casino; the egg hunt, Fair and ice-fishing games at festivals
+- The arcade, darts, the crane game and the casino; the Fair and ice-fishing games at festivals
 - Upgrading a built coop or barn, house renovations
 - Dancing and having a baby with another player
 

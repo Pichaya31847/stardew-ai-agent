@@ -18,7 +18,7 @@ public static partial class WorldText
     public const string Legend =
         "@ you | . walkable | , tillable ground | # blocked | ~ water (refill the can, fish) | * fish bubbles (cast here: bites come faster) | D door/exit/ladder | A action tile (shop counter, etc) | " +
         "N villager | M monster | H building | b shipping bin | Z your bed | f furniture | O object/machine/chest | W weeds | w twig | S stone | " +
-        "L large stump/log/boulder | T tree | t young tree/sapling | s tree stump | Y fruit tree | u bush | g grass | F forage item | " +
+        "L large stump/log/boulder | T tree | t young tree/sapling | s tree stump | Y fruit tree | u bush | g grass | F forage item | E festival egg (egg hunt) | " +
         "= tilled soil (empty) | c crop needs water | C crop watered | ! crop ready to harvest | x dead crop";
 
     // FormatTime and DirName are in WorldText.Format.cs (no game types, compiled by the unit tests).
@@ -129,6 +129,7 @@ public static partial class WorldText
         var pt = new Point(x, y);
 
         if (p.TilePoint == pt) return ('@', null);
+        if (AgentTools.EggAt(loc, x, y)) return ('E', "Egg (interact to pick it up, or festival(eggs))");
 
         foreach (var npc in loc.characters.Concat(AgentTools.FestivalActors())) // festival villagers are event actors
         {
