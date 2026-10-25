@@ -4,122 +4,126 @@
 <meta charset="utf-8">
 <title>Farmer Overlay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    /* dark panels */
-    --panel: rgba(18,18,24,.9); --edge: rgba(255,255,255,.08);
-    --text: #E6E6EA; --text-2: #C9C9D1; --dim: #8A8A96; --tool: #61D6D6;
-    --think: #7FB2FF; --act: #F2A93B; --bad: #FF6B6B; --ok-mark: #16C60C; --bad-mark: #E74856;
-    /* parchment cards (new day, diary) */
-    --parch: #F6E7C1; --parch-2: #E9D29C; --wood: #7A4A22; --wood-dk: #4A2C14;
-    --ink: #2B1A0B; --ink-2: #6B4E2E; --ink-3: #5A4026; --night: #2C3E73;
+    /* Headspace-style: warm charcoal ink on flat white cards, colored orbs as markers and decoration, radii 16 / 24 / pill */
+    --primary: #0061ef;
+    --ink: #2d2c2b; --ink-strong: #141313; --ink-soft: #44423f; --ink-meta: #63605d;
+    --canvas: #f9f4f2; --surface: #ffffff; --hairline: #e2ded9;
+    --saffron: #ffce00; --pink: #ffa1cc; --aqua: #00a4ff; --grass: #02873e; --violet: #3b197f;
+    --font: "Inter", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
     --hud-clear: 340px;  /* bottom-left strip left free for the game's HUD messages */
   }
   html, body { margin: 0; background: transparent; overflow: hidden; }
-  body { width: 1920px; height: 1080px; position: relative; font-family: "Mitr", "Leelawadee UI", "Tahoma", sans-serif; color: var(--text); }
+  body { width: 1920px; height: 1080px; position: relative; font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
   .hide { display: none !important; }
   body:not(.i18n) { visibility: hidden; } /* nothing shows until the language is known (no flash of the wrong one) */
+  .dot { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--hairline); }
 
-  .panel { box-sizing: border-box; padding: 14px 18px; background: var(--panel); border: 1px solid var(--edge);
-           border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
-  .label { font-size: 14px; letter-spacing: .08em; color: var(--dim); margin-bottom: 6px; }
+  .panel { box-sizing: border-box; padding: 16px 20px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; }
+  .label { font-size: 14px; font-weight: 700; color: var(--ink-meta); margin-bottom: 8px; }
 
   /* top-left status: only what the game itself does not show */
   #status { position: absolute; left: 24px; top: 24px; width: 480px; display: flex; flex-direction: column; gap: 6px; }
-  #status .line1 { display: flex; align-items: baseline; gap: 10px; font-size: 26px; font-weight: 600; line-height: 1.2; }
-  #status .muted { font-weight: 400; color: var(--dim); }
-  #status .place { font-weight: 400; color: var(--text-2); }
-  #status .line2 { display: flex; align-items: center; gap: 10px; font-size: 18px; line-height: 1.4; color: var(--text-2); }
-  #status .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--dim); }
-  #runnerLine { color: var(--act); }  /* runner status from POST /api/meta {"runnerStatus": "..."}, e.g. waiting for the usage limit */
-  #runnerLine .dot { background: var(--act); }
+  #status .line1 { display: flex; align-items: baseline; gap: 10px; font-size: 24px; font-weight: 700; line-height: 1.33; letter-spacing: -0.6px; }
+  #status .muted { font-weight: 400; color: var(--ink-meta); }
+  #status .place { font-weight: 500; color: var(--ink-soft); }
+  .line2 { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 500; line-height: 1.44; color: var(--ink-soft); }
+  #runnerLine .dot { background: var(--saffron); }  /* runner status from POST /api/meta {"runnerStatus": "..."}, e.g. waiting for the usage limit */
 
   /* run control: shown while the operator has paused or stopped the run (state.paused / state.stopNow) */
-  #pauseBadge { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); padding: 10px 30px; border-radius: 10px;
-                background: rgba(231,72,86,.94); color: #fff; font-size: 34px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  #pauseBadge { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px;
+                padding: 12px 32px 12px 24px; border-radius: 800px; background: var(--ink); color: #fff; font-size: 32px; font-weight: 700; letter-spacing: -0.96px; }
+  #pauseBadge::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--pink); }
 
   /* the game stacks HUD messages ("+1 Parsnip", "Inventory full") up from the bottom-left corner: keep that strip clear */
-  #col { position: absolute; left: 24px; top: 134px; bottom: var(--hud-clear); width: 480px; display: flex; flex-direction: column; gap: 16px;
-         font-family: "Cascadia Mono", "Cascadia Code", Consolas, "Mitr", monospace; }
+  #col { position: absolute; left: 24px; top: 138px; bottom: var(--hud-clear); width: 480px; display: flex; flex-direction: column; gap: 16px; }
   #col > .panel { flex-shrink: 0; }
   body.npc #col { bottom: auto; }
-  body.runner #col { top: 166px; }  /* the status panel has one extra line while the runner posts a status */
+  body.runner #col { top: 170px; }  /* the status panel has one extra line while the runner posts a status */
 
-  #logPanel { font-size: 19px; line-height: 1.5; }
-  #logPanel .label { margin-bottom: 8px; }
-  .hist { display: flex; align-items: center; gap: 12px; }
-  .hist .tool { flex: none; width: 7ch; color: var(--tool); }
-  .hist .why { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hist .mark { flex: none; }
-  #proof { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--edge); font-size: 14px; line-height: 1.6; color: var(--dim); }
-  #proof .live { color: var(--bad-mark); }
+  #logPanel { font-size: 18px; line-height: 1.5; }
+  .hist { display: flex; align-items: center; gap: 12px; padding: 2px 0; }
+  .hist .tool { flex: none; width: 80px; font-weight: 700; }
+  .hist .why { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); }
+  .mark { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 13px; font-weight: 700; background: var(--hairline); }
+  .mark.ok { background: var(--grass); color: #fff; } .mark.bad { background: var(--pink); } .mark.part { background: var(--saffron); }
+  #proof { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hairline); font-size: 14px; line-height: 1.6; color: var(--ink-meta); }
+  #proof .live { color: var(--primary); }
 
-  #actPanel { font-size: 20px; line-height: 1.5; }
-  #actLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #actLine { font-size: 20px; line-height: 1.5; color: var(--ink); }
+  #actText { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* fills whatever height is left above the HUD strip; long thoughts clip at the top so the newest words stay visible */
-  #col > #thinkPanel { margin-top: auto; flex-shrink: 1; min-height: 0; display: flex; flex-direction: column; font-size: 22px; line-height: 1.5; }
-  #replyPanel { font-size: 22px; line-height: 1.5; }
+  #col > #thinkPanel { margin-top: auto; flex-shrink: 1; min-height: 0; display: flex; flex-direction: column; font-size: 24px; line-height: 1.45; }
+  #replyPanel { font-size: 24px; line-height: 1.45; }
   .textwrap { overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
   #thinkPanel .textwrap { min-height: 0; }
   #replyPanel .textwrap { max-height: 230px; } /* column must end above the game's dialogue box (~y 684) */
 
-  body.npc #logPanel, body.npc #thinkPanel { display: none; }
+  body.npc #logPanel, body.npc #col > #thinkPanel { display: none; }
   body:not(.npc) #replyPanel { display: none; }
 
-  /* full-screen parchment cards */
+  /* full-screen cards with orbs floating around their edges */
   .scrim { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
            opacity: 0; transition: opacity .5s; pointer-events: none; }
   .scrim.show { opacity: 1; }
-  .parch { box-sizing: border-box; background: var(--parch); color: var(--ink); border: 8px solid var(--wood); border-radius: 12px;
-           box-shadow: inset 0 0 0 4px var(--parch-2), 0 0 0 5px var(--wood-dk), 0 12px 0 5px rgba(0,0,0,.4); }
+  .card { position: relative; box-sizing: border-box; border-radius: 24px; color: var(--ink); }
+  .card .orb { position: absolute; color: var(--c); }
 
-  #daycard { background: rgba(20,12,4,.55); }
-  #daycard .card { width: 900px; display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 40px 56px 44px; }
-  #daycard .season { font-size: 32px; font-weight: 500; color: var(--ink-2); }
-  #daycard .big { display: flex; align-items: baseline; gap: 22px; line-height: .9; }
-  #daycard .big .w { font-size: 72px; font-weight: 600; }
-  #daycard .big .num { font-size: 190px; font-weight: 600; color: var(--wood-dk); }
-  #daycard .big .of { font-size: 64px; font-weight: 500; color: var(--ink-2); }
-  #cells { display: flex; flex-wrap: wrap; gap: 3px; width: 700px; }
-  #cells i { width: 32px; height: 18px; border-radius: 2px; background: #E2C990; }
-  #cells i.past { background: #2F6B22; } #cells i.now { background: #E8962E; }
+  #daycard { background: rgba(45, 44, 43, .55); }
+  #daycard .card { width: 960px; display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 48px 56px; background: var(--canvas); }
+  #daycard .season { font-size: 24px; font-weight: 500; color: var(--ink-soft); }
+  #daycard .big { display: flex; align-items: baseline; gap: 24px; line-height: .9; }
+  #daycard .big .w { font-size: 64px; font-weight: 700; letter-spacing: -1.92px; }
+  #daycard .big .num { font-size: 176px; font-weight: 700; letter-spacing: -5.28px; }
+  #daycard .big .of { font-size: 52px; font-weight: 500; letter-spacing: -1.56px; color: var(--ink-meta); }
+  #cells { display: flex; flex-wrap: wrap; gap: 8px; width: 552px; }  /* 20 orbs a row */
+  #cells i { width: 20px; height: 20px; border-radius: 50%; background: var(--hairline); }
+  #cells i.past { background: var(--grass); } #cells i.now { background: var(--primary); }
   #daycard .stats { display: flex; gap: 16px; margin-top: 8px; }
-  #daycard .stat { display: flex; flex-direction: column; align-items: center; padding: 10px 22px; background: var(--parch-2); border-radius: 8px; min-width: 170px; }
-  #daycard .stat span:first-child { font-size: 20px; color: var(--ink-3); }
-  #daycard .stat span:last-child { font-weight: 600; font-size: 34px; }
+  #daycard .stat { display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 16px 24px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px; }
+  #daycard .stat .k { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 500; color: var(--ink-soft); }
+  #daycard .stat .v { font-size: 32px; font-weight: 700; letter-spacing: -0.96px; }
 
-  #diary { background: rgba(12,20,52,.72); }
-  #diary .card { width: 1200px; height: 700px; display: flex; flex-direction: column; gap: 22px; padding: 48px 64px; box-shadow: inset 0 0 0 4px var(--parch-2), 0 0 0 5px var(--wood-dk), 0 12px 0 5px rgba(0,0,0,.45); }
-  #diary .head { display: flex; align-items: center; justify-content: space-between; }
-  #diary .title { display: flex; flex-direction: column; gap: 4px; }
-  #diary .title span:first-child { font-size: 54px; font-weight: 600; color: var(--wood-dk); line-height: 1.1; }
-  #diary .title span:last-child { font-size: 28px; color: var(--ink-2); }
-  #diary .badge { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: var(--night); color: #fff; border-radius: 8px; font-size: 24px; font-weight: 500; }
-  #diary .rule { height: 4px; background: #D9BE85; border-radius: 2px; }
-  #diaryText { flex: 1; min-height: 0; overflow: hidden; font-size: 44px; line-height: 1.5; white-space: pre-line; }
-  #diaryText.long { font-size: 34px; } #diaryText.longer { font-size: 28px; }
-  #diary .foot { display: flex; justify-content: space-between; align-items: center; font-size: 18px; color: var(--ink-3); }
-  #diary .zzz { font-weight: 600; font-size: 40px; color: var(--wood); }
+  #diary { background: rgba(59, 25, 127, .62); }  /* night */
+  #diary .card { width: 1200px; height: 700px; display: flex; flex-direction: column; gap: 24px; padding: 48px 64px; background: var(--saffron); }
+  #diary .head { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  #diary .title { display: flex; flex-direction: column; gap: 6px; }
+  #dyTitle { font-size: 52px; font-weight: 700; line-height: 1.1; letter-spacing: -1.56px; }
+  #dySub { font-size: 24px; color: var(--ink-soft); }
+  #diary .badge { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 28px 0 22px; border-radius: 800px;
+                  background: var(--ink); color: #fff; font-size: 22px; font-weight: 700; box-shadow: 0 3px 0 var(--ink-strong); }
+  #diary .rule { height: 2px; background: rgba(45, 44, 43, .14); }
+  #diaryText { flex: 1; min-height: 0; overflow: hidden; font-size: 40px; line-height: 1.45; white-space: pre-line; }
+  #diaryText.long { font-size: 32px; } #diaryText.longer { font-size: 26px; }
+  #diary .foot { display: flex; justify-content: space-between; align-items: center; font-size: 18px; color: var(--ink-soft); }
+  #diary .zzz { font-size: 40px; font-weight: 700; letter-spacing: -1.2px; }
 
   /* ?player=pN: one AI's think / diary / self note as a 1920x360 box, laid in OBS on the top edge of that AI's
      own quadrant: transparent, only the latest text, top left. The game's chat sits bottom left and the mod pins the
      toolbar to the bottom; the box stops short of the clock and money in the top right */
-  body.strip { width: 1920px; height: 360px; background: transparent; --seat: var(--act); }
+  body.strip { width: 1920px; height: 360px; background: transparent; --seat: var(--saffron); }
   body.strip > :not(#col), body.strip #col > :not(#thinkPanel) { display: none !important; }
-  body.strip #col { position: absolute; inset: 0; width: auto; font-family: inherit; }
-  body.strip #col > #thinkPanel { margin: 0; height: 100%; border: 0; border-radius: 0; box-shadow: none; background: none;
+  body.strip #col { position: absolute; inset: 0; width: auto; }
+  body.strip #col > #thinkPanel { margin: 0; height: 100%; border: 0; border-radius: 0; background: none;
                                   padding: 24px 0 0 24px; font-size: 36px; line-height: 1.4; }
   body.strip #thinkPanel .label { display: none; }
   body.strip #thinkPanel .textwrap { flex: 1; justify-content: flex-start; align-items: flex-start; }
-  body.strip .it { flex: none; white-space: pre-line; max-width: 1440px; padding: 12px 26px; border-radius: 10px;
-                   background: rgba(18, 18, 24, .8); border-left: 10px solid var(--seat); }
+  body.strip .it { flex: none; white-space: pre-line; max-width: 1440px; padding: 16px 32px 18px 28px; border-radius: 24px;
+                   background: rgba(255, 255, 255, .94); border: 1px solid var(--hairline); }
   body.strip .it.long { font-size: 30px; } body.strip .it.longer { font-size: 25px; }
-  body.strip .it .k { color: var(--seat); font-size: 26px; font-weight: 600; margin-right: 14px; }
+  body.strip .it .k { font-size: 26px; font-weight: 700; margin-right: 14px; }
+  body.strip .it .k::before { content: ""; display: inline-block; width: 22px; height: 22px; margin-right: 10px; border-radius: 50%;
+                              background: var(--seat); vertical-align: -2px; }
 </style>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="orb" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="currentColor"/><circle cx="37" cy="45" r="5.5" style="fill:var(--eye,#2d2c2b)"/><circle cx="63" cy="45" r="5.5" style="fill:var(--eye,#2d2c2b)"/><path d="M39 61q11 9 22 0" fill="none" stroke-width="4.5" stroke-linecap="round" style="stroke:var(--eye,#2d2c2b)"/></symbol>
+    <symbol id="orb-sleep" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="currentColor"/><path d="M30 45q7 6 14 0M56 45q7 6 14 0M45 63q5 4 10 0" fill="none" stroke-width="4.5" stroke-linecap="round" style="stroke:var(--eye,#2d2c2b)"/></symbol>
+  </svg>
   <div id="pauseBadge" class="hide" data-i18n="pausedBadge"></div>
   <div id="status" class="panel">
     <div class="line1">
@@ -145,7 +149,7 @@
 
     <div id="actPanel" class="panel">
       <div class="label" data-i18n="labelAction"></div>
-      <div id="actLine" data-i18n="actIdle"></div>
+      <div id="actLine" class="line2"><span class="dot" id="actDot"></span><span id="actText" data-i18n="actIdle"></span></div>
     </div>
 
     <div id="thinkPanel" class="panel">
@@ -154,18 +158,25 @@
     </div>
   </div>
 
-  <div id="daycard" class="scrim"><div class="card parch">
+  <div id="daycard" class="scrim"><div class="card">
+    <svg class="orb" style="--c:var(--saffron);width:150px;height:150px;left:-64px;top:-56px"><use href="#orb"/></svg>
+    <svg class="orb" style="--c:var(--pink);width:84px;height:84px;right:-36px;top:56px"><use href="#orb"/></svg>
+    <svg class="orb" style="--c:var(--aqua);width:64px;height:64px;left:-30px;bottom:84px"><use href="#orb"/></svg>
+    <svg class="orb" style="--c:var(--violet);--eye:#fff;width:56px;height:56px;right:72px;bottom:-28px"><use href="#orb"/></svg>
     <div class="season" id="dcSeason"></div>
     <div class="big"><span class="w" data-i18n="dayWord"></span><span class="num" id="dcDay"></span><span class="of">/ 100</span></div>
     <div id="cells"></div>
     <div class="stats">
-      <div class="stat"><span data-i18n="statMoney"></span><span id="dcMoney">–</span></div>
-      <div class="stat"><span data-i18n="statOk"></span><span id="dcOk" style="color:#2F6B22">–</span></div>
-      <div class="stat"><span data-i18n="statBad"></span><span id="dcBad" style="color:#A82A20">–</span></div>
+      <div class="stat"><span class="k"><i class="dot" style="background:var(--saffron)"></i><span data-i18n="statMoney"></span></span><span class="v" id="dcMoney">–</span></div>
+      <div class="stat"><span class="k"><i class="dot" style="background:var(--grass)"></i><span data-i18n="statOk"></span></span><span class="v" id="dcOk">–</span></div>
+      <div class="stat"><span class="k"><i class="dot" style="background:var(--pink)"></i><span data-i18n="statBad"></span></span><span class="v" id="dcBad">–</span></div>
     </div>
   </div></div>
 
-  <div id="diary" class="scrim"><div class="card parch">
+  <div id="diary" class="scrim"><div class="card">
+    <svg class="orb" style="--c:var(--pink);width:120px;height:120px;left:-56px;top:-48px"><use href="#orb-sleep"/></svg>
+    <svg class="orb" style="--c:var(--aqua);width:80px;height:80px;right:-36px;bottom:120px"><use href="#orb-sleep"/></svg>
+    <svg class="orb" style="--c:var(--grass);--eye:#fff;width:96px;height:96px;left:-44px;bottom:-36px"><use href="#orb-sleep"/></svg>
     <div class="head">
       <div class="title"><span id="dyTitle" data-i18n="diaryWord"></span><span id="dySub"></span></div>
       <div class="badge">
@@ -191,9 +202,9 @@ const I18N = {
     pausedBadge: "Paused", stoppedBadge: "Run stopped",
     modeHeldAction: (stopNow, verb) => `${stopNow ? "Run stopped" : "Paused"} · waiting for ${verb} to finish`,
     dayWord: "Day", diaryWord: "Diary",
-    labelReply: "REPLY", labelLog: "LOG", labelAction: "ACTION", labelThinking: "MODEL THINKING",
-    replyTo: who => `REPLY TO ${who}`,
-    liveWord: "LIVE", sessionWord: "session", seqWord: "seq",
+    labelReply: "Reply", labelLog: "Log", labelAction: "Action", labelThinking: "Model thinking",
+    replyTo: who => `Reply to ${who}`,
+    liveWord: "Live", sessionWord: "session", seqWord: "seq",
     // ACTION line
     actIdle: "Now: ?", actReplyIdle: "Reply: ?", actThinking: "Thinking…",
     actDoing: verb => `Now: ${verb}`,
@@ -353,7 +364,7 @@ function setLang(name) {
 }
 const place = n => lk("place", n) || n || "–";
 const seasonName = n => lk("season", n) || n;
-const C = { plain: "var(--text)", think: "var(--think)", act: "var(--act)", bad: "var(--bad)", dim: "var(--dim)", ok: "var(--ok-mark)" };
+const C = { think: "var(--aqua)", act: "var(--saffron)", bad: "var(--pink)", dim: "var(--hairline)", ok: "var(--grass)" };  // status dot colors
 
 function resultLine(text, ok) {
   const line = (text || "").split("\n")[0];
@@ -449,9 +460,9 @@ function renderLog() {
   $("hist").innerHTML = hist.slice(-4).map(h => {
     const ok = h.result ? h.result.ok : null;
     const mark = ok === null ? "…" : h.result.mark;
-    const color = ok === null ? C.dim : !ok ? "var(--bad-mark)" : h.result.partial ? C.act : C.ok;
+    const cls = ok === null ? "" : !ok ? "bad" : h.result.partial ? "part" : "ok";
     const tool = lk("toolLog", h.action.tool) || h.action.tool;
-    return `<div class="hist"><span class="tool">${esc(tool)}</span><span class="why">${esc(h.action.why || target(h.action.tool, h.action.args))}</span><span class="mark" style="color:${color}">${mark}</span></div>`;
+    return `<div class="hist"><span class="tool">${esc(tool)}</span><span class="why">${esc(h.action.why || target(h.action.tool, h.action.args))}</span><span class="mark ${cls}">${mark}</span></div>`;
   }).join("");
 }
 
@@ -462,8 +473,7 @@ function renderAction(frozen, speaker) {
   else if (a) { text = `${t("actDoing", lk("tool", a.tool) || a.tool)} ${target(a.tool, a.args)}`.trim(); color = C.act; }
   else if (frozen) { text = t("actThinking"); color = C.think; }
   else { text = speaker ? t("actReplyIdle") : t("actIdle"); color = C.dim; }
-  const el = $("actLine");
-  el.textContent = text; el.style.color = color;
+  $("actText").textContent = text; $("actDot").style.background = color;
 }
 
 function clock() {
@@ -534,7 +544,7 @@ async function poll() {
     // Boxes with no speaker (sleep prompt, TV, signs) are not conversations.
     const speaker = "dialogue" in s ? (s.dialogue && s.dialogue.speaker) || null : talk;
     document.body.classList.toggle("npc", !!speaker);
-    $("replyLabel").textContent = t("replyTo", String(speaker || "NPC").toUpperCase());
+    $("replyLabel").textContent = t("replyTo", speaker || "NPC");
 
     if (s.ready) {
       $("day").textContent = s.day;
@@ -568,7 +578,7 @@ async function poll() {
 // ?player=p1|p2|p3: that AI's latest think / diary / self note as a 1920x360 strip, shown at once
 const STRIP = (new URLSearchParams(location.search).get("player") || "").toLowerCase();
 const STRIP_ON = /^p[1-3]$/.test(STRIP);
-const SEAT_COLOR = { p1: "#F2A93B", p2: "#5AA9FF", p3: "#5CC46A" };
+const SEAT_COLOR = { p1: "var(--saffron)", p2: "var(--aqua)", p3: "var(--grass)" };
 let names = {};
 if (STRIP_ON) {
   document.body.classList.add("strip");

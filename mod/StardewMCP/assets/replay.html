@@ -4,47 +4,144 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stardew Replay</title>
-<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #f7f1e3; --card: #fffaf0; --ink: #2b2118; --muted: #7a6a55; --edge: #e2d3b4; --accent: #c7782b; --ok: #3f8f2e; --bad: #c0392b; --think: #8a5a00; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #1d1914; --card: #26211a; --ink: #f3ead8; --muted: #b3a58c; --edge: #3d342a; --accent: #e8a24a; --ok: #8fd16a; --bad: #ff7a6b; --think: #ffd27a; } }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Kanit", "Leelawadee UI", sans-serif; }
-  header { padding: 16px; border-bottom: 1px solid var(--edge); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-  header h1 { margin: 0; font-size: 22px; }
-  header span { color: var(--muted); font-size: 14px; }
-  main { display: grid; grid-template-columns: 180px 1fr; min-height: calc(100vh - 60px); }
-  nav { border-right: 1px solid var(--edge); padding: 8px; overflow-y: auto; max-height: calc(100vh - 60px); }
-  nav button { display: block; width: 100%; text-align: left; padding: 8px 10px; margin: 2px 0; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--ink); font: inherit; cursor: pointer; }
-  nav button.on { background: var(--card); border-color: var(--edge); color: var(--accent); }
-  section { padding: 16px; overflow-y: auto; max-height: calc(100vh - 60px); }
-  .diary { background: var(--card); border: 1px solid var(--edge); border-radius: 12px; padding: 12px 16px; white-space: pre-wrap; margin-bottom: 14px; }
-  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 14px; color: var(--muted); }
-  .row { display: grid; grid-template-columns: 70px 90px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--edge); font-size: 15px; }
-  .row .t { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .row .k { font-size: 13px; color: var(--muted); }
-  .row.think .txt { color: var(--think); font-size: 17px; }
-  .row .res { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+  /* Headspace-style: cream canvas, warm charcoal ink, one blue pill, colored orbs as decoration. Flat (no shadows),
+     radii 16 / 24 / 32 / pill, one family at 400 / 500 / 700 */
+  :root {
+    --primary: #0061ef; --primary-deep: #0000ee;
+    --ink: #2d2c2b; --ink-soft: #44423f; --ink-meta: #63605d;
+    --canvas: #f9f4f2; --surface: #ffffff; --hairline: #e2ded9;
+    --saffron: #ffce00; --pink: #ffa1cc; --aqua: #00a4ff; --grass: #02873e; --violet: #3b197f;
+    --font: "Inter", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font: 400 16px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
   body:not(.i18n) { visibility: hidden; } /* nothing shows until the language is known */
-  .ok { color: var(--ok); } .bad { color: var(--bad); } .part { color: var(--accent); }
-  .why { display: inline-block; margin-right: 6px; padding: 0 6px; border: 1px solid currentColor; border-radius: 6px; font-size: 12px; }
-  @media (max-width: 700px) { main { grid-template-columns: 1fr; } nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--edge); } nav button { width: auto; white-space: nowrap; } .row { grid-template-columns: 56px 1fr; } .row .k { display: none; } }
+  :focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+  .dot { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--c, var(--hairline)); }
+
+  /* top nav: orb mark and title on the left, the page's one blue pill on the right */
+  header { height: 64px; display: flex; align-items: center; gap: 16px; }
+  .logo { flex: none; display: flex; }
+  .logo i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--canvas); background: var(--c); }
+  .logo i + i { margin-left: -8px; }
+  header h1 { margin: 0; min-width: 0; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cta { margin-left: auto; flex: none; height: 48px; padding: 0 24px; border: 0; border-radius: 32px; background: var(--primary);
+         color: #fff; font: 700 14px/1.1 var(--font); cursor: pointer; }
+  .cta:hover, .cta:active { background: var(--primary-deep); }
+  .cta:disabled { cursor: progress; }
+
+  /* hero: the day, its numbers as chips, orbs floating on the right */
+  .hero { position: relative; padding: 48px 0 32px; }
+  .hero h2 { position: relative; margin: 0; font-size: 64px; font-weight: 700; line-height: 1.05; letter-spacing: -1.92px; }
+  .chips { position: relative; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; max-width: 860px; }
+  .chip { display: inline-flex; align-items: center; gap: 10px; height: 56px; padding: 0 20px 0 16px; background: var(--surface);
+          border: 1px solid var(--hairline); border-radius: 16px; font-size: 18px; font-weight: 500; }
+  #why { position: relative; margin: 12px 0 0; font-size: 14px; color: var(--ink-meta); }
+  .orbs { position: absolute; top: 24px; right: 0; width: 340px; height: 220px; pointer-events: none; transform-origin: top right; }
+  .orbs svg { position: absolute; color: var(--c); animation: bob 6s ease-in-out infinite; }
+  .orbs svg:nth-child(2n) { animation-delay: -3s; }
+  @keyframes bob { 50% { transform: translateY(-8px); } }
+  @media (prefers-reduced-motion: reduce) { .orbs svg { animation: none; } }
+
+  /* day picker: a horizontal track of pills, the open day in charcoal */
+  .days { position: relative; display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 12px; scrollbar-width: thin; scrollbar-color: var(--hairline) transparent; }
+  .days button { flex: none; height: 40px; padding: 0 18px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 800px;
+                 color: var(--ink); font: 500 14px/1 var(--font); cursor: pointer; }
+  .days button:hover { border-color: var(--ink); }
+  .days button.on { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 700; }
+
+  /* the day's log on the left, diary and filters on the right */
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 48px; align-items: start; padding: 24px 0 48px; }
+  aside { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 24px; }
+  .diary { background: var(--saffron); border-radius: 24px; padding: 24px 24px 32px; }
+  .diary h3 { margin: 0 0 8px; font-size: 24px; font-weight: 700; line-height: 1.33; letter-spacing: -0.6px; }
+  #diary { font-size: 18px; line-height: 1.6; white-space: pre-wrap; }
+  .diary.empty { background: var(--surface); border: 1px solid var(--hairline); }
+  .diary.empty #diary { color: var(--ink-meta); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+  .filters:empty { display: none; }
+  .toggle { position: relative; }
+  .toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+  .toggle span { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 12px; border: 1px solid var(--hairline);
+                 border-radius: 800px; font-size: 14px; font-weight: 500; color: var(--ink-meta); }
+  .toggle span::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--hairline); }
+  .toggle input:checked + span { background: var(--surface); border-color: var(--ink); color: var(--ink); }
+  .toggle input:checked + span::before { background: var(--c); }
+  .toggle input:focus-visible + span { outline: 3px solid var(--primary); outline-offset: 2px; }
+
+  /* log rows: editorial, hairline dividers, no card fill */
+  .row { display: grid; grid-template-columns: 52px 140px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--hairline); }
+  .row > :last-child { overflow-wrap: anywhere; }  /* long paths and identifiers wrap instead of widening the page */
+  .row .t { padding-top: 2px; font-size: 14px; color: var(--ink-meta); font-variant-numeric: tabular-nums; }
+  .row .k { display: flex; align-items: flex-start; gap: 8px; padding-top: 2px; font-size: 14px; font-weight: 500; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .row.think .txt { font-size: 20px; line-height: 1.5; letter-spacing: -0.2px; }
+  .seat { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; font-weight: 700; }
+  .args, .ms { font-size: 13px; color: var(--ink-meta); overflow-wrap: anywhere; }
+  .res { font-size: 14px; color: var(--ink-soft); white-space: pre-wrap; }
+  .mark { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; font-weight: 700; font-style: normal; }
+  .ok .mark { background: var(--grass); color: #fff; } .bad .mark { background: var(--pink); } .part .mark { background: var(--saffron); }
+  .why { display: inline-block; margin-right: 8px; padding: 2px 10px; border-radius: 800px; background: var(--pink); font-size: 12px; font-weight: 700; color: var(--ink); }
+  .why.part { background: var(--saffron); }
+
+  @media (max-width: 1128px) {
+    .hero h2 { font-size: 52px; letter-spacing: -1.56px; }
+    .orbs { transform: scale(.7); }
+    main { grid-template-columns: minmax(0, 1fr) 300px; gap: 32px; }
+  }
+  @media (max-width: 744px) {
+    .hero { padding: 32px 0 24px; }
+    .hero h2 { font-size: 40px; letter-spacing: -1.2px; }
+    .orbs { top: 16px; transform: scale(.45); }
+    .chip { height: 48px; font-size: 16px; }
+    main { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    aside { position: static; order: -1; }
+    .row { grid-template-columns: 44px minmax(0, 1fr); gap: 4px 12px; }
+    .row .t { grid-row: span 2; }
+    .row > :last-child { grid-column: 2; }
+  }
 </style>
 </head>
 <body>
-<header><h1 data-i18n="title"></h1><span id="sum"></span></header>
-<main>
-  <nav id="days"></nav>
-  <section>
-    <div class="filters">
-      <label><input type="checkbox" id="fThink" checked> <span data-i18n="fThink"></span></label>
-      <label><input type="checkbox" id="fAct" checked> <span data-i18n="fAct"></span></label>
-      <label><input type="checkbox" id="fRes" checked> <span data-i18n="fRes"></span></label>
-      <label><input type="checkbox" id="fSys" checked> <span data-i18n="fSys"></span></label>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="orb" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="currentColor"/><circle cx="37" cy="45" r="5.5" style="fill:var(--eye,#2d2c2b)"/><circle cx="63" cy="45" r="5.5" style="fill:var(--eye,#2d2c2b)"/><path d="M39 61q11 9 22 0" fill="none" stroke-width="4.5" stroke-linecap="round" style="stroke:var(--eye,#2d2c2b)"/></symbol>
+</svg>
+<div class="wrap">
+  <header>
+    <span class="logo" aria-hidden="true"><i style="--c:var(--saffron)"></i><i style="--c:var(--aqua)"></i><i style="--c:var(--grass)"></i></span>
+    <h1 data-i18n="title"></h1>
+    <button class="cta" id="latest" data-i18n="latest"></button>
+  </header>
+  <section class="hero">
+    <div class="orbs" aria-hidden="true">
+      <svg style="--c:var(--saffron);width:132px;height:132px;right:24px;top:0"><use href="#orb"/></svg>
+      <svg style="--c:var(--pink);width:72px;height:72px;right:180px;top:70px"><use href="#orb"/></svg>
+      <svg style="--c:var(--violet);--eye:#fff;width:44px;height:44px;right:280px;top:10px"><use href="#orb"/></svg>
+      <svg style="--c:var(--aqua);width:56px;height:56px;right:0;top:150px"><use href="#orb"/></svg>
+      <svg style="--c:var(--grass);--eye:#fff;width:88px;height:88px;right:96px;top:128px"><use href="#orb"/></svg>
     </div>
-    <div id="diary" class="diary" data-i18n="pickDay"></div>
-    <div id="rows"></div>
+    <h2 id="dayTitle">–</h2>
+    <div class="chips" id="chips"></div>
+    <p id="why"></p>
   </section>
-</main>
+  <nav class="days" id="days"></nav>
+  <main>
+    <div id="rows"></div>
+    <aside>
+      <div id="diaryCard" class="diary empty"><h3 data-i18n="diaryTitle"></h3><div id="diary" data-i18n="pickDay"></div></div>
+      <div class="filters">
+        <label class="toggle"><input type="checkbox" id="fThink" checked><span data-i18n="fThink" style="--c:var(--violet)"></span></label>
+        <label class="toggle"><input type="checkbox" id="fAct" checked><span data-i18n="fAct" style="--c:var(--aqua)"></span></label>
+        <label class="toggle"><input type="checkbox" id="fRes" checked><span data-i18n="fRes" style="--c:var(--grass)"></span></label>
+        <label class="toggle"><input type="checkbox" id="fSys" checked><span data-i18n="fSys" style="--c:var(--ink-meta)"></span></label>
+      </div>
+      <div class="filters" id="seats"></div>
+    </aside>
+  </main>
+</div>
 <script>
 const $ = id => document.getElementById(id);
 let current = null, data = null;
@@ -61,20 +158,26 @@ const LANG_NAMES = { thai: "th", english: "en" };
 const I18N = {
   en: {
     title: (m = "AI") => `${m || "AI"} plays Stardew — Replay`,
+    latest: "Latest day",
     fThink: "Thoughts", fAct: "Actions", fRes: "Results", fSys: "System",
-    pickDay: "Pick a day on the left",
+    pickDay: "Pick a day above",
+    diaryTitle: "Diary",
     noDiary: "(no diary for this day yet)",
     dayButton: d => `Day ${d}`,
-    summary: (day, acts, fails, mins, parts = 0, top = "") => `Day ${day} · ${acts} actions · ${fails} failed${parts ? ` · ${parts} partial` : ""}${top ? ` (${top})` : ""} · ~${mins} min real time`,
+    statActions: n => `${n} actions`, statFailed: n => `${n} failed`, statPartial: n => `${n} partial`,
+    statMinutes: m => `~${m} min real time`, topReasons: s => `Most common: ${s}`,
     rowThink: "💭 think",
   },
   th: {
     title: (m = "AI") => `${m || "AI"} เล่น Stardew — Replay`,
+    latest: "วันล่าสุด",
     fThink: "ความคิด", fAct: "การกระทำ", fRes: "ผลลัพธ์", fSys: "ระบบ",
-    pickDay: "เลือกวันทางซ้าย",
+    pickDay: "เลือกวันด้านบน",
+    diaryTitle: "ไดอารี่",
     noDiary: "(ยังไม่มีไดอารี่วันนี้)",
     dayButton: d => `วันที่ ${d}`,
-    summary: (day, acts, fails, mins, parts = 0, top = "") => `วันที่ ${day} · ${acts} actions · ล้มเหลว ${fails}${parts ? ` · ทำได้บางส่วน ${parts}` : ""}${top ? ` (${top})` : ""} · ใช้เวลาจริง ~${mins} นาที`,
+    statFailed: n => `ล้มเหลว ${n}`, statPartial: n => `ทำได้บางส่วน ${n}`,
+    statMinutes: m => `ใช้เวลาจริง ~${m} นาที`, topReasons: s => `สาเหตุที่พบบ่อย: ${s}`,
     rowThink: "💭 คิด",
   },
 };
@@ -96,12 +199,20 @@ function setLang(name) {
   document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.body.classList.add("i18n");
 }
+// seat orb colors and farmer names (from /api/feed), for days with more than one player
+const SEAT = { p1: "var(--saffron)", p2: "var(--aqua)", p3: "var(--grass)" };
+let names = {}, seatKey = "";
+const hiddenSeats = new Set();
+const seatName = p => names[p] || String(p).toUpperCase();
+const seatDot = p => `<i class="dot" style="--c:${SEAT[p] || "var(--ink-meta)"}"></i>`;
+
 // /api/feed always carries thoughtLanguage (even before a save is loaded); an `after` past the end keeps the reply tiny
 async function initLang() {
   let name = null;
   try {
     const feed = await (await fetch(`${API}/api/feed?after=9007199254740991`)).json();
     name = feed.thoughtLanguage;
+    for (const p of (feed.state || {}).players || []) if (p.state && p.state.name) names[p.id] = p.state.name;
     if (feed.meta && feed.meta.model) {
       const m = feed.meta.model;
       I18N.en.title = I18N.en.title(m);
@@ -112,23 +223,45 @@ async function initLang() {
   setLang(name);
 }
 
+// one counter for loadDays and show: the newest click wins, an older response never replaces what it asked for
+let request = 0;
 async function loadDays() {
-  const days = await (await fetch(`${API}/api/days`)).json();
-  $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
-  $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
-  if (days.length) show(days[days.length - 1]);
+  const id = ++request;
+  $("latest").disabled = true;  // one day-list load at a time; a failed one can be retried
+  try {
+    const days = await (await fetch(`${API}/api/days`)).json();
+    if (id !== request) return;
+    $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
+    $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
+    if (days.length) show(days[days.length - 1]);
+  } finally { $("latest").disabled = false; }
 }
 
 async function show(d) {
+  const id = ++request;
   current = d;
   $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === d));
-  data = await (await fetch(`${API}/api/day?n=${d}`)).json();
+  const nav = $("days"), on = nav.querySelector(".on");  // center the open day in the track (the page itself stays put)
+  if (on) nav.scrollLeft = on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2;
+  const day = await (await fetch(`${API}/api/day?n=${d}`)).json();
+  if (id !== request) return;
+  data = day;
   render();
+}
+
+function seatFilters(seats) {
+  if (seats.join() === seatKey) return;
+  seatKey = seats.join();
+  $("seats").innerHTML = seats.length > 1 ? seats.map(p => `<label class="toggle"><input type="checkbox" data-p="${esc(p)}"${hiddenSeats.has(p) ? "" : " checked"}>`
+    + `<span style="--c:${SEAT[p] || "var(--ink-meta)"}">${esc(seatName(p))}</span></label>`).join("") : "";
+  $("seats").querySelectorAll("input").forEach(i => i.onchange = () => { i.checked ? hiddenSeats.delete(i.dataset.p) : hiddenSeats.add(i.dataset.p); render(); });
 }
 
 function render() {
   if (!data) return;
+  $("dayTitle").textContent = t("dayButton", data.day);
   $("diary").textContent = data.diary || t("noDiary");
+  $("diaryCard").classList.toggle("empty", !data.diary);
   const show = { think: $("fThink").checked, action: $("fAct").checked, result: $("fRes").checked, system: $("fSys").checked, diary: true };
   const es = data.entries;
   const acts = es.filter(e => e.kind === "action").length;
@@ -140,19 +273,29 @@ function render() {
   const top = Object.entries(why).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(([r, n]) => `${r} ×${n}`).join(", ");
   const t0 = es[0]?.ts, t1 = es[es.length - 1]?.ts;
   const mins = t0 && t1 ? Math.round((new Date(t1) - new Date(t0)) / 60000) : 0;
-  $("sum").textContent = t("summary", data.day, acts, fails, mins, parts, top);
-  $("rows").innerHTML = es.filter(e => show[e.kind]).map(e => {
-    if (e.kind === "think") return `<div class="row think"><span class="t">${e.gameTime}</span><span class="k">${t("rowThink")}</span><span class="txt">${esc(e.text)}</span></div>`;
-    if (e.kind === "action") return `<div class="row"><span class="t">${e.gameTime}</span><span class="k">▶ ${esc(e.tool)}</span><span>${esc(e.text)} <span class="res">${esc(e.args ? JSON.stringify(e.args) : "")}</span></span></div>`;
+  $("chips").innerHTML = [["var(--aqua)", t("statActions", acts)], ["var(--pink)", t("statFailed", fails)],
+    parts ? ["var(--saffron)", t("statPartial", parts)] : null, ["var(--violet)", t("statMinutes", mins)]]
+    .filter(Boolean).map(([c, s]) => `<span class="chip"><i class="dot" style="--c:${c}"></i>${esc(s)}</span>`).join("");
+  $("why").textContent = top ? t("topReasons", top) : "";
+  // several players in one day: each row names its farmer, and the seats get their own filters
+  const seats = [...new Set(es.map(e => e.player).filter(Boolean))].sort();
+  const multi = seats.length > 1;
+  seatFilters(seats);
+  $("rows").innerHTML = es.filter(e => show[e.kind] && !(multi && hiddenSeats.has(e.player))).map(e => {
+    const who = multi && e.player ? `<span class="seat">${seatDot(e.player)}${esc(seatName(e.player))}</span>` : "";
+    const time = `<span class="t">${esc(e.gameTime)}</span>`;
+    if (e.kind === "think") return `<div class="row think">${time}<span class="k">${t("rowThink")}</span><span class="txt">${who}${esc(e.text)}</span></div>`;
+    if (e.kind === "action") return `<div class="row">${time}<span class="k">▶ ${esc(e.tool)}</span><span>${who}${esc(e.text)} <span class="args">${esc(e.args ? JSON.stringify(e.args) : "")}</span></span></div>`;
     if (e.kind === "result") {
       const part = e.ok !== false && e.partial === true, cls = e.ok === false ? "bad" : part ? "part" : "ok";
       const badge = e.reason && cls !== "ok" ? `<span class="why ${cls}">${esc(e.reason)}</span>` : "";
-      return `<div class="row"><span class="t">${e.gameTime}</span><span class="k ${cls}">${cls === "bad" ? "✗" : part ? "◐" : "✓"} ${esc(e.tool)}</span><span class="res">${badge}${esc(e.text)} (${e.ms} ms)</span></div>`;
+      return `<div class="row">${time}<span class="k ${cls}"><i class="mark">${cls === "bad" ? "✗" : part ? "◐" : "✓"}</i>${esc(e.tool)}</span><span class="res">${who}${badge}${esc(e.text)} <span class="ms">(${e.ms} ms)</span></span></div>`;
     }
-    return `<div class="row"><span class="t">${e.gameTime}</span><span class="k">${e.kind}</span><span>${esc(e.text)}</span></div>`;
+    return `<div class="row">${time}<span class="k">${esc(e.kind)}</span><span>${who}${esc(e.text)}</span></div>`;
   }).join("");
 }
 ["fThink", "fAct", "fRes", "fSys"].forEach(id => $(id).onchange = render);
+$("latest").onclick = loadDays;
 initLang().then(loadDays);
 </script>
 </body>
