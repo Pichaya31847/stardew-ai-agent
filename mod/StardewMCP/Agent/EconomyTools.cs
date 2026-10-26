@@ -59,14 +59,29 @@ public static class EconomyTools
         c.Result = $"You paid {amount}g to {SocialTools.Label(to)}{(reason.Length > 0 ? $" ({reason})" : "")}. You now have {me.Money}g.";
     }
 
-    /// <summary>Host, after the save loaded: warn when split-screen is on but all farmers share one pot of money.</summary>
+    /// <summary>
+    /// Host, after the save loaded: with SeparateWallets on, ask for separate wallets the way the ledger book in the Mayor's
+    /// manor does (changeWalletTypeTonight; the game splits the money evenly overnight in ManorHouse.SeparateWallets).
+    /// Otherwise warn when split-screen is on but all farmers share one pot of money.
+    /// </summary>
     public static void CheckWallets(IMonitor monitor, ModConfig config)
     {
         if (!config.SplitScreen || !Context.IsMainPlayer || Game1.player.team.useSeparateWallets.Value)
             return;
+        if (config.SeparateWallets)
+        {
+            if (!Game1.player.changeWalletTypeTonight.Value)
+                Game1.player.changeWalletTypeTonight.Value = true;
+            const string asked = "SeparateWallets is on: the wallets become separate tonight, as if the host had picked it in the Mayor's ledger. " +
+                                 "The money is split evenly between the farmers when the day ends.";
+            monitor.Log(asked, LogLevel.Info);
+            Players.Host.Runtime.Log.Add("system", text: asked);
+            return;
+        }
         const string text = "Split-screen is on but this save has a shared wallet: every farmer spends the same money, so the AIs " +
                             "can't earn, owe or steal from each other. Use \"Separate wallets\" when creating the co-op farm, or on an " +
-                            "existing one: host reads the ledger book in the Mayor's manor, picks separate wallets and sleeps (takes effect overnight).";
+                            "existing one: host reads the ledger book in the Mayor's manor, picks separate wallets and sleeps (takes effect overnight), " +
+                            "or set SeparateWallets to true in config.json.";
         monitor.Log(text, LogLevel.Warn);
         Players.Host.Runtime.Log.Add("system", text: text);
     }

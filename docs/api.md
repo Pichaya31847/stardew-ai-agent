@@ -84,7 +84,7 @@ Player state snapshots add `transitioning` and optional `nightEvent` (native ove
 | `diary_NNN.md` | The AI's diary for the day |
 | `lessons.md`, `plan.md`, `notes.md` | What `journal` keeps across days |
 | `self.md`, `people.md` | The AI's note on who it is, and its line on each other farmer |
-| `stats_NNN.json` | Daily stats, written at the day rollover |
+| `stats_NNN.json` | Daily stats, written at the day rollover. `progress` (added, same version) holds `backpackSlots`, `communityCenter` (`bundlesComplete`, `bundlesTotal`, `next`: the story's next step) and `events`: counts of `session_break` (built-in AI restarted its conversation), `rest`, `backpack_upgrade`, `quest_reward_claimed`, `festival_wait_gave_up` and the `quest_accepted` / `quest_completed` / `quest_failed` journal events |
 
 ## Building on top of the mod
 

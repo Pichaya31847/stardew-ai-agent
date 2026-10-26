@@ -10,8 +10,10 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
   personal bin) are all per farmer, so `status`, `buy`, `shop_list` and `ship` already use each seat's own money.
 - It is a host/world choice made when the co-op farm is created ("Separate wallets" on the character screen).
   It can also be changed later by the host in the Mayor's manor (ledger book, takes effect overnight).
-  The mod cannot make it per run: **create the filming farm with separate wallets**, with 3 starting cabins.
-- At load, with `SplitScreen` on and a shared wallet, the mod logs a warning (SMAPI console and the `system` log).
+  **Create the filming farm with separate wallets**, with 3 starting cabins.
+- At load, with `SplitScreen` on and a shared wallet, the mod logs a warning (SMAPI console and the `system` log). With
+  `SeparateWallets: true` it instead sets `changeWalletTypeTonight`, the flag the ledger's "yes" sets, and the game splits
+  the money evenly overnight (`ManorHouse.SeparateWallets`).
 - Smoke: the debug op `separate_wallets` runs the game's own `ManorHouse.SeparateWallets()` on the smoke copy.
 - The game already has a money transfer, but only at the ledger book in the manor. `pay` is the same three
   steps (payer `Money`, `team.AddIndividualMoney`, `stats.onMoneyGifted`) at any distance.

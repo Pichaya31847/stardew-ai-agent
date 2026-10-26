@@ -48,7 +48,9 @@ makes every choice.
 
 - Read a shop, buy, sell for gold at once, ship for overnight pay (`shop_list`, `buy`, `sell`, `ship`)
 - Tool upgrades at the blacksmith, backpack upgrades at Pierre's
-- Separate wallets per farmer, and paying another farmer at any distance (`pay`)
+- Separate wallets per farmer (or switch a shared-wallet save with `SeparateWallets`), and paying another farmer at any distance (`pay`)
+- In the last week of a season the morning briefing says which seeds can no longer ripen and which seeds the next season wants
+- `stats_NNN.json` adds a `progress` block: backpack size, Community Center bundles and next step, session breaks, rests, quests
 
 ## 🐔 Animals and buildings
 

@@ -156,7 +156,7 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 
 | System | How the game does it | Covered by | Status | Issue |
 |---|---|---|---|---|
-| Separate wallets | host reads the ledger in Lewis's house (`LedgerBook`); it switches overnight | `interact` + `respond` | 🟡 untested | |
+| Separate wallets | host reads the ledger in Lewis's house (`LedgerBook`); it switches overnight | `interact` + `respond`; config `SeparateWallets` sets the ledger's `changeWalletTypeTonight` on load | 🟡 untested | |
 | Send money | ledger → `SendMoney` → recipient → `DigitEntryMenu`; chat shows "X sent Y" | `interact` + `respond` + `menu amount` | ✅ smoke `send_money` (split-screen) | |
 | Talking | chat box, every line reaches every player (`ChatBox.receiveChatMessage`) | `say` writes the line only into the chat box of the screens that show the speaker (same map, inside the viewport: `ScreenState.Sees`) and above the speaker's head; no whisper | 🟡 smoke `chat` written, not run yet | #39 |
 | Loans, debts | no mechanic | a promise made face to face, paid with Send money | story | #39, #48 |

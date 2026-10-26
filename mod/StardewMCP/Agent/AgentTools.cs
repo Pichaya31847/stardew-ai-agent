@@ -350,6 +350,7 @@ public static partial class AgentTools
 
         // Get up and step off the bed, or its "Go to sleep?" question comes back and the farmer stays put.
         DismissBedQuestion();
+        Rt.Stats.Count("rest");
         if (Game1.Date.TotalDays == day && Loc is FarmHouse home)
             yield return WalkTo(home.getEntryLocation(), new CallContext());
         c.Result = $"Rested in bed until {WorldText.FormatTime(Game1.timeOfDay)}: energy {energy} → {(int)P.Stamina}/{P.MaxStamina}, " +

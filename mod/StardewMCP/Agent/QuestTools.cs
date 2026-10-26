@@ -84,6 +84,7 @@ public static partial class AgentTools
                 ? $"Claimed {reward}g from journal quest: {target.GetName()}."
                 : "The journal reward was clicked but remains unclaimed. Read quests before retrying.";
             if (target.HasMoneyReward()) c.Fail(c.Result);
+            else Rt.Stats.Count("quest_reward_claimed");
         }
         finally
         {
@@ -212,6 +213,37 @@ public static partial class AgentTools
         }
     }
 
+    /// <summary>
+    /// Whether today's request can be done with what the farmer already has: the item in the pack, a rod for a fishing
+    /// request, the Mines reached for monsters and ores. BrainAcceptBoardQuest takes only these, so the morning walk to the
+    /// board isn't spent on requests that expire (the local run let three deliveries expire).
+    /// </summary>
+    internal static (bool doable, string why) BoardDoable(Quest q)
+    {
+        var id = Peek.Text(q, "ItemId", "item");
+        int n = Peek.Int(q, "number", "numberToFish", "numberToKill") ?? 1;
+        int have = id.Length == 0 ? 0 : P.Items.Where(i => i != null && (i.QualifiedItemId == id || i.ItemId == id)).Sum(i => i.Stack);
+        string name = id.Length > 0 ? ItemRegistry.GetData(id)?.DisplayName ?? id : "the item";
+        bool mines = StardewValley.Locations.MineShaft.lowestLevelReached > 0;
+        switch (q.GetType().Name)
+        {
+            case "ItemDeliveryQuest":
+                return have >= n ? (true, $"you carry {have} {name}") : (false, $"you don't carry {name}; item_info says where to get it");
+            case "ResourceCollectionQuest":
+                return have >= n ? (true, $"you carry {have} {name}")
+                     : mines ? (true, $"{name} comes from the Mines or the farm; you carry {have} of {n}")
+                     : (false, $"you carry {have} of {n} {name} and haven't been into the Mines yet");
+            case "FishingQuest":
+                return P.Items.Any(i => i is StardewValley.Tools.FishingRod) ? (true, "you have a fishing rod") : (false, "you have no fishing rod (Willy, FishShop)");
+            case "SlayMonsterQuest":
+                return mines ? (true, "you have been into the Mines") : (false, "you haven't been into the Mines yet");
+            case "SocializeQuest":
+                return (true, "talking only");
+            default:
+                return (false, "an unusual request; read it before taking it");
+        }
+    }
+
     private static string BoardText()
     {
         var board = BoardQuest();
@@ -234,6 +266,11 @@ public static partial class AgentTools
         if (facts.Count > 0) sb.Append("\n     " + string.Join("; ", facts));
         var how = QuestHow(board);
         if (how.Length > 0) sb.Append("\n     How: " + how);
+        if (state == "open")
+        {
+            var (doable, why) = BoardDoable(board);
+            sb.Append($"\n     Doable: {(doable ? "yes" : "not yet")} ({why})");
+        }
         return sb.ToString();
     }
 

@@ -74,6 +74,12 @@ public class ModConfig
     /// <summary>"bottom" puts two AI views above a full-width camera dashboard; "quadrant" keeps the original grid.</summary>
     public string DashboardLayout { get; set; } = "quadrant";
 
+    /// <summary>
+    /// Split-screen: give every farmer their own wallet. On a save with a shared wallet the host asks for it on load, the way
+    /// the Mayor's ledger does, and the game splits the money evenly that night (changes the save).
+    /// </summary>
+    public bool SeparateWallets { get; set; } = false;
+
     /// <summary>Split-screen: build the cabins the farmhands need when the farm has too few (changes the save).</summary>
     public bool AutoBuildCabins { get; set; } = true;
 
@@ -97,7 +103,7 @@ public class ModConfig
     /// <summary>Built-in AI: run morning_chores (gift boxes, mailbox, quest money) before the model's first turn each day.</summary>
     public bool BrainMorningChores { get; set; } = true;
 
-    /// <summary>Built-in AI: take today's Help Wanted request every morning when it is still free (walks to the board in Town).</summary>
+    /// <summary>Built-in AI: take today's Help Wanted request in the morning when it is still free and doable with what the farmer has (walks to the board in Town).</summary>
     public bool BrainAcceptBoardQuest { get; set; } = false;
 
     /// <summary>Port for the MCP endpoint (/mcp), overlay (/overlay) and replay (/replay).</summary>

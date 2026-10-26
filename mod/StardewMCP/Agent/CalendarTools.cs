@@ -462,6 +462,7 @@ public static partial class AgentTools
         int ready = Game1.netReady.GetNumberReady(name), need = Game1.netReady.GetNumberRequired(name);
         bool cancelled = still.isCancelable();
         if (cancelled) still.cancel();
+        Rt.Stats.Count("festival_wait_gave_up");
         var where = others.Count == 0 ? "" : " Waiting on: " + string.Join(", ", others.Select(s =>
             $"{SocialTools.Label(s)}{(Romance.FarmerOf(s)?.currentLocation is { } l ? $" (in {l.Name})" : "")}")) + ".";
         c.Fail(Reasons.NotReady, $"Only {ready}/{need} farmers were ready {ReadyCheckWhat(name)}, after {ReadyCheckWaitSeconds} s." + where +

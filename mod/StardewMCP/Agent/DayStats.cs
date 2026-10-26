@@ -117,6 +117,18 @@ public class DayStats
         if (_day != null) _day.Planted += n;
     }
 
+    /// <summary>
+    /// Count something that happened today for progress.events: session_break (the built-in AI restarted its conversation),
+    /// rest, backpack_upgrade, quest_reward_claimed, festival_wait_gave_up and the quest_* journal events. Any thread.
+    /// </summary>
+    public void Count(string what)
+    {
+        var day = _day;
+        if (day == null) return;
+        lock (day.Events)
+            day.Events[what] = day.Events.GetValueOrDefault(what) + 1;
+    }
+
     /// <summary>The harvest tool acted on a tile; '!' is the map symbol of a crop that is ready.</summary>
     public void HarvestTile(char before, char after)
     {
@@ -314,7 +326,14 @@ public class DayStats
             mine = new { deepestFloor = MineShaft.lowestLevelReached },
             tools = ReadToolLevels(p),
             buildings = ReadBuildings(),
-            gameStats = CountedStats.ToDictionary(k => k, k => statNow.GetValueOrDefault(k) - d.StatsStart.GetValueOrDefault(k))
+            gameStats = CountedStats.ToDictionary(k => k, k => statNow.GetValueOrDefault(k) - d.StatsStart.GetValueOrDefault(k)),
+            // The day's progress at a glance (added for the local-model runs): is the AI moving the game forward?
+            progress = new
+            {
+                backpackSlots = p.MaxItems,
+                communityCenter = ReadCommunityCenter(p),
+                events = Events(d)
+            }
         };
 
         WriteStats(_log!, d.Day, JsonSerializer.Serialize(doc, FileJson), Player);
@@ -322,6 +341,25 @@ public class DayStats
     }
 
     // ------------------------------------------------------------------ reading the game
+
+    private static Dictionary<string, int> Events(DayState d)
+    {
+        lock (d.Events) return new Dictionary<string, int>(d.Events);
+    }
+
+    /// <summary>Bundles complete out of all, and the next step of the Community Center story; null fields when unreadable.</summary>
+    private static object ReadCommunityCenter(Farmer p)
+    {
+        try
+        {
+            var all = BundleReader.Read();
+            return new { bundlesComplete = all.Count(b => b.Complete), bundlesTotal = all.Count, next = BundleReader.NextStep(p) };
+        }
+        catch (Exception)
+        {
+            return new { bundlesComplete = (int?)null, bundlesTotal = (int?)null, next = (string?)null };
+        }
+    }
 
     private sealed class FarmScan
     {
@@ -484,6 +522,8 @@ public class DayStats
         public string? PassOutCause, PassOutSource;
         public readonly Dictionary<string, ToolCount> ByTool = new();
         public readonly Dictionary<string, int> FailureKinds = new();
+        /// <summary>Things that happened (session_break, rest, quest_completed...): written under progress.events. Locked: the brain counts from its own thread.</summary>
+        public readonly SortedDictionary<string, int> Events = new();
         public readonly Snap Last = new();
 
         public ToolCount For(string name)

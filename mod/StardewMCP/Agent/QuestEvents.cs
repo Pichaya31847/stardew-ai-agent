@@ -154,6 +154,7 @@ internal static class QuestEvents
 
     private static void Emit(AgentRuntime rt, string kind, Tracked t)
     {
+        rt.Stats.Count(kind);
         rt.Log.Add(kind,
             text: $"{t.Name}{(t.Giver.Length > 0 ? $" (from {t.Giver})" : "")}",
             args: new { quest = t.Name, giver = t.Giver, type = t.Type });

@@ -189,6 +189,7 @@ public static partial class AgentTools
         yield return FinishMessages(new CallContext());
         yield return WaitIdle();
         if (P.MaxItems <= slots) { c.Fail(Reasons.NotReady, $"The purchase did not go through (still {P.MaxItems} slots, {P.Money:N0}g)."); yield break; }
+        Rt.Stats.Count("backpack_upgrade");
         c.Result = $"Bought the bigger backpack: {slots} → {P.MaxItems} slots for {price:N0}g. Money left {P.Money:N0}g.";
     }
 

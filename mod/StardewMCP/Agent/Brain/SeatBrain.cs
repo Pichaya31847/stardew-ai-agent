@@ -141,7 +141,8 @@ public sealed class SeatBrain
             briefing += "\nDone for you this morning (gift boxes, mailbox, quest money):\n" + chores;
         }
         var (questsOk, questReport) = await RunTool(new LlmToolCall("morning_quests", "quests", "{}"), ct);
-        if (questsOk && _cfg.BrainAcceptBoardQuest && questReport.Contains("still FREE", StringComparison.Ordinal))
+        // Only a request it can already do: the walk to Town costs about an hour of the morning.
+        if (questsOk && _cfg.BrainAcceptBoardQuest && questReport.Contains("still FREE", StringComparison.Ordinal) && questReport.Contains("Doable: yes", StringComparison.Ordinal))
         {
             var (accepted, acceptText) = await RunTool(new LlmToolCall("morning_board", "accept_quest", "{\"reason\":\"take today's Help Wanted request\"}"), ct);
             briefing += $"\nToday's Help Wanted request was taken for you{(accepted ? "" : " (it failed)")}: {Prompts.Clip(acceptText, 600)}";
@@ -255,6 +256,7 @@ public sealed class SeatBrain
             {
                 messages = new List<ChatMessage> { ChatMessage.User(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) + "\n" + _social.Brief) };
                 NewSession();
+                _slot.Runtime.Stats.Count("session_break");
                 Log.Add("system", text: $"{Id}: conversation restarted with a handoff ({(breakNow ? "session break" : "context too large")})");
             }
             var reminder = _social.Reminder();

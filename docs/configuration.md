@@ -53,7 +53,7 @@ An `ai` seat takes these fields:
 | `DailyTokenBudget` | `0` | Built-in AI: tokens (input + output) per seat per day before it stops until the next morning (0 = no limit) |
 | `BrainTools` | `"full"` | Built-in AI: `"full"` sends every tool with its whole description; `"compact"` sends the everyday tools in full and the rest with one sentence and bare argument names. Use `"compact"` for small local models with a short context (32k): every tool still works |
 | `BrainMorningChores` | `true` | Built-in AI: run `morning_chores` (gift boxes, mailbox, quest money) before the model's first turn each day; the letters' text goes into the morning message |
-| `BrainAcceptBoardQuest` | `false` | Built-in AI: take today's Help Wanted request every morning while it is still free (walks to the board in Town) |
+| `BrainAcceptBoardQuest` | `false` | Built-in AI: take today's Help Wanted request in the morning while it is still free and `quests` marks it "Doable: yes" (the item is in the pack, a rod for fishing, the Mines reached for monsters and ores); walks to the board in Town |
 | `BrainMemoryLines` | `60` | Built-in AI: how many of the last lines of the lessons and notes files go into the system prompt (try 20 with a small context) |
 | `HttpPort` | `8770` | Port for MCP, overlay, replay and the API |
 | `FreezeTimeWhileThinking` | `true` | Stop the clock while no action is running |
@@ -80,6 +80,7 @@ An `ai` seat takes these fields:
 |---|---|---|
 | `SplitScreen` | `false` | Up to four screens share the farm in split-screen co-op |
 | `AutoBuildCabins` | `true` | Build the cabins the farmhands need when the farm has too few (changes the save) |
+| `SeparateWallets` | `false` | Give every farmer their own wallet: on a shared-wallet save the host asks for it on load like the Mayor's ledger, and the game splits the money evenly that night (changes the save) |
 | `FarmhandNames` | `["Gemini","GPT","Camera"]` | Farmhand names for P2, P3, P4 (a seat's `Name` wins); an existing farmhand with that name is reused |
 | `ThinkTimeoutSeconds` | `300` | An AI silent for longer stops holding the world frozen (0 = never) |
 | `BedtimeWarning` | `2200` | From this time an AI not in bed gets one warning that the others wait for it (0 = off) |
@@ -88,7 +89,7 @@ An `ai` seat takes these fields:
 | `AutoZoom` | `true` | Zoom each screen to about 20 tiles across |
 
 The first time the game starts its co-op server, Windows Firewall may ask for permission once; allow it. For
-separate wallets, create the co-op farm with "Separate wallets" on (see [economy.md](economy.md)).
+separate wallets, create the co-op farm with "Separate wallets" on, or set `SeparateWallets` (see [economy.md](economy.md)).
 
 ### Long runs
 
