@@ -82,7 +82,8 @@ public static partial class AgentTools
             new()
             {
                 Name = "think",
-                Description = $"Say what you are thinking/planning, IN {Lang.ToUpperInvariant()}, 1-3 sentences. It is your private thought: nobody else in the game sees it. Talk to yourself like a person, with no tile coordinates, decimals or tool names. Call this before each new plan and whenever something surprising happens. Game time is frozen while you think.",
+                Description = $"Say what you are thinking/planning, IN {Lang.ToUpperInvariant()}, 1-3 sentences. It is your private thought: nobody else in the game sees it. Talk to yourself like a person, with no tile coordinates, decimals or tool names. Only for the morning plan and after a surprise: " +
+                              "otherwise write your thought as the text of the reply that calls the action, which the viewers see the same way. Game time is frozen while you think.",
                 Schema = Obj(new { text = Str($"Your thought in {Lang}") }, "text"),
                 Instant = true, NeedsWorld = false, AppendStatus = false,
                 Run = Think
@@ -590,6 +591,8 @@ public static partial class AgentTools
         var tool = (Tool)P.Items[slot];
         bool repeatTool = tool is Axe || tool is Pickaxe;
         bool scythe = tool is MeleeWeapon blade && blade.isScythe();
+        // English kind of tool for RightToolHint (DisplayName is localized, e.g. Thai).
+        string used = scythe ? "Scythe" : tool is Axe ? "Axe" : tool is Pickaxe ? "Pickaxe" : tool is Hoe ? "Hoe" : "Watering Can";
         var before = Snapshot();
         var lines = new List<string>();
         var loc = Loc;
@@ -599,7 +602,10 @@ public static partial class AgentTools
         {
             if (scythe && !ScytheTargetAt(loc, t))
             {
-                lines.Add($"({t.X},{t.Y}) skipped: no grass, weeds, ripe or dead crop here. Refresh look/farm_summary; do not reuse guessed coordinates.");
+                var hint = RightToolHint(loc, t, used);
+                lines.Add(hint.Length > 0
+                    ? $"({t.X},{t.Y}) skipped: nothing for the Scythe here{hint}."
+                    : $"({t.X},{t.Y}) skipped: no grass, weeds, ripe or dead crop here. Refresh look/farm_summary; do not reuse guessed coordinates.");
                 batch.Skip(Reasons.NotHere);
                 continue;
             }
@@ -635,7 +641,9 @@ public static partial class AgentTools
                 if (kind == Target.Dirt) { lines.Add($"({t.X},{t.Y}) already tilled"); batch.Done++; continue; }
                 yield return Swing(t);
                 var ok = loc.terrainFeatures.TryGetValue(t.ToVector2(), out var tf3) && tf3 is HoeDirt;
-                lines.Add(ok ? $"({t.X},{t.Y}) tilled" : $"({t.X},{t.Y}) could not till ({label ?? sym.ToString()}) — clear it first or pick a ',' tile");
+                var tillFix = RightToolHint(loc, t, used);
+                var tillWhy = tillFix.Length > 0 ? tillFix + " first" : " — clear it first or pick a ',' tile";
+                lines.Add(ok ? $"({t.X},{t.Y}) tilled" : $"({t.X},{t.Y}) could not till ({label ?? sym.ToString()}){tillWhy}");
                 if (ok) batch.Done++; else batch.Skip();
                 continue;
             }
@@ -664,7 +672,7 @@ public static partial class AgentTools
 
             if (kind == Target.None || kind == Target.Dirt || kind == Target.Grass)
             {
-                lines.Add($"({t.X},{t.Y}) nothing for {tool.DisplayName} here ({label ?? sym.ToString()})");
+                lines.Add($"({t.X},{t.Y}) nothing for {tool.DisplayName} here ({label ?? sym.ToString()}){RightToolHint(loc, t, used)}");
                 batch.Skip(Reasons.NotHere);
                 continue;
             }
@@ -680,7 +688,7 @@ public static partial class AgentTools
             else batch.Skip(P.Stamina <= 2 ? Reasons.LowEnergy : Game1.activeClickableMenu != null ? Reasons.MenuOpen : kind == Target.Clump ? Reasons.NeedsUpgrade : null);
             lines.Add(after == Target.None
                 ? $"({t.X},{t.Y}) {label} cleared in {hits} hits"
-                : $"({t.X},{t.Y}) {label} NOT cleared after {hits} hits (still: {WorldText.Describe(loc, t.X, t.Y).label}){(kind == Target.Clump ? " — may need an upgraded tool" : "")}");
+                : $"({t.X},{t.Y}) {label} NOT cleared after {hits} hits (still: {WorldText.Describe(loc, t.X, t.Y).label}){(kind == Target.Clump ? " — may need an upgraded tool" : RightToolHint(loc, t, used))}");
         }
 
         yield return Ticks(45); // let dropped items fly into the inventory

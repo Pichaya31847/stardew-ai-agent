@@ -604,6 +604,27 @@ public static partial class AgentTools
         return (FarmCover.None, "", null);
     }
 
+    /// <summary>
+    /// " - it is a twig: use the Axe (or clear_area, which picks the tool)" when this tile needs another tool than
+    /// <paramref name="used"/>, else "". The 14B run hit a twig with the Scythe and the Pickaxe seven times, told only "no grass here".
+    /// </summary>
+    internal static string RightToolHint(GameLocation loc, Point t, string used)
+    {
+        var (cover, label, _) = FarmCoverAt(loc, t.X, t.Y);
+        string? need = cover switch
+        {
+            FarmCover.Weeds or FarmCover.Grass or FarmCover.DeadCrop => "Scythe",
+            FarmCover.Twig or FarmCover.Stump or FarmCover.Sapling or FarmCover.Tree => "Axe",
+            FarmCover.Stone => "Pickaxe",
+            FarmCover.Large => "an upgraded Axe or Pickaxe",
+            FarmCover.None when FarmNotTillable(loc, t.X, t.Y) == null => "Hoe",
+            _ => null
+        };
+        if (need == null || need.Contains(used, StringComparison.OrdinalIgnoreCase)) return "";
+        return $" - it is {(label.Length > 0 ? label : "bare ground")}: use the {need}" +
+               (cover is FarmCover.Large or FarmCover.None ? "" : " (or clear_area, which picks the tool)");
+    }
+
     /// <summary>Why bare ground can't be hoed, or null when it can.</summary>
     private static string? FarmNotTillable(GameLocation loc, int x, int y)
     {

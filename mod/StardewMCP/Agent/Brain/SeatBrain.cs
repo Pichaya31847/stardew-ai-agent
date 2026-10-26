@@ -31,6 +31,7 @@ public sealed class SeatBrain
     private readonly IReadOnlyList<LlmTool> _llmTools;
     private IReadOnlyList<LlmTool>? _withoutNaming;
     private bool _namingOpen;
+    private bool _lastWasThinkOnly;
     private readonly RepeatBrake _brake = new();
     private readonly string _assetDir;
     private CancellationTokenSource? _cts;
@@ -243,6 +244,10 @@ public sealed class SeatBrain
                 var refused = _brake.Before(call.Name);
                 var (ok, text) = refused != null ? (false, refused) : bedtime.Length > 0 ? (false, bedtime) : await RunTool(call, ct);
                 if (refused == null) text += _brake.After(call.Name, ok);
+                // A reply spent on thinking alone, right after another one, costs a whole model turn (14B: 0.9 per action).
+                if (call.Name == "think" && resp.ToolCalls.Count == 1 && _lastWasThinkOnly)
+                    text += "\nYou already thought. Now act: call the next tool, and put any further thought in that reply's text.";
+                _lastWasThinkOnly = call.Name == "think" && resp.ToolCalls.Count == 1;
                 if (text.Contains("Naming: \"", StringComparison.Ordinal)) _namingOpen = true; // a naming box opened: offer the name tool
                 else if (ok && call.Name == "name") _namingOpen = false;
                 _social.Observe(call.Name, ok, text);

@@ -44,7 +44,7 @@ Every tool the AI can call, grouped by job. Each farmer's MCP endpoint (`/mcp`, 
 
 The batch tools (`water_all`, `harvest_all`, `clear_area`, `till_area`, `plant` area mode) stop with a reason (low
 energy, a menu, a late hour, a full pack) and say what is left. `use_tool`, `plant` and `harvest` always report
-`done`, `remaining` and `skipped` tiles. Tile lists also accept the shapes small models send: `[{"x":1,"y":2}]`, `["1,2"]`,
+`done`, `remaining` and `skipped` tiles; a tile that needs another tool says which ("it is twig: use the Axe"). Tile lists also accept the shapes small models send: `[{"x":1,"y":2}]`, `["1,2"]`,
 one string `"[(1, 2), (3, 4)]"`, flat numbers `[1, 2, 3, 4]`, or one tile as `tile` or `x`/`y`.
 
 ## Game knowledge ⚡
