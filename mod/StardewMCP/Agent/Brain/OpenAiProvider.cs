@@ -25,13 +25,17 @@ public sealed class OpenAiProvider : ILlmProvider
     public string Name => "openai";
     public string Model { get; }
 
-    public OpenAiProvider(HttpClient http, string model, string apiKey, string? baseUrl, int maxTokens)
+    /// <summary>reasoning_effort sent with every request, or "" to leave it to the server.</summary>
+    private readonly string _reasoning;
+
+    public OpenAiProvider(HttpClient http, string model, string apiKey, string? baseUrl, int maxTokens, string reasoning = "")
     {
         _http = http;
         Model = model;
         _apiKey = apiKey;
         _baseUrl = string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl;
         _maxTokens = maxTokens;
+        _reasoning = (reasoning ?? "").Trim().ToLowerInvariant();
     }
 
     public async Task<LlmResponse> Complete(string system, IReadOnlyList<ChatMessage> messages, IReadOnlyList<LlmTool> tools, CancellationToken ct)
@@ -98,6 +102,10 @@ public sealed class OpenAiProvider : ILlmProvider
             ["messages"] = list,
             ["max_completion_tokens"] = _maxTokens
         };
+        // Ollama maps reasoning_effort to its think switch: "none" stops Qwen3's long hidden reasoning (a local 14B went
+        // from 16 s to 2 s per reply and called the right tool more often).
+        if (_reasoning.Length > 0)
+            body["reasoning_effort"] = _reasoning;
         if (tools.Count > 0)
         {
             var toolList = new JsonArray();

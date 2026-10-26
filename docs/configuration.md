@@ -52,6 +52,7 @@ An `ai` seat takes these fields:
 | `MaxOutputTokens` | `4096` | Built-in AI: longest answer the model may write per turn |
 | `DailyTokenBudget` | `0` | Built-in AI: tokens (input + output) per seat per day before it stops until the next morning (0 = no limit) |
 | `BrainTools` | `"full"` | Built-in AI: `"full"` sends every tool with its whole description; `"compact"` sends the everyday tools in full and the rest with one sentence and bare argument names. Use `"compact"` for small local models with a short context (32k): every tool still works |
+| `BrainReasoning` | `""` | Built-in AI on an OpenAI-compatible server: `reasoning_effort` sent with every request (`"none"`, `"low"`, `"medium"`, `"high"`); empty = the server's default. `"none"` turns off Qwen3's hidden reasoning in Ollama |
 | `BrainMorningChores` | `true` | Built-in AI: run `morning_chores` (gift boxes, mailbox, quest money) before the model's first turn each day; the letters' text goes into the morning message |
 | `BrainAcceptBoardQuest` | `false` | Built-in AI: take today's Help Wanted request in the morning while it is still free and `quests` marks it "Doable: yes" (the item is in the pack, a rod for fishing, the Mines reached for monsters and ores); walks to the board in Town |
 | `BrainMemoryLines` | `60` | Built-in AI: how many of the last lines of the lessons and notes files go into the system prompt (try 20 with a small context) |
@@ -122,6 +123,11 @@ If the game's font can't draw a script, its characters show as `·` on the in-ga
 A 9B model with a 32k context (Ollama) spent about 20k tokens on the system prompt and the tool list alone, so its
 session restarted every few thousand tokens of results. For such a model: `"BrainTools": "compact"`,
 `"BrainMemoryLines": 20`, English `WorkLanguage` (or `ThoughtLanguage`), and a larger `num_ctx` in the Modelfile if the GPU has room.
+
+On a 12 GB GPU, a ten-situation benchmark taken from that run's logs compared Qwen 3.5 9B (49k context) with Qwen3 14B
+(24k context, 11% on the CPU). With `"BrainReasoning": "none"` the 14B called the right tool with the right arguments
+in 18 of 20 replies at about 2 s each; the 9B got 12 of 20. With reasoning on, the 14B took about 16 s per reply. With
+a 24k context, lower `SessionBreakResultChars` (about 24000) so the prompt and the results still fit.
 
 ## The AI's behaviour
 

@@ -117,7 +117,8 @@ public interface ILlmProvider
 }
 
 /// <summary>What a provider needs from the seat's configuration, without depending on ModConfig (tests build it directly).</summary>
-public sealed record LlmSettings(string Provider, string Model, string ApiKey, string BaseUrl, int MaxOutputTokens = 4096);
+/// <param name="Reasoning">OpenAI-compatible reasoning_effort ("none", "low", "medium", "high"); empty = the server's default.</param>
+public sealed record LlmSettings(string Provider, string Model, string ApiKey, string BaseUrl, int MaxOutputTokens = 4096, string Reasoning = "");
 
 public static class LlmProviders
 {
@@ -140,7 +141,7 @@ public static class LlmProviders
         return provider switch
         {
             "anthropic" => new AnthropicProvider(http, model, s.ApiKey, s.BaseUrl, s.MaxOutputTokens),
-            "openai" => new OpenAiProvider(http, model, s.ApiKey, s.BaseUrl, s.MaxOutputTokens),
+            "openai" => new OpenAiProvider(http, model, s.ApiKey, s.BaseUrl, s.MaxOutputTokens, s.Reasoning),
             "gemini" => new GeminiProvider(http, model, s.ApiKey, s.BaseUrl, s.MaxOutputTokens),
             _ => null
         };

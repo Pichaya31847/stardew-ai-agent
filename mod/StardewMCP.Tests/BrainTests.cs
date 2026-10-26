@@ -95,6 +95,16 @@ public class BrainTests
         Assert.Equal("[Meeting over]", msgs[4]!["content"]!.GetValue<string>());
         Assert.Equal("function", body["tools"]![0]!["type"]!.GetValue<string>());
         Assert.Equal(500, body["max_completion_tokens"]!.GetValue<int>());
+        Assert.False(body.ContainsKey("reasoning_effort")); // left to the server unless configured
+    }
+
+    [Fact]
+    public void OpenAi_body_carries_the_configured_reasoning_effort()
+    {
+        var p = new OpenAiProvider(Http, "qwen3:14b", "", "http://localhost:11434/v1", 500, " None ");
+        Assert.Equal("none", p.BuildBody("SYS", Conversation(), Tools)["reasoning_effort"]!.GetValue<string>());
+        var viaSettings = LlmProviders.Create(new LlmSettings("openai", "m", "", "http://localhost:11434/v1", 500, "low"), Http) as OpenAiProvider;
+        Assert.Equal("low", viaSettings!.BuildBody("SYS", Conversation(), Tools)["reasoning_effort"]!.GetValue<string>());
     }
 
     [Fact]

@@ -64,7 +64,7 @@ public static class Brains
                 var sc = _cfg.Seat(slot.Screen);
                 if (!sc.HasBrain)
                     continue;
-                var settings = new LlmSettings(sc.Brain, sc.Model, sc.ApiKey, sc.BaseUrl, _cfg.MaxOutputTokens);
+                var settings = new LlmSettings(sc.Brain, sc.Model, sc.ApiKey, sc.BaseUrl, _cfg.MaxOutputTokens, _cfg.BrainReasoning);
                 if (LlmProviders.Problem(settings) is { } problem)
                 {
                     _mon.Log($"{slot.Id}: built-in AI not started: {problem}. Fix Seats[{slot.Screen}] in config.json (or the mod's config menu).", LogLevel.Error);

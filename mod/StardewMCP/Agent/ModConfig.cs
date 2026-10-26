@@ -97,6 +97,12 @@ public class ModConfig
     /// </summary>
     public string BrainTools { get; set; } = "full";
 
+    /// <summary>
+    /// Built-in AI, OpenAI-compatible servers: reasoning_effort sent with every request ("none", "low", "medium", "high").
+    /// "none" turns off Qwen3's hidden reasoning in Ollama (10x faster replies). Empty = the server's default.
+    /// </summary>
+    public string BrainReasoning { get; set; } = "";
+
     /// <summary>Built-in AI: how many of the last lines of the lessons and notes files go into the system prompt.</summary>
     public int BrainMemoryLines { get; set; } = 60;
 
