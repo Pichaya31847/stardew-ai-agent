@@ -85,6 +85,9 @@ public class PlayerSlot
 public class ScreenState
 {
     public bool Ready { get; init; }
+    /// <summary>The date may already be tomorrow while an overnight event/fade still owns the farmer.</summary>
+    public bool Transitioning { get; init; }
+    public string? NightEvent { get; init; }
     public string? Name { get; init; }
     public string? Location { get; init; }
     public int[]? Tile { get; init; }
@@ -135,6 +138,8 @@ public class ScreenState
         return new ScreenState
         {
             Ready = true,
+            Transitioning = Game1.newDay || Game1.fadeToBlack || Game1.isWarping || Game1.farmEvent != null || Game1.game1.isLocalMultiplayerNewDayActive || p.passedOut,
+            NightEvent = Game1.farmEvent?.GetType().Name,
             Name = p.Name,
             Location = Game1.currentLocation?.Name,
             Tile = new[] { p.TilePoint.X, p.TilePoint.Y },
@@ -203,6 +208,9 @@ public static class Players
                 monitor.Log($"Seats[{i}] is \"off\" but a later seat is on; screens are joined in order, so P{i + 1} is a camera seat.", LogLevel.Warn);
                 roles[i] = SeatRole.Camera;
             }
+        // An operator console is a composed UI region, not another online farmer.
+        // Only trailing camera seats can be virtual: real local instances still join in order.
+        while (config.OperatorDashboard && last > 0 && roles[last] == SeatRole.Camera) last--;
         ScreenCount = config.SplitScreen ? last + 1 : 1;
         for (int i = 0; i < Seats; i++)
             Slots[i].Role = roles[i];

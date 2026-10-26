@@ -487,6 +487,9 @@ public static class Perception
         if (!Interrupts || q.IsEmpty) return;
         var call = rt.CurrentCall;
         if (call == null || call.Instant || call.Done.Task.IsCompleted) return;
+        // Speech/mentions and ambient events stay queued until morning. Never cancel a
+        // committed sleep check to deliver social mail: another screen may already be fading.
+        if (!DaySafety.CanInterruptForSocialEvent(call.Tool.Name)) return;
         // in bed waiting for the others: the sleep ready check is open and still cancelable (not once the night began)
         bool asleep = Asleep(call, rt);
         if (!SafeToStop(call, asleep)) return;

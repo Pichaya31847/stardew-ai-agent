@@ -367,7 +367,7 @@ public static partial class AgentTools
             Description = "Find a villager, walk to them and talk. Optionally give them an item from your inventory as a gift. " +
                           "If they are on another map you travel there first (go=false: just tell me where they are). " +
                           "Reports where they were, your friendship points before and after, their first line and the reaction to a gift. " +
-                          "Talking counts once a day; at most 1 gift per day and 2 per week. Time spent travelling is game time.",
+                          "Talking counts once a day; at most 1 gift per day and 2 per week. Time spent travelling is game time. Ordinary dialogue is read through and closed automatically; the result retains its text. Questions remain open for respond(option).",
             Schema = Obj(new
             {
                 name = Str("Villager name, e.g. Pierre"),
@@ -400,7 +400,7 @@ public static partial class AgentTools
         var npc = NpcInfo.ByName(name);
         if (npc == null)
         {
-            c.Fail($"No villager called \"{name}\". Call villagers() without a name for the list.");
+            c.Fail(PlayerSocialHint(name) ?? $"No villager called \"{name}\". Call villagers() without a name for the list.");
             yield break;
         }
         c.Result = NpcInfo.Detail(P, npc, Rt.Log.Player, Config.RevealGiftTastes);
@@ -443,6 +443,50 @@ public static partial class AgentTools
 
     internal static IEnumerator TalkTo(JsonElement a, CallContext c) => TalkToNpc(a, c);
 
+    private static string? PlayerSocialHint(string name)
+    {
+        var other = Players.Slots.FirstOrDefault(s => (s.Role is SeatRole.Ai or SeatRole.Human) &&
+            (string.Equals((s.State as ScreenState)?.Name, name, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(Config.Seat(s.Screen).Name, name, StringComparison.OrdinalIgnoreCase)));
+        if (other == null) return null;
+        var state = other.State as ScreenState;
+        string position = state is { Location: not null, Tile: { Length: >= 2 } }
+            ? $" Last known position: {state.Location} ({state.Tile[0]},{state.Tile[1]})." : "";
+        return $"{name} is a PLAYER, not a villager. talk_to and villagers(name) are for NPCs only.{position} " +
+            $"travel_to(location=\"{name}\") takes you to their map; then walk nearby and say(text=...) so they can hear you. For NPC friendship call villagers() and choose an actual villager.";
+    }
+
+    /// <summary>
+    /// Walk up to a villager who may be walking their schedule: aim at where they are, and re-aim as soon as they have moved
+    /// two tiles from there, instead of walking to a tile they left long ago. Stops next to them, facing them.
+    /// </summary>
+    private static IEnumerator ChaseNpc(string name, CallContext c)
+    {
+        static int Dist(Point a, Point b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y);
+        string last = "";
+        for (int leg = 0; leg < 12; leg++)
+        {
+            var npc = NpcInfo.ByName(name);
+            if (npc == null || !NpcInfo.OnMap(npc, Loc)) { c.Fail(Reasons.NotHere, $"{name} left {Loc.Name}"); yield break; }
+            var aim = npc.TilePoint;
+            if (Dist(P.TilePoint, aim) == 1) { Face(aim); yield break; }
+            var walk = new CallContext();
+            yield return WalkAdjacent(aim, walk, () =>
+            {
+                var now = NpcInfo.ByName(name)?.TilePoint ?? aim;
+                return Dist(now, aim) >= 2 || Dist(P.TilePoint, now) == 1;
+            });
+            if (!walk.Ok)
+            {
+                last = walk.Result;
+                yield return Ticks(30); // they may be in a doorway or a narrow path: give them a moment to move on
+            }
+        }
+        var at = NpcInfo.ByName(name)?.TilePoint;
+        if (at is Point p && Dist(P.TilePoint, p) == 1) { Face(p); yield break; }
+        c.Fail(Reasons.NoPath, last.Length > 0 ? last : $"couldn't catch up with {name}");
+    }
+
     private static IEnumerator TalkToNpc(JsonElement a, CallContext c)
     {
         var name = S(a, "name").Trim();
@@ -453,7 +497,7 @@ public static partial class AgentTools
             yield break;
         }
         var npc = NpcInfo.ByName(name);
-        if (npc == null) { c.Fail($"No villager called \"{name}\". villagers() lists who you can talk to."); yield break; }
+        if (npc == null) { c.Fail(PlayerSocialHint(name) ?? $"No villager called \"{name}\". villagers() lists who you can talk to."); yield break; }
         bool go = NpcFlag(a, "go", true);
 
         Item? giftItem = null;
@@ -507,7 +551,8 @@ public static partial class AgentTools
                 npc = NpcInfo.ByName(name) ?? npc;
                 if (!NpcInfo.OnMap(npc, Loc)) break; // they left this map: the outer loop follows them
                 var walk = new CallContext();
-                yield return WalkAdjacent(npc.TilePoint, walk);
+                yield return ChaseNpc(name, walk);
+                npc = NpcInfo.ByName(name) ?? npc;
                 if (!walk.Ok) { failure = walk.Result.TrimEnd('.'); continue; }
                 var me = P.TilePoint;
                 if (Math.Abs(me.X - npc.TilePoint.X) + Math.Abs(me.Y - npc.TilePoint.Y) != 1) continue; // they moved
@@ -581,6 +626,17 @@ public static partial class AgentTools
             if (line.Length > 0) sb.Append($" {npc.displayName} says: \"{line}\"");
         }
         sb.Append(spentText);
+        var finished = new CallContext();
+        yield return FinishMessages(finished);
+        if (finished.Result.Length > 0) sb.Append('\n').Append(finished.Result);
+        // A delivery finished by this talk leaves its money in the journal: take it now, the way a player clicks the reward.
+        for (int i = 0; i < 3 && Game1.activeClickableMenu == null && JournalRewards().Any(); i++)
+        {
+            var claim = new CallContext();
+            yield return QuestJournal(ArgsOf(new { action = "claim_reward" }), claim);
+            sb.Append('\n').Append(claim.Result);
+            if (!claim.Ok) break;
+        }
         c.Result = sb.ToString();
     }
 }

@@ -5,6 +5,8 @@ Status is for `main`, with open PRs noted. Update a row when a PR changes its co
 
 ✅ works · 🟡 reachable but untested or partial · ❌ missing
 
+New-game form prefill: 🟡 locally compiled; fills each form once and sets Skip Intro, awaiting an in-game check.
+
 ## Principle
 
 A human plays the whole game with six inputs. The AI gets each input in a form it can use
@@ -62,9 +64,9 @@ Rules:
 
 | System | How a human does it | Covered by | Status | Issue |
 |---|---|---|---|---|
-| Clear, till, water, chop, mine | tool on a tile | `use_tool`; `clear_area`, `till_area` for rectangles | ✅ single tiles; 🟡 `clear_area`/`till_area` untested (smoke `farm_batch`) | #15 |
+| Clear, till, water, chop, mine | tool on a tile | `use_tool`; `clear_area`, `till_area` for rectangles (row by row; `till_area` only as many tiles as there are seeds; the Scythe also clears dead crops through `HoeDirt.performToolAction`) | ✅ single tiles; 🟡 `clear_area`/`till_area` untested (smoke `farm_batch`) | #15 |
 | Plant seeds, fertilizer | item on soil | `plant` (tiles, or `area`/whole map) | ✅ tiles; 🟡 area mode untested (smoke `farm_batch`) | #15 |
-| Harvest crops, forage | action on a tile | `harvest`; `harvest_all` for the whole map | ✅ tiles; 🟡 `harvest_all` untested | #15 |
+| Harvest crops, forage | action on a tile | `harvest`; `harvest_all` for the whole map; `forage` travels to the maps that have forage and runs `harvest_all` there | ✅ tiles; 🟡 `harvest_all`, `forage` untested | #15 |
 | Whole-farm routine | look at every plot, water, collect | `farm_summary`, `water_all` (`whose: mine` keeps to your own crops; the result says whose were watered), `harvest_all` | 🟡 untested (smoke `farm_batch` covers summary and water; refill and rain need manual play) | #15 |
 | Place machines, chests, sprinklers, fences, furniture | use button with the item | `place` | 🟡 smoke `place`, `craft_place_chest` written, not yet run in game | #3 |
 | Load a machine | action while holding the input | `interact(holding)` | ✅ smoke `furnace` | #3 |
@@ -73,10 +75,10 @@ Rules:
 | Ship | shipping bin → `ItemGrabMenu` (`Farm.shipItem`) | `ship` | ✅ next morning's briefing lists what was sold per item (smoke `briefing`) | #29 |
 | Eat | action holding food → "Eat?" | `eat` | ✅ eats the chosen slot (the game's `eatHeldObject` eats the last item picked up; a 0 stack it left is dropped at day start) | |
 | Sleep | bed → `Sleep_Yes` → ready check `sleep` | `journal`, then `go_to_bed` (refuses until today's journal is written; wide awake before 17:00 it says so once); while it waits in bed for the others an event (@mention, gift, arrival) gets the farmer up with the ready check's own Cancel, never on its walk home. A client with `?reply_within=N` (agy) is told its day is over while it waits; calls it sends after that are refused, and a question in its night gets the game's last answer (a naming box a random name) | ✅ one player (smoke `journal`); 🟡 untested with 4 seats; wake-up untested in game; an unknown menu open for 10 s is closed (#32) | #38, #21, #32 |
-| Rest in bed | a multiplayer farmer on a bed tile regains +1 energy and health every 0.5 s of game time | `rest(minutes?)`: walk to your bed and lie there until energy is full, the minutes pass or an event stops it (once in bed); the bed's own "Go to sleep?" question is closed; refused with no other farmer online (no regeneration then) | 🟡 untested in game | |
+| Rest in bed | a multiplayer farmer on a bed tile regains +1 energy and health every 0.5 s of game time | `rest(minutes?, energy?)`: walk to your bed and lie there until energy reaches the target (default full), the minutes pass or an event stops it (once in bed), then walk to the door; the bed's own "Go to sleep?" question is closed; refused with no other farmer online (no regeneration then). Low-energy stops and an early tired `go_to_bed` point at it (`DaySafety.SuggestRest`) | 🟡 untested in game | |
 | Pass out (2:00, health 0, exhaustion) | automatic; the day ends without a bed | `pass_out` record in `/api/state` and the log (cause, place, running action, money, items lost); `POST /api/release_freeze` lets the clock run out; next morning the runner asks for `journal(day=N)` first | 🟡 smoke `pass_out` (2:00 AM) written, not run yet; health 0 in the mines untested | #22 |
 | TV: weather, luck, recipes | action on the TV → question | `watch_tv(channel)` (macro over `interact` + `respond`: picks the channel, reads every page, reports the learned recipe); weather and luck also come free in `status`, dates and shop hours in `calendar` | 🟡 PR for #14, not yet run in game (smoke `watch_tv`, `calendar`) | #14, #11 |
-| Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `look` labels the tile ("Backpack upgrade to 24 slots (2000g…)"), then `interact` + `respond` | 🟡 smoke `backpack` added, not yet run | #2 |
+| Backpack upgrade | `BuyBackpack` tile → `Backpack_Purchase` | `upgrade_backpack` (walks to SeedShop and the tile, then the game's own `answerDialogueAction("Backpack_Purchase")`); `interact` + `respond` still work | 🟡 smoke `backpack` added, not yet run; `upgrade_backpack` untested | #2 |
 | Totems, books | action button while holding the item (`performUseAction`) | `interact(holding)` without a tile | ✅ totems (smoke `totem`); 🟡 books untested | |
 | Animal care | pet (action), milk/shear (tool), hay (hopper) | `animals` (pet / collect / feed: `FarmAnimal.pet`, the Milk Pail or Shears swing, the hopper tile); `interact` and `use_tool` also work | 🟡 untested in game (PR for #10) | #10 |
 | Horse | stable, name, mount (action) | `interact`, `mount`, `dismount` (horse `checkAction`) | 🟡 riding untested; smoke `mount` self-skips without a horse | #10, #54 |
@@ -105,15 +107,15 @@ Rules:
 | System | How a human does it | Covered by | Status | Issue |
 |---|---|---|---|---|
 | Know the villagers | social page | `villagers` (location, hearts, counters, birthdays, tastes found out) | 🟡 untested in game | #9 |
-| Talk | action on an NPC | `talk_to` (finds the villager, travels across maps, reports points before/after) | 🟡 untested in game | #9 |
+| Talk | action on an NPC | `talk_to` (finds the villager, travels across maps, re-aims while they walk, reports points before/after, claims a finished delivery's money) | 🟡 untested in game | #9 |
 | Gifts | action holding the gift | `talk_to(gift_item)`: reaction and taste are learned; `interact(holding)` gifts are not recorded | 🟡 untested in game | #9 |
 | Heart events | cutscenes with questions | `PlayHeartEvents` (off): story events play, stop at questions for `respond`; other events are skipped | 🟡 opt-in, untested; in split-screen the event only moves while no other AI is thinking | #9 |
 | Dating, marriage | give a bouquet (8 hearts), later a Mermaid Pendant (10 hearts, upgraded house) | `bouquet`, `mermaid_pendant` (the game's gift path through `talk_to`; requirements shown in `villagers`); the wedding is the game's own, watched and logged | 🟡 untested in game | #53 |
 | Children | night question (`DialogueBox`), then `NamingMenu` | `go_to_bed` hands the question back; `respond` answers it, `name` names the child | 🟡 untested in game; the AI is not forced to want a child | #53 |
 | Naming pets, animals, horse | `NamingMenu` | `name(text)`; status shows "Naming: ..."; an unanswered box gets a random name at bedtime or at 1:00 AM | 🟡 untested in game | #53 |
-| Mail | mailbox → `LetterViewerMenu` | `interact` + `close_menu` | ✅ attachments are claimed; the morning briefing and the footer (`📬 N letters`) say when mail is waiting and where the farmer's own mailbox is (a farmhand's is at its cabin; smoke `briefing`); 🟡 `close_menu` also accepts the letter's quest (`AcceptQuest`), untested | #29, #2 |
-| Help Wanted, quest log | `Billboard` tile, `QuestLog` | `quests` (journal, board, who took it, Special Orders read-only), `accept_quest` (macro: walks to the board, presses Accept); events `quest_accepted`/`quest_completed`/`quest_failed`/`quest_taken_by_other` go to the player log feed | 🟡 PR for #14, not yet run in game (smoke `quests`, `accept_quest`); turning in a quest: `talk_to` with the item | #14 |
-| Special Orders | `SpecialOrders` tile → `SpecialOrdersBoard`, its Accept button | `special_orders` (`list`, `accept`, `active`); `ActiveSpecialOrdersText()` is for `quests` (#14) | 🟡 untested | #27 |
+| Mail | mailbox → `LetterViewerMenu` | `interact` + `close_menu`; `morning_chores` reads the whole mailbox (and opens the house's gift boxes, claims quest money) | ✅ attachments are claimed; 🟡 `morning_chores` untested; the morning briefing and the footer (`📬 N letters`) say when mail is waiting and where the farmer's own mailbox is (a farmhand's is at its cabin; smoke `briefing`); 🟡 `close_menu` also accepts the letter's quest (`AcceptQuest`), untested | #29, #2 |
+| Help Wanted, quest log | `Billboard` tile, `QuestLog` | `quests` (journal, board, who took it, Special Orders read-only), `accept_quest` (macro: walks to the board, presses Accept); a "How:" line per quest type (delivery, collection, fishing, slaying, socialize, lost item); events `quest_accepted`/`quest_completed`/`quest_failed`/`quest_taken_by_other` go to the player log feed | 🟡 PR for #14, not yet run in game (smoke `quests`, `accept_quest`); turning in a quest: `talk_to` with the item | #14 |
+| Special Orders | `SpecialOrders` tile → `SpecialOrdersBoard`, its Accept button | `special_orders` (`list`, `accept`, `active`); `quests` lists unclaimed journal/order money and `quests(action=claim_reward)` clicks the native QuestLog reward button | 🟡 compiled locally; journal reward collection still needs an in-game completed quest test | #27 |
 | Community Center | `JunimoNoteMenu` | `bundles` (reads `Bundles`/`BundleData`), `donate_bundle` (opens the room's `JunimoNoteMenu` and clicks the bundle, the inventory slot and an ingredient slot; success is read back from `Bundles`) | 🟡 untested, needs the CC open | #13 |
 | Joja | Morris's membership question, `JojaCDMenu` | `joja`: `projects` lists the five projects and their state from the mail flags; `membership` shows a warning and buys nothing unless `confirm=true`, then answers Morris's yes/no dialogue (global, irreversible: closes the bundles for everyone, announced in chat, recorded on the log and as the `joja_membership` event); `buy_project` opens the game's own `JojaCDMenu` and clicks the project's box, found by its price, so the game takes the gold and sets its own flags (`joja_project_bought` event) | 🟡 untested, JojaMart + dialogue and form members late-bound | #26 |
 | Museum | Gunther → `MuseumMenu` | `museum`: `list` via `isItemSuitableForDonation`; `donate` writes `museumPieces` on the next free display tile (not the `MuseumMenu` UI, which needs pointer coordinates); `rewards` answers Gunther's "Collect" and takes the grab menu | 🟡 untested | #13 |
@@ -163,7 +165,7 @@ Use the game's multiplayer features first. Add mod rules only where the game has
 | Dance, baby between players | `SendProposal(Dance/Baby)` → `PendingProposalDialog` | `interact(holding)` + `menu choose` | ❌ | |
 | Owned plots and chests | no mechanic | mod rule (`Ownership`): chests and machines carry `Object.owner`, crops record their planter in `HoeDirt.modData`; taking from or harvesting another seat's claim logs a `theft` entry | ✅ smoke `ownership` | #52, #40 |
 | Seeing what others do, being interrupted | no mechanic (the game draws the other farmers and nothing more) | mod rule (`Perception`): `look` and `status` list the other AI players in view with the tool they run, its reason and how long, next to the last `say` of theirs this player heard. An @mention, gift, a player coming into view or entering your house, a theft (`Ownership.Theft`), rain starting and crows on the farm add an `Events:` block to the next tool result and stop a running `wait`, `walk_to`, `travel_to` or farm action (`AgentRuntime.Interrupt`). P4 neither sees nor is seen | 🟡 written, smoke `caught_slacking` not run yet; damage and monster interrupts wait for #6 | #40 |
-| Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action (`festival(start)` waits in the ready check); P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together` | #52, #38, #11 |
+| Sleep, festival start/end | `ReadyCheckDialog` waits for every online farmer, P4 included | AI seats wait inside their action: `travel_to` into a festival, `festival(start)` and `festival(leave)` (through `Event.TryStartEndFestivalDialogue`) wait up to 60 s, tell the other AIs, then cancel with `not_ready`; `answer_proposal` no longer treats a ready check as a yes/no box; P4 accepts automatically; `Bedtime` warns late seats | ✅ smoke `bedtime`, `sleep_together`; 🟡 festival waits untested | #52, #38, #11 |
 
 ### Context control (#30)
 
@@ -220,3 +222,29 @@ What `AgentRuntime.AutoHandleOverlays` does with screens that appear by themselv
     about 20.
   - `ProposalType` (Gift, Marriage, Dance, Baby); night events in `Utility.pickFarmEvent` and
     `pickPersonalFarmEvent`.
+
+### Local operator panel
+Four-seat AI/camera/AI/AI layout, combined logs and a queued instruction input: built locally; runtime smoke verification recorded separately. Keyboard input and visual layout need in-game verification; this does not add new gameplay tools.
+
+Local brain recovery: standing on a bed is no longer treated as an end-of-day signal. Same-day operator orders resume released idle brains without resetting daily token usage. Built and existing C# tests passed; live recovery after restart still needs verification.
+
+Bottom dashboard: native English/Thai TextBox insertion and normalized three-region layout checked in a local reflection harness; transpiler insertion point verified against the installed game's SetWindowSize IL. Full interactive keyboard/mouse and visual verification still pending.
+
+Cabin reuse: local fix counts offline owners as joinable. Compiles against installed game; loading the same save twice still needs in-game confirmation.
+
+Local fixes: idle model replies trigger a bounded cooldown/context retry rather than day-long abandonment. Shop counter hints read actual map Action tiles within look radius 20; trading still uses the existing game menu handlers. Full in-game shopping/recovery/social behavior needs verification after restart.
+
+### Log storage
+
+Scythe target validation: isolated checks against native GameLocation/Grass objects confirm empty, depleted and removed targets are rejected while live grass is accepted. `use_tool` validates before walking and before swinging and checks target change; zero-completion batches fail. `clear_area` limits ineffective scythe repeats to two. Actual animation/harvest behavior still needs live game verification.
+
+Message/menu lifecycle: ordinary dialogue is advanced through native clicks, letter closure reuses existing attachment/quest handling, and choices/cutscenes/night events remain protected. An isolated adapter check with native game menu types and simulated click progression verifies multi-page text retention, closure, choice preservation and new-day protection. Adjacent calendar/Help Wanted tiles are deduplicated by exact position only. Live letters/board acceptance still need in-game verification after restart.
+
+Overnight safety: snapshots expose native farm-event/fade/pass-out transitions; brains and new tool calls wait, WorldClock releases thinking pauses, and social mail does not cancel `go_to_bed`. The operator panel no longer depends on validated-tick activity during saving. Inventory pressure hints cover existing chests, craft/place/store and BuyBackpack. Local compilation and regression checks cover the changes; the reported explosion/overnight event still needs a live replay after restarting the game.
+
+Sale protection: `ship` and `sell` check planting inputs and inventory-wide minimum crafting reserves before transferring items. Unit tests cover seeds/fertilizer, harvested produce, reserve boundaries and intentional overrides. Live shop/bin behavior with reserves still needs in-game verification.
+
+Daily social follow-through: game-free tests cover heard versus unheard speech, failed NPC calls, reminders across same-day restarts, next-day reset, later-day morning instructions and the one-time bedtime reminder. Native `say`/`talk_to` stay responsible for actual speech/travel; live behavior across multiple days remains to be verified.
+
+Operator dashboard: trailing camera seats are virtual UI regions. The two-AI bottom layout joins only two farmers; seat-resolution checks verify dashboard versus legacy camera mode. Live rendering after restart still needs in-game verification. Existing cabins/farmhands are preserved.
+Daily JSONL is written as concatenated gzip members (`day_NNN.jsonl.gz`). Legacy and compressed files are both readable through replay and summaries. Migration verifies decompressed bytes before deleting the original. Unit tests cover Unicode, repeated appends, migration, mixed formats and day discovery; live gameplay/replay after restart still needs an in-game check.

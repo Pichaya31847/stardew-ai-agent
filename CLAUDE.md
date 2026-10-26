@@ -142,6 +142,10 @@ mod/StardewMCP/Agent/BobberController.cs BobberMath, CastMath for fish (Python t
 mod/StardewMCP/Agent/WorldText.Format.cs  FormatTime, DirName, part of WorldText
 mod/StardewMCP/Agent/BubbleText.cs   Line breaking for the speech bubbles (Thai-aware)
 mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, timed only while the world runs
+mod/StardewMCP/Agent/CompressedLogStore.cs  lossless appendable gzip logs, legacy migration and day discovery
+mod/StardewMCP/Agent/SaleReserve.cs  minimum crafting reserves and protected planting inputs for sales
+mod/StardewMCP/Agent/DaySafety.cs  morning readiness, early sleep and committed-sleep social interruption policy
+mod/StardewMCP/Agent/Brain/DailySocialProgress.cs  per-day social progress and bounded reminders across context resets
 mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts
 ```
 

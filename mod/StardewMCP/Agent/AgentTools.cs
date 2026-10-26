@@ -36,9 +36,12 @@ public static partial class AgentTools
     /// <summary>Language for text shown to viewers (config ThoughtLanguage).</summary>
     private static string Lang => Config.LanguageName();
 
-    private static string ReasonDesc => Lang.Equals("Thai", StringComparison.OrdinalIgnoreCase)
+    /// <summary>Language of action reasons and the memory files (config WorkLanguage, default ThoughtLanguage).</summary>
+    private static string WorkLang => Config.WorkLanguageName();
+
+    private static string ReasonDesc => WorkLang.Equals("Thai", StringComparison.OrdinalIgnoreCase)
         ? "Short reason IN THAI, in plain words with no coordinates or numbers (e.g. \"ถางหญ้าเพื่อเตรียมแปลงปลูก\")"
-        : $"Short reason IN {Lang.ToUpperInvariant()}, in plain words with no coordinates or numbers";
+        : $"Short reason IN {WorkLang.ToUpperInvariant()}, in plain words with no coordinates or numbers";
 
     private static string StatusText()
     {
@@ -60,6 +63,8 @@ public static partial class AgentTools
         if (ranch.Length > 0) sb.Append('\n').Append(ranch);
         var night = NightEvents.PendingText(Rt.Log.Player);
         if (night.Length > 0) sb.Append('\n').Append(night);
+        var storage = StorageHint();
+        if (storage.Length > 0) sb.Append('\n').Append(storage);
         return sb.ToString();
     }
 
@@ -67,7 +72,7 @@ public static partial class AgentTools
 
     public static List<ToolDef> All()
     {
-        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(KnowledgeTools.All()).Concat(VillagerTools()).Concat(RomanceTools()).Concat(NamingTools()).Concat(Core()).Concat(CraftingToolDefs()).Concat(QolToolDefs()).Concat(CalendarToolDefs()).Concat(CommunityTools()).Concat(JojaTools()).Concat(BuildingToolDefs()).Concat(AnimalToolDefs()).Concat(ClothingToolDefs()).Concat(HorseToolDefs()));
+        return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(KnowledgeTools.All()).Concat(VillagerTools()).Concat(RomanceTools()).Concat(NamingTools()).Concat(Core()).Concat(CraftingToolDefs()).Concat(QolToolDefs()).Concat(CalendarToolDefs()).Concat(CommunityTools()).Concat(JojaTools()).Concat(BuildingToolDefs()).Concat(AnimalToolDefs()).Concat(ClothingToolDefs()).Concat(HorseToolDefs()).Concat(ChoreToolDefs()));
     }
 
     private static List<ToolDef> Core()
@@ -163,7 +168,8 @@ public static partial class AgentTools
                 Name = "interact",
                 Description = "Walk next to a tile and press the action button on it: open doors, shop counters (A tiles), chests, machines, mailbox, read signs, check objects. " +
                               "With holding, hold that item while pressing: load a machine with it (e.g. Copper Ore into a Furnace), give it to the villager on that tile. " +
-                              "With holding and no tile, use the item where you stand (totems, books). Without holding you hold a tool, so nothing is loaded or gifted by accident.",
+                              "With holding and no tile, use the item where you stand (totems, books). Without holding you hold a tool, so nothing is loaded or gifted by accident. " +
+                              "You MUST supply BOTH x and y from look for a counter, chest, door or object. A reason alone never presses anything. travel_to a shop stops at its entrance, not its counter. Letters are read and closed with attachments/quests claimed; ordinary dialogue is completed and its text returned. Explicit questions remain for respond(option).",
                 Schema = Obj(new
                 {
                     x = Int("Tile x"),
@@ -194,11 +200,11 @@ public static partial class AgentTools
             {
                 Name = "travel_to",
                 Description = "Walk to another map through doors and exits: Farm, FarmHouse, BusStop, Town, SeedShop (Pierre's), Forest (Marnie), Beach, Mountain, Mine, Saloon, Blacksmith, etc. " +
-                              "You can also name a shop keeper (Pierre, Clint, Robin, Marnie, Willy, Gus: their shop) or any villager (the map they are in now). " +
+                              "You can also name a shop keeper (Pierre, Clint, Robin, Marnie, Willy, Gus: their shop), any villager or another farmer (the map they are in now). " +
                               "Late game: Desert and Calico Desert (500g bus from the Bus Stop, after the Vault bundle or Joja Bus), Skull Cavern (the Skull Key opens the desert door), " +
                               "Ginger Island (1,000g boat from Willy's back room, after the boat is repaired), Casino, MovieTheater and Oasis. " +
                               "Locked doors stay locked outside opening hours; the failure says when they open.",
-                Schema = Obj(new { location = Str("Destination map name, shop keeper or villager"), reason = Str(ReasonDesc) }, "location", "reason"),
+                Schema = Obj(new { location = Str("Destination map name, shop keeper, villager or farmer"), reason = Str(ReasonDesc) }, "location", "reason"),
                 Run = TravelTo
             },
             new()
@@ -219,8 +225,8 @@ public static partial class AgentTools
             new()
             {
                 Name = "ship",
-                Description = "Put items into the farm shipping bin (walks to the bin). Shipped items are sold overnight.",
-                Schema = Obj(new { item = Str("Item name"), quantity = Int("How many (default: all)"), reason = Str(ReasonDesc) }, "item", "reason"),
+                Description = "Put surplus items into the farm shipping bin (walks to the bin). Shipped items are sold overnight. Seeds, fertilizer and minimum crafting supplies are protected by default. Use a chest for storage, not the bin.",
+                Schema = Obj(new { item = Str("Item name"), quantity = Int("How many (default: all)"), allow_reserved = new { type = "boolean", description = "Default false. Only true for a deliberate sale of reserved supplies; explain why in reason, never just to bypass an error." }, reason = Str(ReasonDesc) }, "item", "reason"),
                 Run = Ship
             },
             new()
@@ -242,9 +248,15 @@ public static partial class AgentTools
             {
                 Name = "rest",
                 Description = "Lie down on your own bed to get energy and health back while game time passes (in bed the game gives about " +
-                              "+14 energy per 10 minutes). Walks home first. A rest, not the night's sleep: it ends when your energy is full, " +
-                              "after the minutes you give, or when someone calls you, gives you something or comes into view. go_to_bed ends the day.",
-                Schema = Obj(new { minutes = Int("At most this many game minutes, 10-240 (default: until your energy is full)"), reason = Str(ReasonDesc) }, "reason"),
+                              "+14 energy per 10 minutes). Walks home first. A rest, not the night's sleep: it ends when your energy reaches energy (default full), " +
+                              "after the minutes you give, or when someone calls you, gives you something or comes into view; then you get up and walk to the door, " +
+                              "ready to carry on. Use it when you run out of energy before the evening. go_to_bed ends the day.",
+                Schema = Obj(new
+                {
+                    minutes = Int("At most this many game minutes, 10-240 (default: until energy is reached)"),
+                    energy = Int("Get up once energy is at least this much (default: full)"),
+                    reason = Str(ReasonDesc)
+                }, "reason"),
                 Run = Rest
             },
             new()
@@ -274,10 +286,10 @@ public static partial class AgentTools
 
     private static IEnumerator Think(JsonElement a, CallContext c)
     {
-        var text = S(a, "text").Trim();
+        var text = TextArg(a, "text");
         if (text.Length == 0)
         {
-            c.Fail(Reasons.InvalidArgs, "text is empty");
+            c.Fail(Reasons.InvalidArgs, "text is empty: call think(text=\"your thought\")");
             yield break;
         }
         Rt.Log.Add("think", text: text);
@@ -315,6 +327,7 @@ public static partial class AgentTools
             yield break;
         }
         int minutes = Math.Clamp(I(a, "minutes", 240), 10, 240);
+        int target = Math.Clamp(I(a, "energy", P.MaxStamina), 1, P.MaxStamina);
         if (Loc is not FarmHouse)
         {
             var sub = new CallContext();
@@ -329,13 +342,18 @@ public static partial class AgentTools
 
         int energy = (int)P.Stamina, health = P.health, start = Utility.ConvertTimeToMinutes(Game1.timeOfDay), day = Game1.Date.TotalDays;
         while (Game1.Date.TotalDays == day && Utility.ConvertTimeToMinutes(Game1.timeOfDay) - start < minutes
-               && (P.Stamina < P.MaxStamina || P.health < P.maxHealth))
+               && (P.Stamina < target || !Has(a, "energy") && P.health < P.maxHealth))
         {
             DismissBedQuestion();
             yield return null;
         }
+
+        // Get up and step off the bed, or its "Go to sleep?" question comes back and the farmer stays put.
+        DismissBedQuestion();
+        if (Game1.Date.TotalDays == day && Loc is FarmHouse home)
+            yield return WalkTo(home.getEntryLocation(), new CallContext());
         c.Result = $"Rested in bed until {WorldText.FormatTime(Game1.timeOfDay)}: energy {energy} → {(int)P.Stamina}/{P.MaxStamina}, " +
-                   $"health {health} → {P.health}/{P.maxHealth}.";
+                   $"health {health} → {P.health}/{P.maxHealth}. You are up again by the door: carry on with the day. " + PendingFarmWork();
     }
 
     /// <summary>Close the bed's own "Go to sleep for the night?" question (stepping onto a bed opens it): a rest is not the night's
@@ -369,7 +387,8 @@ public static partial class AgentTools
         for (int i = 0; i < n; i++) yield return null;
     }
 
-    public static IEnumerator WalkTo(Point target, CallContext c)
+    /// <param name="stopWhen">Checked every tick: true ends the walk early without a failure (the caller re-plans, e.g. a villager moved).</param>
+    public static IEnumerator WalkTo(Point target, CallContext c, Func<bool>? stopWhen = null)
     {
         yield return WaitIdle();
         var loc = Loc;
@@ -403,6 +422,7 @@ public static partial class AgentTools
             if (Game1.currentLocation != loc) yield break; // walked through a warp
             // Stepped onto a warp: stop pushing into it, or the game re-warps (restarting the fade) every tick.
             if (Game1.isWarping) { P.controller = null; yield break; }
+            if (stopWhen?.Invoke() == true) { P.controller = null; P.Halt(); yield break; }
             if (P.controller == null) break;
             if (Vector2.DistanceSquared(P.Position, last) < 0.01f) stuck++; else stuck = 0;
             last = P.Position;
@@ -433,7 +453,10 @@ public static partial class AgentTools
     private static readonly Point[] Dirs = { new(0, -1), new(1, 0), new(0, 1), new(-1, 0) }; // up right down left
 
     /// <summary>Walk to the best tile next to target and face it.</summary>
-    public static IEnumerator WalkAdjacent(Point target, CallContext c)
+    public static IEnumerator WalkAdjacent(Point target, CallContext c) => WalkAdjacent(target, c, null);
+
+    /// <param name="stopWhen">Passed to <see cref="WalkTo"/>: ends the walk early, without facing the target.</param>
+    public static IEnumerator WalkAdjacent(Point target, CallContext c, Func<bool>? stopWhen)
     {
         var loc = Loc;
         var me = P.TilePoint;
@@ -455,8 +478,8 @@ public static partial class AgentTools
                 c.Fail(Reasons.NoPath, $"No reachable tile next to ({target.X},{target.Y}).");
                 yield break;
             }
-            yield return WalkTo(best.Value, c);
-            if (!c.Ok) yield break;
+            yield return WalkTo(best.Value, c, stopWhen);
+            if (!c.Ok || stopWhen?.Invoke() == true) yield break;
         }
         Face(target);
     }
@@ -527,9 +550,25 @@ public static partial class AgentTools
         return Target.None;
     }
 
-    private static IEnumerator Swing(Point target)
+    // A dead crop is a scythe target too: the game's HoeDirt.performToolAction destroys it (crops die when the season changes).
+    private static bool ScytheTargetAt(GameLocation loc, Point tile) =>
+        loc.Objects.TryGetValue(tile.ToVector2(), out var obj) && obj.IsWeeds() ||
+        loc.terrainFeatures.TryGetValue(tile.ToVector2(), out var feature) && feature is Grass grass && grass.numberOfWeeds.Value > 0 ||
+        FarmRipeCrop(loc, tile.X, tile.Y) || FarmDeadCrop(loc, tile.X, tile.Y);
+
+    private static (object? target, int amount) ScytheTargetState(GameLocation loc, Point tile)
+    {
+        if (loc.Objects.TryGetValue(tile.ToVector2(), out var obj) && obj.IsWeeds()) return (obj, obj.Stack);
+        if (loc.terrainFeatures.TryGetValue(tile.ToVector2(), out var feature) && feature is Grass grass && grass.numberOfWeeds.Value > 0) return (grass, grass.numberOfWeeds.Value);
+        if (feature is HoeDirt dirt && (FarmRipeCrop(loc, tile.X, tile.Y) || FarmDeadCrop(loc, tile.X, tile.Y))) return (dirt.crop, 1);
+        return (null, 0);
+    }
+
+    private static IEnumerator Swing(Point target, Func<bool>? stillValid = null)
     {
         yield return WaitIdle();
+        // Another farmer or the preceding scythe arc may have removed it while we waited.
+        if (stillValid != null && !stillValid()) yield break;
         Face(target);
         P.lastClick = new Vector2(target.X * 64 + 32, target.Y * 64 + 32);
         P.BeginUsingTool();
@@ -549,6 +588,7 @@ public static partial class AgentTools
         P.CurrentToolIndex = slot;
         var tool = (Tool)P.Items[slot];
         bool repeatTool = tool is Axe || tool is Pickaxe;
+        bool scythe = tool is MeleeWeapon blade && blade.isScythe();
         var before = Snapshot();
         var lines = new List<string>();
         var loc = Loc;
@@ -556,9 +596,15 @@ public static partial class AgentTools
 
         foreach (var t in FarmRoute(tiles, tool))
         {
+            if (scythe && !ScytheTargetAt(loc, t))
+            {
+                lines.Add($"({t.X},{t.Y}) skipped: no grass, weeds, ripe or dead crop here. Refresh look/farm_summary; do not reuse guessed coordinates.");
+                batch.Skip(Reasons.NotHere);
+                continue;
+            }
             if (P.Stamina <= 2)
             {
-                lines.Add($"Stopped: energy too low ({(int)P.Stamina}). Eat something or go to bed.");
+                lines.Add($"Stopped: energy too low ({(int)P.Stamina}): {DaySafety.LowEnergyAdvice(Game1.timeOfDay, Game1.IsMultiplayer)}.");
                 batch.Stop = Reasons.LowEnergy;
                 break;
             }
@@ -595,6 +641,20 @@ public static partial class AgentTools
 
             if (!repeatTool)
             {
+                if (scythe)
+                {
+                    var cutBefore = ScytheTargetState(loc, t);
+                    if (cutBefore.target == null) { batch.Skip(Reasons.NotHere); lines.Add($"({t.X},{t.Y}) target already gone; no swing."); continue; }
+                    yield return Swing(t, () => Loc == loc && ScytheTargetAt(loc, t));
+                    var cutAfter = ScytheTargetState(loc, t);
+                    if (cutAfter == cutBefore)
+                    {
+                        batch.Skip(Reasons.NotReady);
+                        lines.Add($"({t.X},{t.Y}) Scythe had no visible effect; not counted as success. Inspect look before retrying.");
+                    }
+                    else { batch.Done++; lines.Add($"({t.X},{t.Y}) cut {label ?? "grass/weeds/crop"}; target changed."); }
+                    continue;
+                }
                 yield return Swing(t);
                 lines.Add($"({t.X},{t.Y}) used {tool.DisplayName} on {label ?? "tile"}");
                 batch.Done++;
@@ -626,6 +686,8 @@ public static partial class AgentTools
         var diff = Diff(before);
         c.Result = string.Join("\n", lines) + (diff.Length > 0 ? "\n" + diff : "");
         batch.Apply(c, tiles.Count);
+        if (batch.Done == 0)
+            c.Fail(c.Reason ?? Reasons.NotHere, c.Result + "\nNo targets were completed. Refresh look/farm_summary and select existing targets before another use_tool call.");
     }
 
     private static IEnumerator Plant(JsonElement a, CallContext c)
@@ -723,13 +785,31 @@ public static partial class AgentTools
     }
 
     /// <summary>The action button, as in Game1.pressActionButton: check the tile with the held item, or use the held item in place.</summary>
+    /// <summary>The closest things interact can press (doors, counters, chests, objects, villagers), so a call that left out x and y is fixed in one go.</summary>
+    private static string NearbyActionTiles()
+    {
+        var loc = Loc;
+        var me = P.TilePoint;
+        var found = new List<(int d, string text)>();
+        for (int dy = -8; dy <= 8; dy++)
+            for (int dx = -8; dx <= 8; dx++)
+            {
+                int x = me.X + dx, y = me.Y + dy;
+                if (!loc.isTileOnMap(x, y)) continue;
+                var (sym, label) = WorldText.Describe(loc, x, y);
+                if (label != null && sym is 'A' or 'D' or 'O' or 'N' or 'b' or 'Z' or 'E')
+                    found.Add((Math.Abs(dx) + Math.Abs(dy), $"({x},{y}) {label}"));
+            }
+        return found.Count == 0 ? "" : "\nNearest things to interact with: " + string.Join("; ", found.OrderBy(f => f.d).Take(6).Select(f => f.text)) + ".";
+    }
+
     private static IEnumerator Interact(JsonElement a, CallContext c)
     {
         var holding = S(a, "holding").Trim();
         int slot = holding.Length > 0 ? FindItem(holding) : -1;
         if (holding.Length > 0 && slot < 0) { c.Fail(Reasons.NoItem, $"No \"{holding}\" in inventory."); yield break; }
         bool atTile = Has(a, "x") && Has(a, "y");
-        if (!atTile && slot < 0) { c.Fail(Reasons.InvalidArgs, "Give the tile (x, y), or holding to use an item where you stand."); yield break; }
+        if (!atTile && slot < 0) { c.Fail(Reasons.InvalidArgs, "Nothing was pressed: supply BOTH x and y from look, or holding to use an item where you stand." + ShopCounterHint() + NearbyActionTiles()); yield break; }
 
         var before = Snapshot();
         var startLoc = Loc;
@@ -775,7 +855,10 @@ public static partial class AgentTools
         var now = atTile && Loc == startLoc ? WorldText.Describe(Loc, t.X, t.Y).label : was;
         var changed = now != was ? $" Now: {now ?? "empty"}." : "";
         var moved = Loc != startLoc ? $" You are now in {Loc.Name}." : "";
+        var finished = new CallContext();
+        yield return FinishMessages(finished);
         c.Result = $"{what}.{changed}{moved} {Diff(before)}".Trim();
+        if (finished.Result.Length > 0) c.Result += "\n" + finished.Result;
     }
 
     // talk_to lives in NpcTools.cs (TalkToNpc).
@@ -792,7 +875,9 @@ public static partial class AgentTools
         {
             // A heart event is playing between two lines: wait for the next line or question (NpcStory.cs).
             if (Rt.Story.Active) { yield return Rt.Story.WaitForNext(c); yield break; }
-            c.Fail("No dialogue is open.");
+            // Say what is open instead (42 bare "No dialogue is open" in the local Qwen run, most after another farmer's say).
+            var open = WorldText.MenuState().Trim();
+            c.Fail(Reasons.NotHere, "No dialogue is open. " + (open.Length > 0 ? open : "Nothing is open: carry on with your work. Another farmer's say is answered with say, not respond."));
             yield break;
         }
         var startText = box.getCurrentString();
@@ -815,7 +900,10 @@ public static partial class AgentTools
             if (Game1.activeClickableMenu != box || box.getCurrentString() != startText || (question && box.transitioning)) break;
         }
         yield return Ticks(30);
+        var finished = new CallContext();
+        yield return FinishMessages(finished);
         c.Result = Game1.activeClickableMenu == null ? "Dialogue closed." : "Dialogue continued.";
+        if (finished.Result.Length > 0) c.Result += "\n" + finished.Result;
     }
 
     private static IEnumerator CloseMenu(JsonElement a, CallContext c)
@@ -843,9 +931,17 @@ public static partial class AgentTools
         if (IsSkullCavernName(asked)) { yield return TravelToSkullCavern(c); yield break; }
         var (dest, note) = NpcInfo.ResolvePlace(asked); // map names, shop keepers (Pierre = SeedShop), villagers (where they are now)
         var target = dest == null ? null : Game1.getLocationFromName(dest);
+        // Another farmer's name: the map they are on now (33 failures in the local Qwen run went to "AI2").
+        if (target == null && SocialTools.OtherAis().FirstOrDefault(s => string.Equals(SocialTools.Label(s), asked, StringComparison.OrdinalIgnoreCase)) is { } mate
+            && Romance.FarmerOf(mate)?.currentLocation is { } theirs)
+        {
+            target = theirs;
+            var t = Romance.FarmerOf(mate)!.TilePoint;
+            note = $"{SocialTools.Label(mate)} was at ({t.X},{t.Y}) when you set off; look to find them.";
+        }
         if (target == null)
         {
-            c.Fail(Reasons.NotFound, $"Unknown location \"{asked}\". Use a map name (Farm, Town, SeedShop...), a shop keeper's name (Pierre, Clint, Robin, Marnie, Willy, Gus) or any villager's name.");
+            c.Fail(Reasons.NotFound, $"Unknown location \"{asked}\". Use a map name (Farm, Town, SeedShop...), a shop keeper's name (Pierre, Clint, Robin, Marnie, Willy, Gus), any villager's name or another farmer's name.");
             yield break;
         }
         if (target.Name == "Club" && !P.hasClubCard)
@@ -859,7 +955,7 @@ public static partial class AgentTools
             yield break;
         }
         yield return TravelTo(target.Name, c);
-        if (c.Ok) c.Result = $"Arrived in {Loc.Name} at ({P.TilePoint.X},{P.TilePoint.Y}).{(note.Length > 0 ? " " + note : "")}";
+        if (c.Ok) c.Result = $"Arrived in {Loc.Name} at ({P.TilePoint.X},{P.TilePoint.Y}).{(note.Length > 0 ? " " + note : "")}" + ShopCounterHint();
     }
 
     /// <summary>A way out of a map: a door/building door (press action on it) or an edge warp (walk off the map).</summary>
@@ -917,6 +1013,14 @@ public static partial class AgentTools
 
     private static IEnumerator TravelTo(string dest, CallContext c)
     {
+        // The festival map is a temporary copy with no route out: leave through the festival itself (69 travel_to failures on day 13).
+        if (Game1.eventUp && Game1.CurrentEvent is { isFestival: true })
+        {
+            yield return FestivalLeave(dest, c);
+            yield break;
+        }
+        yield return PrepareForTravel(c);
+        if (!c.Ok) yield break;
         yield return WaitIdle();
         var route = FindRoute(Loc.Name, dest);
         if (route == null) { c.Fail(Reasons.NoPath, $"No known route from {Loc.Name} to {dest}."); yield break; }
@@ -972,12 +1076,23 @@ public static partial class AgentTools
                 }
             }
 
-            for (int i = 0; i < 300 && Loc == loc; i++) yield return null;
+            for (int i = 0; i < 300 && Loc == loc && Game1.activeClickableMenu is not ReadyCheckDialog; i++) yield return null;
+            if (Game1.activeClickableMenu is ReadyCheckDialog { checkName: "festivalStart" })
+            {
+                // Co-op festivals let the farmers in only together: wait for the others a while, never answer it as a question.
+                var together = new CallContext();
+                yield return WaitReadyCheck($"travel_to {next}", together);
+                if (!together.Ok) { c.Fail(together.Reason ?? Reasons.NotReady, $"Couldn't go from {loc.Name} to {next}: {together.Result}"); yield break; }
+                for (int i = 0; i < 300 && Loc == loc; i++) yield return null;
+            }
             yield return WaitIdle();
             if (Loc == loc)
             {
+                bool npcInterrupted = Game1.activeClickableMenu is DialogueBox { characterDialogue: not null };
                 var msg = Game1.activeClickableMenu != null ? WorldText.MenuState().Trim() : "the door may be locked (check opening hours)";
-                c.Fail(Game1.activeClickableMenu != null ? Reasons.MenuOpen : Reasons.ShopClosed, $"Couldn't go from {loc.Name} to {next}: {NpcInfo.DoorHours(loc, exit.Tile, next)}{msg}");
+                var finished = new CallContext();
+                yield return FinishMessages(finished);
+                c.Fail(Game1.activeClickableMenu != null ? Reasons.MenuOpen : npcInterrupted ? Reasons.Interrupted : Reasons.ShopClosed, $"Couldn't go from {loc.Name} to {next}: {NpcInfo.DoorHours(loc, exit.Tile, next)}{msg}\n{finished.Result}");
                 yield break;
             }
             if (Loc.Name != next) { c.Fail($"Ended up in {Loc.Name} instead of {next}."); yield break; }
@@ -1004,7 +1119,7 @@ public static partial class AgentTools
 
     private static IEnumerator ShopList(JsonElement a, CallContext c)
     {
-        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(Reasons.NotHere, "No shop is open. interact with a shop counter (A tile) during opening hours first."); yield break; }
+        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(Reasons.NotHere, "No shop is open. Entering the building does not open a shop. Walk to its counter and interact with BOTH x and y during opening hours first." + ShopCounterHint()); yield break; }
         var cur = CurrencyUnit(shop.currency);
         var sb = new StringBuilder($"Shop {shop.ShopId} — you have {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}\n");
         foreach (var s in shop.forSale)
@@ -1030,7 +1145,9 @@ public static partial class AgentTools
     /// are consumed, purchase actions run and limited stock is synced, exactly like a click in the menu.</summary>
     private static IEnumerator Buy(JsonElement a, CallContext c)
     {
-        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(Reasons.NotHere, "No shop is open."); yield break; }
+        var opening = new CallContext();
+        if (Game1.activeClickableMenu is not ShopMenu) yield return OpenShopHere(opening);
+        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(opening.Reason ?? Reasons.NotHere, $"No shop is open: {opening.Result} travel_to the shop first (Pierre's is SeedShop)."); yield break; }
         if (shop.readOnly) { c.Fail("This shop menu is read-only; nothing can be bought here."); yield break; }
         var name = S(a, "item").Trim().ToLowerInvariant();
         int qty = Math.Clamp(I(a, "quantity", 1), 1, 999);
@@ -1068,7 +1185,7 @@ public static partial class AgentTools
         PutAwayHeld();
         var probe = sal.GetSalableInstance();
         probe.Stack = qty * sal.Stack;
-        if (!sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P)) { c.Fail(Reasons.InventoryFull, $"Can't buy {sal.DisplayName}: inventory is full or you can't hold it."); yield break; }
+        if (!sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P)) { c.Fail(Reasons.InventoryFull, $"Can't buy {sal.DisplayName}: inventory is full or you can't hold it. " + StorageHint()); yield break; }
 
         var purchase = Rt.Helper.Reflection.GetMethod(shop, "tryToPurchaseItem");
         int maxChunk = Math.Max(1, sal.GetSalableInstance().maximumStackSize());
@@ -1119,6 +1236,9 @@ public static partial class AgentTools
         if (slot < 0) { c.Fail(Reasons.NoItem, $"No \"{name}\" in inventory."); yield break; }
         var item = P.Items[slot];
         if (item is Tool || !item.canBeShipped()) { c.Fail($"{item.DisplayName} can't be shipped."); yield break; }
+        int requested = Has(a, "quantity") ? Math.Clamp(I(a, "quantity", item.Stack), 1, item.Stack) : item.Stack;
+        var protection = SaleProtectionError(item, requested, a);
+        if (protection != null) { c.Fail(protection); yield break; }
 
         var binTile = new Point(bin.tileX.Value, bin.tileY.Value);
         var sub = new CallContext();
@@ -1234,13 +1354,24 @@ public static partial class AgentTools
             yield break;
         }
 
-        // Bed in the morning is a choice, but a wide-awake farmer is told so once a day: the valley is still open.
-        if (Game1.timeOfDay < 1700 && P.Stamina > P.MaxStamina / 4 && Rt.EarlyBedDay != AgentLog.FarmDay)
+        // Repeating the call must not bypass the morning-work guard. Rest/eat/store items
+        // and do quests or socialize instead; exhausted or seriously hurt farmers may sleep.
+        if (DaySafety.BlockEarlyBed(Game1.timeOfDay, P.Stamina, P.MaxStamina, P.health, P.maxHealth))
         {
             Rt.EarlyBedDay = AgentLog.FarmDay;
             c.Fail(Reasons.NotReady, $"It's only {WorldText.FormatTime(Game1.timeOfDay)} and you aren't tired at all (energy {(int)P.Stamina}/{P.MaxStamina}): " +
-                                     "lying down now you'd just stare at the ceiling. The shops, the townspeople, the beach and the mines are all open for hours yet. " +
-                                     "Call go_to_bed again if you really mean to sleep this early.");
+                                     "lying down now you'd just stare at the ceiling. " + PendingFarmWork() + "The shops, the townspeople, the beach and the mines are all open for hours yet. " +
+                                     "Do not repeat go_to_bed to skip the day. Work on quests, meet villagers, craft/place a Chest, organize supplies or upgrade your backpack. If paths fail, use look and replan; a full inventory is not a reason to sleep.");
+            yield break;
+        }
+
+        // Out of energy in the early afternoon: a rest in bed gives it back and the day goes on (asked once a day; a second call sleeps).
+        if (DaySafety.SuggestRest(Game1.timeOfDay, P.Stamina, P.MaxStamina, P.health, P.maxHealth, Game1.IsMultiplayer) && Rt.RestSuggestedDay != AgentLog.FarmDay)
+        {
+            Rt.RestSuggestedDay = AgentLog.FarmDay;
+            c.Fail(Reasons.NotReady, $"You are tired (energy {(int)P.Stamina}/{P.MaxStamina}), but it is only {WorldText.FormatTime(Game1.timeOfDay)}. " +
+                                     "Instead of ending the day, rest in your bed (rest: about +14 energy every 10 minutes, it stops when you are full or after the minutes you give) " +
+                                     "and then get up and carry on. " + PendingFarmWork() + "If you really want to end the day, call go_to_bed again.");
             yield break;
         }
 
@@ -1280,7 +1411,7 @@ public static partial class AgentTools
                     AnswerNightAlone(Rt, t);
                 else if (t > 30 && (Romance.NightQuestion(c, Rt, t) || Naming.NightPrompt(c)))
                     yield break;
-                if (Game1.Date.TotalDays > dayBefore && Context.IsWorldReady && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay && P.CanMove)
+                if (Game1.Date.TotalDays > dayBefore && Context.IsWorldReady && Game1.activeClickableMenu == null && !Game1.fadeToBlack && !Game1.newDay && Game1.farmEvent == null && !Game1.game1.isLocalMultiplayerNewDayActive && !P.passedOut && P.CanMove)
                     break;
                 // Pulled out of bed by something else (a town cutscene took a sleeper away on day 7): lie down again.
                 bool up = Game1.Date.TotalDays == dayBefore && !P.isInBed.Value && Game1.activeClickableMenu == null && !Game1.eventUp &&

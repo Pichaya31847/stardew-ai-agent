@@ -96,6 +96,9 @@ public static partial class WorldText
             case NamingMenu nm:
                 sb.AppendLine(Naming.StatusLine(nm));
                 break;
+            case ReadyCheckDialog check:
+                sb.AppendLine(AgentTools.ReadyCheckLine(check));
+                break;
             default:
                 // A Yes/No or proposal box (#53) has its own tool; any other menu is read with menu().
                 sb.AppendLine(Romance.MenuLine(Game1.activeClickableMenu) ??
@@ -118,7 +121,7 @@ public static partial class WorldText
             var quality = it is not Tool && it.Quality > 0 ? $", {AgentTools.QualityName(it.Quality)}" : "";
             sb.AppendLine($"  slot {i}: {it.DisplayName} x{it.Stack} [{(it is Tool ? "tool" : it.getCategoryName())}{quality}{extra}{AgentTools.RodNote(it)}]");
         }
-        return (sb.ToString().TrimEnd() + "\n" + AgentTools.InventoryExtras(p)).TrimEnd();
+        return (sb.ToString().TrimEnd() + "\n" + AgentTools.InventoryExtras(p) + "\n" + AgentTools.StorageHint()).TrimEnd();
     }
 
     /// <summary>One-character symbol and optional label for a tile.</summary>

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -48,6 +50,8 @@ public static class SplitScreenPatches
         void Postfix(System.Reflection.MethodBase? m, string name) => h.Patch(m, postfix: new HarmonyMethod(typeof(SplitScreenPatches), name));
 
         Postfix(AccessTools.Method(typeof(GameRunner), "Draw"), nameof(GameRunnerDraw_Postfix));
+        h.Patch(AccessTools.Method(typeof(Game1), nameof(Game1.SetWindowSize)),
+            transpiler: new HarmonyMethod(typeof(SplitScreenPatches), nameof(WindowLayout_Transpiler)));
 
         // SMAPI reads the real devices through these base methods every tick.
         Postfix(AccessTools.Method(typeof(InputState), nameof(InputState.GetKeyboardState)), nameof(Keyboard_Postfix));
@@ -66,6 +70,47 @@ public static class SplitScreenPatches
     }
 
     // ------------------------------------------------------------------ input lock (P1)
+
+    private static IEnumerable<CodeInstruction> WindowLayout_Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var item = AccessTools.PropertyGetter(typeof(List<Vector4>), "Item");
+        foreach (var instruction in instructions)
+        {
+            yield return instruction;
+            // Change the normalized layout before the game allocates screen/UI render targets,
+            // so every viewport has the correct aspect ratio rather than stretching a final image.
+            if (instruction.Calls(item))
+                yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(SplitScreenPatches), nameof(DashboardWindow)));
+        }
+    }
+
+    private static Vector4 DashboardWindow(Vector4 original)
+    {
+        if (!_config.OperatorDashboard || !_config.SplitScreen ||
+            !Players.Slots.Any(s => s.Role == SeatRole.Camera && s.Screen >= Players.ScreenCount))
+            return original;
+        int count = GameRunner.instance.gameInstances.Count;
+        int index = Game1.game1.instanceIndex;
+        if ("bottom".Equals(_config.DashboardLayout, StringComparison.OrdinalIgnoreCase) && count == 2 && Players.ScreenCount == 2)
+            return BottomDashboardBounds(index);
+        if (count == 3 && Players.ScreenCount == 3)
+            return index switch
+            {
+                0 => new Vector4(0f, 0f, .5f, .5f),
+                1 => new Vector4(0f, .5f, .5f, .5f),
+                2 => new Vector4(.5f, .5f, .5f, .5f),
+                _ => original
+            };
+        return original;
+    }
+
+    internal static Vector4 BottomDashboardBounds(int index) => index switch
+        {
+            0 => new Vector4(0f, 0f, 0.5f, 0.6f),
+            1 => new Vector4(0.5f, 0f, 0.5f, 0.6f),
+            2 => new Vector4(0f, 0.6f, 1f, 0.4f),
+            _ => throw new ArgumentOutOfRangeException(nameof(index))
+        };
 
     private static void Keyboard_Postfix(ref KeyboardState __result)
     {
@@ -89,7 +134,7 @@ public static class SplitScreenPatches
     /// <summary>Skip the "Paused" scroll drawn on every screen while the world is frozen.</summary>
     private static bool ScrollText_Prefix(string s)
     {
-        if (!Clean || !Context.IsWorldReady || !Game1.HostPaused)
+        if ((!Clean && !_config.OperatorDashboard) || !Context.IsWorldReady || !Game1.HostPaused)
             return true;
         _pausedText ??= Game1.content.LoadString("Strings\\StringsFromCSFiles:DayTimeMoneyBox.cs.10378");
         return s != _pausedText;
@@ -98,7 +143,7 @@ public static class SplitScreenPatches
     /// <summary>The game hides the whole HUD while paused; keep it so frozen frames match live ones.</summary>
     private static void IsHudDrawn_Postfix(ref bool __result)
     {
-        if (__result || !Clean || !Game1.HostPaused)
+        if (__result || (!Clean && !_config.OperatorDashboard) || !Game1.HostPaused)
             return;
         __result = (Game1.displayHUD || Game1.eventUp) && Game1.gameMode == 3 && !Game1.freezeControls && !Game1.panMode && !Game1.game1.takingMapScreenshot;
     }
@@ -132,6 +177,7 @@ public static class SplitScreenPatches
     /// <summary>After every screen is composed into the back buffer, save it if a capture was asked for.</summary>
     private static void GameRunnerDraw_Postfix()
     {
+        OperatorPanel.Draw();
         var path = PendingCapture;
         if (path == null)
             return;

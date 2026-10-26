@@ -677,9 +677,11 @@ public static class SaveFolder
 
     public static string? Name => Context.IsWorldReady ? Loaded ?? Constants.SaveFolderName : null;
 
+    /// <summary>On the host screen only. Constants.SaveFolderName is per screen: a farmhand screen read "_123" instead of
+    /// "Farm_123", so the journals.txt keys of P2 never matched the farm's. Remember the host's name for every screen.</summary>
     public static void OnSaveLoaded()
     {
-        Loaded = Pending;
+        Loaded = Pending ?? Constants.SaveFolderName;
         Pending = null;
     }
 }

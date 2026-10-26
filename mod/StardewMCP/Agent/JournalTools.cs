@@ -34,7 +34,12 @@ public static class JournalTools
 
     private static readonly Regex Bullet = new(@"^(?:[-*•]+|\d+[.)])\s+", RegexOptions.CultureInvariant);
 
+    // "[shops, day 6] " or "[day 2] " at the start of a note: a tag copied from notes.md, not part of the fact.
+    private static readonly Regex CopiedTag = new(@"^\s*\[\s*([^\],\s]+)?\s*,?\s*(?:day\s*\d+)?\s*\]\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>The diary is for the viewers (ThoughtLanguage); lessons, plan, notes, self and people come back into every prompt (WorkLanguage).</summary>
     private static string Lang => AgentTools.Config.LanguageName();
+    private static string WorkLang => AgentTools.Config.WorkLanguageName();
 
     public static List<ToolDef> All() => new()
     {
@@ -49,14 +54,14 @@ public static class JournalTools
             Schema = AgentTools.Obj(new
             {
                 diary = AgentTools.Str($"Today's diary in {Lang}, 3-8 sentences, written as yourself: what you did, what went well or badly"),
-                lessons = AgentTools.Str($"1-3 short lessons from today in {Lang}, one per line, in your own words: what worked, what failed and why, a rule for next time. They are added to your lessons list"),
-                plan = AgentTools.Str($"Your plans and follow-ups in {Lang}: what to do next, when crops are ready, when to pick up a tool, goals. " +
+                lessons = AgentTools.Str($"1-3 short lessons from today in {WorkLang}, one per line, in your own words: what worked, what failed and why, a rule for next time. They are added to your lessons list"),
+                plan = AgentTools.Str($"Your plans and follow-ups in {WorkLang}: what to do next, when crops are ready, when to pick up a tool, goals. " +
                                       "Use the headings \"## Season\" (long goal), \"## Week\" and \"## Today\" (what to do when you wake up); " +
                                       "a section you leave out keeps its old text, a heading with nothing under it clears that section"),
-                notes = AgentTools.Str("Optional facts you found out, one per line, e.g. \"shops: Pierre is closed on Wednesday\". " +
+                notes = AgentTools.Str($"Optional facts you found out, in {WorkLang}, one per line, e.g. \"shops: Pierre is closed on Wednesday\". " +
                                        $"Start a line with a topic and colon ({string.Join(", ", NoteTopics)}) to file it. They are added to your facts list"),
-                self = AgentTools.Str($"Optional note in {Lang} on who you are and what you live for, max ~150 words. Overwritten each evening; cite today's events as evidence."),
-                people = AgentTools.Str($"Optional notes in {Lang} on the others on the farm: one line per person (current stance + latest evidence + day)."),
+                self = AgentTools.Str($"Optional note in {WorkLang} on who you are and what you live for, max ~150 words. Overwritten each evening; cite today's events as evidence."),
+                people = AgentTools.Str($"Optional notes in {WorkLang} on the others on the farm: one line per person (current stance + latest evidence + day)."),
                 day = AgentTools.Int("Optional farm day to write this journal for, from 1 to today. Only for catching up a day you did not write (for example after passing out). Default: today")
             }, "diary", "lessons", "plan"),
             Instant = true, AppendStatus = false, Run = Journal
@@ -78,12 +83,12 @@ public static class JournalTools
         if (diary.Length < MinDiary) { c.Fail($"Write a real diary entry in {Lang} first (diary parameter, at least {MinDiary} characters)."); yield break; }
 
         var lessons = Lines(AgentTools.S(a, "lessons"), MaxLessonChars);
-        if (lessons.Count == 0) { c.Fail($"lessons is empty. Write 1-3 short lessons from day {day} in {Lang}, one per line (what worked, what failed and why)."); yield break; }
+        if (lessons.Count == 0) { c.Fail($"lessons is empty. Write 1-3 short lessons from day {day} in {WorkLang}, one per line (what worked, what failed and why)."); yield break; }
         int lessonsDropped = Math.Max(0, lessons.Count - MaxLessonLines);
         lessons = lessons.Take(MaxLessonLines).ToList();
 
         var plan = AgentTools.S(a, "plan").Trim();
-        if (plan.Length == 0) { c.Fail($"plan is empty. Write what you plan to do next in {Lang}, with ## Season, ## Week and ## Today headings if you can."); yield break; }
+        if (plan.Length == 0) { c.Fail($"plan is empty. Write what you plan to do next in {WorkLang}, with ## Season, ## Week and ## Today headings if you can."); yield break; }
         if (plan.Length > MaxPlanChars) { c.Fail($"plan is {plan.Length} characters; the limit is {MaxPlanChars}. Shorten it."); yield break; }
 
         var notes = Notes(AgentTools.S(a, "notes")).Take(MaxNoteLines).ToList();
@@ -159,9 +164,17 @@ public static class JournalTools
     internal static List<(string topic, string text)> Notes(string text)
     {
         var notes = new List<(string topic, string text)>();
-        foreach (var line in Lines(text, MaxNoteChars))
+        foreach (var raw in Lines(text, MaxNoteChars))
         {
-            string topic = "other", body = line;
+            // The model copies the "[topic, day N]" tags it reads in its facts list back into new notes ("[other, day 6] [shops, day 6] ...").
+            string topic = "other", line = raw;
+            for (var m = CopiedTag.Match(line); m.Success; m = CopiedTag.Match(line))
+            {
+                var tagged = m.Groups[1].Value.Trim().ToLowerInvariant();
+                if (NoteTopics.Contains(tagged) && tagged != "other") topic = tagged;
+                line = line[m.Length..];
+            }
+            string body = line;
             int colon = line.IndexOf(':');
             if (colon > 0 && colon <= 8)
             {

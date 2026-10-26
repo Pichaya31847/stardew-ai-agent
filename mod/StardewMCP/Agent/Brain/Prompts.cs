@@ -36,10 +36,14 @@ public static class Prompts
         }
     }
 
+    /// <param name="Speech">Language of `say` ({SPEECH_LANGUAGE}); empty = <paramref name="Language"/>.</param>
+    /// <param name="MemoryLines">How many of the last lessons and notes lines go into the prompt.</param>
+    /// <param name="Work">Language of reasons and the memory files ({WORK_LANGUAGE}); empty = <paramref name="Language"/>.</param>
     public sealed record SystemInputs(
         string Model, string PlayerName, string Seat, string Language, bool FreezeWhileThinking,
         IReadOnlyList<(string Seat, string Name, string Kind)> Others,
-        string Self, string People, string Lessons, string Plan, string Notes);
+        string Self, string People, string Lessons, string Plan, string Notes,
+        string Speech = "", int MemoryLines = MemoryMaxLines, string Work = "");
 
     public static string System(string template, SystemInputs i)
     {
@@ -62,14 +66,16 @@ public static class Prompts
             .Replace("{MODEL_NAME}", i.Model)
             .Replace("{PLAYER_NAME}", i.PlayerName)
             .Replace("{SEAT}", i.Seat)
+            .Replace("{SPEECH_LANGUAGE}", Or(i.Speech, i.Language))
+            .Replace("{WORK_LANGUAGE}", Or(i.Work, i.Language))
             .Replace("{LANGUAGE}", i.Language)
             .Replace("{TIME_MODE}", timeMode)
             .Replace("{OTHERS}", others)
             .Replace("{SELF}", Or(i.Self, "(nothing yet: you are new here)"))
             .Replace("{PEOPLE}", Or(i.People, "(nothing yet)"))
-            .Replace("{LESSONS}", Or(Tail(i.Lessons), "(none yet)"))
+            .Replace("{LESSONS}", Or(Tail(i.Lessons, Math.Max(1, i.MemoryLines)), "(none yet)"))
             .Replace("{PLAN}", Or(i.Plan, "(no plan yet: make one this morning)"))
-            .Replace("{NOTES}", Or(Tail(i.Notes), "(none yet)"));
+            .Replace("{NOTES}", Or(Tail(i.Notes, Math.Max(1, i.MemoryLines)), "(none yet)"));
     }
 
     private static string Or(string? s, string fallback) => string.IsNullOrWhiteSpace(s) ? fallback : s.Trim();
@@ -101,6 +107,13 @@ public static class Prompts
         }
         sb.Append("\nStart the day: `think` about your plan, then get to work. When the work is done or it gets late, write your `journal` " +
                   "(diary, lessons, plan, and your `self` / `people` notes), then `go_to_bed`.");
+        sb.Append("\nInclude social actions TODAY, not only on the first day: use villagers() and talk_to a reachable NPC you have not greeted today. " +
+                  "AI companions are players: find them with look/status and use say nearby, not talk_to. If say reports nobody heard, move within view before trying again. " +
+                  "Reply to a companion's greeting when practical. Private think text and diary entries are not speech. Safety and urgent timed tasks take priority.");
+        sb.Append("\nDo not sleep in the morning merely because your pack is full or one route failed. FIRST put items not needed for the current job in a chest; build storage if necessary. Buy the bigger backpack (upgrade_backpack) once you have its price plus this week's seed money; until then use a chest. Continue quests or useful work. " +
+                  "A changing date, explosion or overnight cutscene is not proof you are awake: wait until the night event and fade finish before say/respond/movement.");
+        sb.Append("\nIf a letter asks you to come to a place at a time (a villager wants to see you, an event), put it in today's plan and be there in time: these scenes unlock tools, recipes and the story.");
+        sb.Append("\nReview today's Help Wanted board and your journal EVERY day. If a request is available and achievable before its deadline, visit the actual Help Wanted board in Town and call accept_quest, then verify it appears in quests. The adjacent calendar is a different board. If no request is feasible, explain why and continue an existing quest. Do not merely describe accepting a quest without calling the tool. Close/read all ordinary messages and finish explicit dialogue choices before starting your next job.");
         return sb.ToString();
     }
 

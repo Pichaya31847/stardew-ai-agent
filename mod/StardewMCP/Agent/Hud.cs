@@ -37,6 +37,7 @@ public static class Hud
     public static void Init(IModHelper helper, ModConfig config)
     {
         _cfg = config;
+        OperatorPanel.Init(helper, config);
         AgentLog.Added += OnEntry;
         helper.Events.Display.RenderedHud += OnRenderedHud;
     }
@@ -64,6 +65,8 @@ public static class Hud
     {
         if (!_cfg.ShowHud || !Context.IsWorldReady || Game1.eventUp || Game1.activeClickableMenu != null)
             return;
+        if (_cfg.OperatorDashboard)
+            return; // the operator panel shows every seat without covering the farm views
         var seat = Players.Current;
         if (seat.Role != SeatRole.Ai)
             return;
@@ -130,7 +133,7 @@ public static class Hud
     }
 
     /// <summary>Replace characters the font cannot draw (emoji, scripts without a font mod), so DrawString never throws.</summary>
-    private static string Sanitize(SpriteFont font, string text)
+    internal static string Sanitize(SpriteFont font, string text)
     {
         if (_glyphs == null || _glyphFont != font)
         {
@@ -144,7 +147,7 @@ public static class Hud
     }
 
     /// <summary>Word wrap; a word wider than the line (Thai has no spaces) is broken by characters.</summary>
-    private static IEnumerable<string> Wrap(SpriteFont font, string text, int width, int maxLines)
+    internal static IEnumerable<string> Wrap(SpriteFont font, string text, int width, int maxLines)
     {
         var lines = new List<string>();
         var line = new StringBuilder();

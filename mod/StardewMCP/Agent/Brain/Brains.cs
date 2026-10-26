@@ -108,9 +108,9 @@ public static class Brains
 
     private static List<LlmTool> LlmTools(Dictionary<string, ToolDef> tools)
     {
-        _llmTools ??= tools.Values
-            .Select(t => new LlmTool(t.Name, t.Description, JsonSerializer.SerializeToElement(t.Schema, AgentLog.Json)))
-            .ToList();
+        // Rebuilt on every start: BrainTools may have changed in the config menu.
+        _llmTools = ToolProfile.Apply(_cfg.BrainTools, tools.Values
+            .Select(t => new LlmTool(t.Name, t.Description, JsonSerializer.SerializeToElement(t.Schema, AgentLog.Json))));
         return _llmTools;
     }
 

@@ -198,7 +198,35 @@ internal static class BundleReader
             return "This farm took a Joja membership, so the Community Center bundles are closed for good.";
         if (Game1.currentLocation is CommunityCenter || HasMail(who, "ccDoorUnlock") || HasMail(who, "canReadJunimoText") || HasMail(who, "ccIsComplete"))
             return null;
-        return "The Community Center is not open yet: its door has not been unlocked (the Community Center scene), and the Wizard teaches you to read the Junimo notes.";
+        return "The Community Center is not open yet. " + NextStep(who);
+    }
+
+    /// <summary>
+    /// The next step of the Community Center story, from the mail flags the game sets along it: Lewis's scene (entering Town
+    /// from the Bus Stop, no rain, spring 5+, 8:00-13:00) unlocks the door (ccDoorUnlock), the Junimo note inside brings the Wizard's letter (wizardJunimoNote), his tower teaches the
+    /// script (canReadJunimoText), then the bundles until every room is restored (ccIsComplete).
+    /// </summary>
+    public static string NextStep(Farmer who)
+    {
+        if (IsJoja(who)) return "none: the farm chose Joja.";
+        if (HasMail(who, "ccIsComplete")) return "done: the Community Center is restored.";
+        if (!HasMail(who, "ccDoorUnlock"))
+        {
+            const string how = "enter Pelican Town (Town) from the Bus Stop on a day without rain, spring 5 or later, between 8:00 and 13:00: " +
+                               "Mayor Lewis's cutscene shows you the old Community Center and unlocks its door. travel_to Town from the Farm goes through the Bus Stop; if you are already in Town, walk out to the Bus Stop and back in.";
+            bool today = Game1.Date.TotalDays >= 4 && !Game1.isRaining && Game1.timeOfDay < 1300;
+            bool laterToday = today && Game1.timeOfDay < 800;
+            return today
+                ? $"TODAY the conditions are met: {how} {(laterToday ? "Be in Town after 8:00." : "Go now, before 13:00.")}"
+                : how + (Game1.Date.TotalDays < 4 ? " It is too early in the year yet." : Game1.isRaining ? " Not today: it is raining." : " Too late for today; try tomorrow morning.");
+        }
+        bool letter = who.mailbox.Contains("wizardJunimoNote") || HasMail(who, "wizardJunimoNote");
+        if (!HasMail(who, "canReadJunimoText") && !letter)
+            return "go into the Community Center (travel_to CommunityCenter) and interact with the glowing Junimo note on the wall; the Wizard writes to you the next day.";
+        if (!HasMail(who, "canReadJunimoText"))
+            return "visit the Wizard's tower (travel_to WizardHouse, west of Cindersap Forest) and talk to him: he teaches you to read the Junimo notes.";
+        return "fill the bundles: bundles lists what is missing and which of your items fit; bring them into the Community Center and donate_bundle. " +
+               "Plan crops, fish and forage by season, because many items only exist in one season.";
     }
 
     /// <summary>Every bundle, rooms in game order. Empty when the world has no bundle data.</summary>

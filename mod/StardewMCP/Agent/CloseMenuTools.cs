@@ -14,6 +14,70 @@ namespace StardewMCP.Agent;
 /// </summary>
 public static partial class AgentTools
 {
+    private static readonly HashSet<string> ClearMenusBeforeAction = new()
+    {
+        "walk_to", "travel_to", "talk_to", "interact", "use_tool", "fish", "plant", "harvest",
+        "water_all", "harvest_all", "clear_area", "till_area", "place", "craft", "ship", "eat", "rest", "accept_quest"
+    };
+
+    internal static IEnumerator WithMenuLifecycle(string name, bool instant, IEnumerator action, CallContext c)
+    {
+        if (!instant && ClearMenusBeforeAction.Contains(name))
+        {
+            yield return PrepareForTravel(c);
+            if (!c.Ok) yield break;
+        }
+        yield return action;
+    }
+
+    /// <summary>Finish ordinary messages through native UI, retaining the full text in the tool result.
+    /// Questions, shops, chests and cutscenes remain open for an explicit decision/use.</summary>
+    private static IEnumerator FinishMessages(CallContext c)
+    {
+        var notes = new List<string>();
+        string? previous = null;
+        for (int step = 0; step < 160; step++)
+        {
+            if (Game1.eventUp || Game1.farmEvent != null || Game1.newDay || Game1.fadeToBlack) break;
+            if (Game1.activeClickableMenu is LetterViewerMenu letter)
+            {
+                var text = letter.mailMessage == null ? "" : string.Join("\n", letter.mailMessage);
+                notes.Add("Letter read: " + text);
+                var closed = new CallContext();
+                yield return CloseMenu(default, closed);
+                notes.Add(closed.Result);
+                if (ReferenceEquals(Game1.activeClickableMenu, letter)) break;
+                continue;
+            }
+            if (Game1.activeClickableMenu is not DialogueBox box) break;
+            var line = box.getCurrentString() ?? "";
+            if (line != previous && line.Length > 0) notes.Add("Dialogue: " + line);
+            previous = line;
+            if (box.isQuestion)
+            {
+                notes.Add(WorldText.MenuState().Trim());
+                break; // purchases, proposals and story choices must be read and answered explicitly
+            }
+            if (!box.transitioning) box.receiveLeftClick(0, 0);
+            yield return Ticks(4);
+        }
+        if (Game1.activeClickableMenu is DialogueBox { isQuestion: false })
+            notes.Add("Dialogue still open; use respond to finish it before moving.");
+        c.Result = string.Join("\n", notes);
+    }
+
+    private static IEnumerator PrepareForTravel(CallContext c)
+    {
+        var messages = new CallContext();
+        yield return FinishMessages(messages);
+        if (Game1.activeClickableMenu is ShopMenu or ItemGrabMenu or GameMenu or QuestLog or Billboard)
+            yield return CloseMenu(default, new CallContext());
+        if (Game1.activeClickableMenu != null)
+            c.Fail(Reasons.MenuOpen, messages.Result + "\nResolve the open choice/menu before travelling. " + WorldText.MenuState().Trim());
+        else if (messages.Result.Length > 0)
+            Rt.Log.Add("system", text: "Finished messages before travel:\n" + messages.Result);
+    }
+
     /// <summary>Claims the menu's contents; whatever it did is added to <paramref name="notes"/> for close_menu's result.</summary>
     private static IEnumerator ClaimBeforeClose(IClickableMenu? menu, List<string> notes)
     {

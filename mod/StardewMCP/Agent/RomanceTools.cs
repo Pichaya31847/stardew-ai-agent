@@ -268,7 +268,8 @@ internal static class Romance
     /// <summary>The menu is a Yes/No box or a proposal box. Found by class name where the game's classes are unverified.</summary>
     internal static PromptKind KindOf(IClickableMenu? menu)
     {
-        if (menu == null) return PromptKind.None;
+        // A co-op ready check (festival entry, sleep) is a ConfirmationDialog too, but nobody answers it: it waits for every farmer.
+        if (menu == null || menu is ReadyCheckDialog) return PromptKind.None;
         var name = menu.GetType().Name;
         if (name.Contains("PendingProposal", StringComparison.Ordinal)) return PromptKind.Waiting;
         if (menu is ConfirmationDialog || name.Contains("Proposal", StringComparison.Ordinal)) return PromptKind.Question;
@@ -572,7 +573,8 @@ public static partial class AgentTools
         }
         else
         {
-            c.Fail("No Yes/No box is open on your screen. status shows what is open.");
+            var open = WorldText.MenuState().Trim();
+            c.Fail(Reasons.NotHere, "No Yes/No box is open on your screen." + (open.Length > 0 ? " " + open : ""));
             yield break;
         }
 

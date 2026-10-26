@@ -28,7 +28,7 @@ public static partial class AgentTools
                       "item: one item name, or \"everything\" (store: all except tools, seeds and cooked dishes, so tidying the pack is one call; take: all). " +
                       "items: several names at once. quality: normal, silver, gold or iridium to move only that quality (default every quality). " +
                       "quantity: how many of each named item (default all). The result says what moved, per quality, and what did not fit. " +
-                      "x, y is the chest tile; leave it out to use a chest menu you already opened with interact.",
+                      "x, y is the chest tile; leave it out to use a chest menu you already opened with interact, or else your own nearest chest on this map.",
         Schema = Obj(new
         {
             x = Int("Chest tile x"),
@@ -157,14 +157,24 @@ public static partial class AgentTools
 
         bool opened = false;
         var spot = "";
-        if (Has(a, "x") && Has(a, "y"))
+        Point? at = Has(a, "x") && Has(a, "y") ? new Point(I(a, "x", -1), I(a, "y", -1)) : null;
+        // No tile and no chest open: your own nearest chest on this map (27 failures in the local Qwen run asked for "the chest").
+        if (at == null && Game1.activeClickableMenu is not ItemGrabMenu { context: Chest })
+        {
+            at = NearestOwnChest();
+            if (at == null)
+            {
+                c.Fail(Reasons.NotFound, $"There is no chest of yours on {Loc.Name}. Give the chest's tile (x, y) from look, or craft and place a Chest.");
+                yield break;
+            }
+        }
+        if (at is Point tile)
         {
             if (Game1.activeClickableMenu != null)
             {
-                c.Fail("A menu is open. close_menu first, or leave out x and y to use the chest menu that is open.");
+                c.Fail(Reasons.MenuOpen, "A menu is open. close_menu first, or leave out x and y to use the chest menu that is open.");
                 yield break;
             }
-            var tile = new Point(I(a, "x", -1), I(a, "y", -1));
             // interact walks next to the tile and presses the action button; it is the same path a player's hands take.
             var sub = new CallContext();
             yield return Interact(ArgsOf(new { x = tile.X, y = tile.Y, reason = Reason(a) }), sub);
@@ -182,15 +192,25 @@ public static partial class AgentTools
                 yield break;
             }
         }
-        else if (Game1.activeClickableMenu is not ItemGrabMenu { context: Chest })
-        {
-            c.Fail("Give the chest's tile (x, y), or open a chest with interact first.");
-            yield break;
-        }
 
         yield return ChestWork(action, names, everything, quality, quantity, spot, c);
         if (opened && Game1.activeClickableMenu != null)
             yield return CloseMenu(default, new CallContext());
+    }
+
+    /// <summary>The nearest player chest on this map that this seat placed, else one nobody owns; never another player's (that would be theft).</summary>
+    private static Point? NearestOwnChest()
+    {
+        var me = Rt.Log.Player;
+        var here = P.TilePoint;
+        return Loc.objects.Pairs
+            .Where(kv => kv.Value is Chest { playerChest.Value: true, fridge.Value: false })
+            .Select(kv => (tile: new Point((int)kv.Key.X, (int)kv.Key.Y), owner: Ownership.OwnerOf(kv.Value)))
+            .Where(x => x.owner == null || x.owner == me)
+            .OrderBy(x => x.owner == me ? 0 : 1)
+            .ThenBy(x => Math.Abs(x.tile.X - here.X) + Math.Abs(x.tile.Y - here.Y))
+            .Select(x => (Point?)x.tile)
+            .FirstOrDefault();
     }
 
     /// <summary>The work with the chest menu open. Sets <paramref name="c"/>; the caller closes the menu.</summary>

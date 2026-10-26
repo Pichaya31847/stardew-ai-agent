@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
@@ -41,6 +42,10 @@ public sealed class SeatBrain
     public long InputTokens;
     public long OutputTokens;
     public int Calls;
+    private readonly ConcurrentQueue<string> _operatorCommands = new();
+    private readonly DailySocialProgress _social = new();
+
+    public void Order(string text) => _operatorCommands.Enqueue(text);
 
     public SeatBrain(PlayerSlot slot, ILlmProvider llm, ModConfig cfg, IMonitor mon, AgentLog log,
         IReadOnlyDictionary<string, ToolDef> tools, IReadOnlyList<LlmTool> llmTools, string assetDir)
@@ -73,6 +78,7 @@ public sealed class SeatBrain
     private int Day => State?.Day ?? 0;
     private string Time => State?.Time ?? "";
     private PlayerLog Log => _slot.Runtime.Log;
+    private static bool OvernightTransition => Players.Slots.Any(s => s.Role == SeatRole.Ai && s.State is ScreenState { Transitioning: true });
 
     // ------------------------------------------------------------------ the day loop
 
@@ -83,7 +89,7 @@ public sealed class SeatBrain
             while (!ct.IsCancellationRequested)
             {
                 Status = "waiting for the game";
-                while (!ct.IsCancellationRequested && !(_slot.Active && State is { Ready: true } && Day > 0))
+                while (!ct.IsCancellationRequested && !(_slot.Active && DaySafety.CanStartDay(State?.Ready == true, State?.Transitioning == true, OvernightTransition, Day)))
                     await Task.Delay(500, ct);
 
                 int day = Day;
@@ -95,8 +101,14 @@ public sealed class SeatBrain
 
                 // In bed (or idle and released, or over its token budget): do not hold the world for the others, wait for the morning.
                 _slot.SetReleased(true);
-                while (!ct.IsCancellationRequested && Day == day)
+                while (!ct.IsCancellationRequested && Day == day &&
+                       (_operatorCommands.IsEmpty || (_cfg.DailyTokenBudget > 0 && InputTokens + OutputTokens >= _cfg.DailyTokenBudget)))
                     await Task.Delay(1000, ct);
+                if (Day == day && !ct.IsCancellationRequested)
+                {
+                    Log.Add("system", text: $"{Id}: operator instruction resumes this day");
+                    continue; // retain today's token usage and let MarkContact reclaim this seat
+                }
                 Log.Add("system", text: $"{Id}: day {day} used {InputTokens} input + {OutputTokens} output tokens in {Calls} tool calls");
                 InputTokens = OutputTokens = 0;
                 Calls = 0;
@@ -118,9 +130,24 @@ public sealed class SeatBrain
     {
         string system = BuildSystem();
         var others = Brains.OtherPlayers(_slot);
+        _social.Begin(day, others.Count > 0);
         NewSession();
 
         string briefing = await BriefingText(ct);
+        // Chores the model kept putting off (the day-1 gift box, letters, quest money) are done before its first turn.
+        if (_cfg.BrainMorningChores)
+        {
+            var (_, chores) = await RunTool(new LlmToolCall("morning_chores", "morning_chores", "{\"reason\":\"morning chores\"}"), ct);
+            briefing += "\nDone for you this morning (gift boxes, mailbox, quest money):\n" + chores;
+        }
+        var (questsOk, questReport) = await RunTool(new LlmToolCall("morning_quests", "quests", "{}"), ct);
+        if (questsOk && _cfg.BrainAcceptBoardQuest && questReport.Contains("still FREE", StringComparison.Ordinal))
+        {
+            var (accepted, acceptText) = await RunTool(new LlmToolCall("morning_board", "accept_quest", "{\"reason\":\"take today's Help Wanted request\"}"), ct);
+            briefing += $"\nToday's Help Wanted request was taken for you{(accepted ? "" : " (it failed)")}: {Prompts.Clip(acceptText, 600)}";
+            (questsOk, questReport) = await RunTool(new LlmToolCall("morning_quests", "quests", "{}"), ct);
+        }
+        if (questsOk) briefing += "\nToday's actual journal and board report:\n" + questReport;
         var pass = PassOut.View(Id);
         var messages = new List<ChatMessage>
         {
@@ -134,6 +161,13 @@ public sealed class SeatBrain
 
         while (!dayDone && !ct.IsCancellationRequested)
         {
+            if (OvernightTransition)
+            {
+                Status = "waiting for night event / fade to finish";
+                _slot.SetReleased(true);
+                while (OvernightTransition && !ct.IsCancellationRequested) await Task.Delay(250, ct);
+                _slot.MarkContact();
+            }
             while (RunControl.Holding && !ct.IsCancellationRequested)
             {
                 Status = "paused";
@@ -151,6 +185,8 @@ public sealed class SeatBrain
                 return true;
             }
 
+            while (_operatorCommands.TryDequeue(out var order))
+                messages.Add(ChatMessage.User("The human operator gives you this instruction. Prioritize it in your next decisions, subject to the game's rules: " + order));
             Status = "thinking";
             var resp = await Ask(system, messages, ct);
             if (resp == null)
@@ -165,16 +201,25 @@ public sealed class SeatBrain
 
             if (resp.ToolCalls.Count == 0)
             {
-                if (State?.InBed == true)
+                // Farmers spawn on a bed each morning. Standing on that tile is not proof that
+                // the day's work is finished; only a successful go_to_bed ends the action loop.
+                if (++idle >= MaxIdleTurns)
                 {
-                    Status = "in bed";
-                    return true;
-                }
-                if (++idle > MaxIdleTurns)
-                {
-                    Log.Add("system", text: $"{Id} ended its turn {MaxIdleTurns} times without acting: the world runs on without it today");
-                    Status = "idle (released)";
-                    return true;
+                    Log.Add("system", text: $"{Id}: no tool calls after {MaxIdleTurns} replies; releasing the clock and retrying within 30 seconds");
+                    Status = "idle (retry within 30s)";
+                    _slot.SetReleased(true);
+                    for (int wait = 0; wait < 60 && Day == day && _operatorCommands.IsEmpty; wait++)
+                        await Task.Delay(500, ct);
+                    if (Day != day) return true;
+                    _slot.MarkContact();
+                    messages = new List<ChatMessage>
+                    {
+                        ChatMessage.User(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) +
+                            "\nYour last replies contained no tool calls. The day is not finished. Call status now, then use a real tool to continue. End the day only with journal and go_to_bed.\n" + _social.Pending)
+                    };
+                    NewSession();
+                    idle = 0;
+                    continue;
                 }
                 messages.Add(ChatMessage.User(Prompts.Nudge(Time, false)));
                 continue;
@@ -185,7 +230,13 @@ public sealed class SeatBrain
             bool breakNow = false;
             foreach (var call in resp.ToolCalls)
             {
-                var (ok, text) = await RunTool(call, ct);
+                // One bounded reminder, never a hard social quota or a delay when it is late/in the mines.
+                string bedtime = call.Name == "go_to_bed" && State is { Energy: > 20 } &&
+                    !(State.Location?.StartsWith("UndergroundMine", StringComparison.Ordinal) ?? false) &&
+                    int.TryParse(Time.Split(':')[0], out var hour) && hour < 21
+                    ? _social.BeforeBed() : "";
+                var (ok, text) = bedtime.Length > 0 ? (false, bedtime) : await RunTool(call, ct);
+                _social.Observe(call.Name, ok, text);
                 results.Add(new LlmToolResult(call.Id, call.Name, text, !ok));
                 lastResults.Enqueue($"{call.Name}: {Prompts.Clip(text, 400)}");
                 while (lastResults.Count > 3) lastResults.Dequeue();
@@ -202,9 +253,15 @@ public sealed class SeatBrain
 
             if (breakNow || messages.Sum(m => m.Chars) > hardCap)
             {
-                messages = new List<ChatMessage> { ChatMessage.User(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults)) };
+                messages = new List<ChatMessage> { ChatMessage.User(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) + "\n" + _social.Brief) };
                 NewSession();
                 Log.Add("system", text: $"{Id}: conversation restarted with a handoff ({(breakNow ? "session break" : "context too large")})");
+            }
+            var reminder = _social.Reminder();
+            if (reminder.Length > 0)
+            {
+                messages.Add(ChatMessage.User(reminder));
+                Log.Add("system", text: "Daily social reminder: " + reminder);
             }
         }
 
@@ -227,7 +284,10 @@ public sealed class SeatBrain
             People: Log.ReadPeople(),
             Lessons: _log.ReadMemoryText(_log.LessonsFile(Id)),
             Plan: Log.ReadPlan(),
-            Notes: _log.ReadMemoryText(_log.NotesFile(Id)));
+            Notes: _log.ReadMemoryText(_log.NotesFile(Id)),
+            Speech: _cfg.SpeechLanguageName(),
+            MemoryLines: _cfg.BrainMemoryLines,
+            Work: _cfg.WorkLanguageName());
         return Prompts.System(Prompts.Template(_assetDir), inputs);
     }
 
@@ -315,6 +375,8 @@ public sealed class SeatBrain
 
         if (!_slot.Active)
             return (false, "You are not in the game yet. Wait a moment and try again.");
+        if (OvernightTransition)
+            return (false, "A night event, pass-out or fade is still playing. The new date does not mean you are awake. Wait for the transition to finish; do not say, respond, move or sleep again yet.");
 
         _slot.MarkContact();
         Status = tool.Name;

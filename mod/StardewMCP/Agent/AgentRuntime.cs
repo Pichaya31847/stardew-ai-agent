@@ -50,6 +50,9 @@ public class AgentRuntime
     public int PendingProfessionDay { get; set; }
     /// <summary>Farm day the "too early for bed" note was given (once a day, see go_to_bed).</summary>
     public int EarlyBedDay { get; set; }
+
+    /// <summary>Farm day on which go_to_bed already pointed a tired farmer at a rest in bed (once a day; the second call sleeps).</summary>
+    public int RestSuggestedDay { get; set; }
     public ModConfig Config { get; }
     public IModHelper Helper { get; }
 
@@ -260,6 +263,12 @@ public class AgentRuntime
                     Finish();
                     return;
                 }
+                if (call.Tool.Mail && (Game1.farmEvent != null || Game1.newDay || Game1.game1.isLocalMultiplayerNewDayActive || Game1.player.passedOut))
+                {
+                    _ctx.Fail(Reasons.NotReady, "An overnight event or pass-out is still in progress. Wait until the farmer is awake before calling gameplay or social tools; do not treat the new date as a completed wake-up.");
+                    Finish();
+                    return;
+                }
 
                 // Loop guard: the same call already failed again and again, so don't run it a fifth time.
                 if (_rt.Guard.Refuse(call, out var refusal))
@@ -269,7 +278,7 @@ public class AgentRuntime
                     return;
                 }
 
-                _stack.Push(call.Tool.Run(call.Args, _ctx));
+                _stack.Push(AgentTools.WithMenuLifecycle(call.Tool.Name, call.Instant, call.Tool.Run(call.Args, _ctx), _ctx));
             }
             catch (Exception ex)
             {

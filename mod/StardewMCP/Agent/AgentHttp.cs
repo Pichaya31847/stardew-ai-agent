@@ -162,6 +162,19 @@ public class AgentHttp
                 case "/api/stats":
                     await Json(res, DayStats.Api(_log, req.QueryString["n"]));
                     return;
+                case "/api/order":
+                    if (req.HttpMethod != "POST") { res.StatusCode = 405; res.Close(); return; }
+                    using (var orderReader = new StreamReader(req.InputStream, Encoding.UTF8))
+                    {
+                        using var orderDoc = JsonDocument.Parse(await orderReader.ReadToEndAsync());
+                        var orderRoot = orderDoc.RootElement;
+                        string orderTarget = orderRoot.TryGetProperty("target", out var ot) ? ot.GetString() ?? "all" : "all";
+                        string orderText = orderRoot.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
+                        int sent = OperatorPanel.Send(orderTarget, orderText);
+                        res.StatusCode = sent > 0 ? 200 : 400;
+                        await Json(res, new { queued = sent, target = orderTarget });
+                    }
+                    return;
                 case "/api/control":
                     // pause | resume | stop_after_day | stop_now | clear_stop (GET reads the flags)
                     var controlBody = "";
@@ -177,7 +190,7 @@ public class AgentHttp
                     return;
                 case "/api/day":
                     int.TryParse(req.QueryString["n"], out var n);
-                    var log = System.IO.File.Exists(_log.DayFile(n)) ? await System.IO.File.ReadAllTextAsync(_log.DayFile(n), Encoding.UTF8) : "";
+                    var log = _log.ReadDay(n);
                     var diaries = new Dictionary<string, string>();
                     foreach (var seat in Players.Slots.Where(s => s.Role == SeatRole.Ai))
                         if (System.IO.File.Exists(_log.DiaryFile(n, seat.Id)))

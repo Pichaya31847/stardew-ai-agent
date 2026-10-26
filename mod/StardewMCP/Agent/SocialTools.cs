@@ -89,11 +89,11 @@ public static class SocialTools
         new()
         {
             Name = "say",
-            Description = "Say something out loud: it appears above your head and in the chat box. Only players who can see you " +
+            Description = $"Say something out loud, IN {AgentTools.Config.SpeechLanguageName().ToUpperInvariant()}: it appears above your head and in the chat box. Only players who can see you " +
                           "hear it (the same place, close enough to be in their view, the way look lists players in view). To talk to " +
                           "someone, go and find them first. Keep it short. Write @name to call a player who can hear you: it " +
                           "stops what they are doing (walking, waiting, farming) so they read it at once.",
-            Schema = AgentTools.Obj(new { text = AgentTools.Str("What you say") }, "text"),
+            Schema = AgentTools.Obj(new { text = AgentTools.Str($"What you say, in {AgentTools.Config.SpeechLanguageName()}") }, "text"),
             Instant = true, AppendStatus = false, Run = Say
         },
         new()
@@ -123,7 +123,7 @@ public static class SocialTools
     /// <summary>"Gemini": how players refer to each other.</summary>
     internal static string Label(PlayerSlot s) => NameOf(s) ?? "?";
 
-    private static IEnumerable<PlayerSlot> OtherAis() =>
+    internal static IEnumerable<PlayerSlot> OtherAis() =>
         Players.Slots.Where(s => s.Role == SeatRole.Ai && s.Id != Me && s.Active && NameOf(s) != null);
 
     /// <summary>The AI seat named by <paramref name="to"/> (id or name); otherwise fails <paramref name="c"/> with the valid choices.</summary>
@@ -214,6 +214,13 @@ public static class SocialTools
 
     private static IEnumerator Say(JsonElement a, CallContext c)
     {
+        if (Game1.newDay || Game1.fadeToBlack || Game1.isWarping || Game1.farmEvent != null || Game1.player.passedOut || Game1.game1.isLocalMultiplayerNewDayActive ||
+            Game1.activeClickableMenu is ReadyCheckDialog { checkName: "sleep" } ||
+            AgentTools.Rt.CurrentTool == "go_to_bed")
+        {
+            c.Fail("Sleep/warp transition is in progress. Do not speak or respond to player chat now; wait until the new day or warp finishes. Existing messages remain in your inbox.");
+            yield break;
+        }
         var text = Clip(Clean(AgentTools.S(a, "text")), MaxChat);
         if (text.Length == 0) { c.Fail("text is empty"); yield break; }
         var me = Game1.player;

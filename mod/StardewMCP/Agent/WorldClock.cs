@@ -47,14 +47,16 @@ public static class WorldClock
     {
         RunControl.Tick();
         bool split = Players.SplitScreen;
+        bool transitioning = Game1.farmEvent != null || Game1.game1.isLocalMultiplayerNewDayActive ||
+            Players.Slots.Any(s => s.Role == SeatRole.Ai && s.State is ScreenState { Transitioning: true });
         var thinking = Players.Slots.Where(s => IsThinking(s, split)).ToArray();
         ThinkingSeats = thinking.Select(s => s.Id).ToArray();
 
         bool freeze = _config.FreezeTimeWhileThinking && Context.IsWorldReady && thinking.Length > 0 &&
-                      !Game1.newDay && !NightMenuOpen() && !Players.Slots.Any(s => s.Runtime.WakingUp);
+                      !transitioning && !Game1.newDay && !Game1.fadeToBlack && !NightMenuOpen() && !Players.Slots.Any(s => s.Runtime.WakingUp);
         // Paused / stopped by the operator: let the running actions finish, then stand still whoever is thinking.
         if (RunControl.Holding)
-            freeze = Context.IsWorldReady && !Game1.newDay && !NightMenuOpen() && !RunControl.AnyActionRunningAwake;
+            freeze = Context.IsWorldReady && !transitioning && !Game1.newDay && !Game1.fadeToBlack && !NightMenuOpen() && !RunControl.AnyActionRunningAwake;
 
         if (split)
         {
@@ -69,12 +71,21 @@ public static class WorldClock
         Frozen = freeze;
     }
 
+    /// <summary>SMAPI can skip validated ticks during saving. Never retain our thinking pause across a fade/save.</summary>
+    public static void ReleaseForTransition()
+    {
+        SetPause(false);
+        ReleaseClock();
+        Frozen = false;
+        ThinkingSeats = Array.Empty<string>();
+    }
+
     private static bool IsThinking(PlayerSlot slot, bool split)
     {
         var watch = _thinking[slot.Screen];
         // Only a seat an AI has talked to (an MCP call, or its built-in brain) holds the world: a fresh install with
         // nothing connected must not stop the clock on every save.
-        bool candidate = slot.Role == SeatRole.Ai && !slot.Runtime.ActionRunning && slot.Connected &&
+        bool candidate = slot.Role == SeatRole.Ai && slot.State is not ScreenState { Transitioning: true } && !slot.Runtime.ActionRunning && slot.Connected &&
                          (split ? slot.Active : slot.Screen == 0);
         if (!candidate || slot.TimedOut || slot.Released)
         {

@@ -194,3 +194,5 @@ The studio's program that runs the AI sessions through each day.
 
 **Smoke test**:
 An in-game check without any AI, run through the debug hooks on a copy of a save.
+
+Operator dashboard: the optional local control panel drawn over a camera seat, showing all AI seats and queuing human instructions before the next model request.
