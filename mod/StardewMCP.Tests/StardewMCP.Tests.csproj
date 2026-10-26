@@ -52,6 +52,7 @@
     <Compile Include="..\StardewMCP\Agent\Brain\GeminiProvider.cs" Link="Mod\Brain\GeminiProvider.cs" />
     <Compile Include="..\StardewMCP\Agent\Brain\Prompts.cs" Link="Mod\Brain\Prompts.cs" />
     <Compile Include="..\StardewMCP\Agent\Brain\ToolProfile.cs" Link="Mod\Brain\ToolProfile.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\RepeatBrake.cs" Link="Mod\Brain\RepeatBrake.cs" />
   </ItemGroup>
 
 </Project>

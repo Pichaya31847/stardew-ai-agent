@@ -29,6 +29,9 @@ public sealed class SeatBrain
     private readonly AgentLog _log;
     private readonly IReadOnlyDictionary<string, ToolDef> _tools;
     private readonly IReadOnlyList<LlmTool> _llmTools;
+    private IReadOnlyList<LlmTool>? _withoutNaming;
+    private bool _namingOpen;
+    private readonly RepeatBrake _brake = new();
     private readonly string _assetDir;
     private CancellationTokenSource? _cts;
 
@@ -236,7 +239,12 @@ public sealed class SeatBrain
                     !(State.Location?.StartsWith("UndergroundMine", StringComparison.Ordinal) ?? false) &&
                     int.TryParse(Time.Split(':')[0], out var hour) && hour < 21
                     ? _social.BeforeBed() : "";
-                var (ok, text) = bedtime.Length > 0 ? (false, bedtime) : await RunTool(call, ct);
+                _brake.Other(call.Name);
+                var refused = _brake.Before(call.Name);
+                var (ok, text) = refused != null ? (false, refused) : bedtime.Length > 0 ? (false, bedtime) : await RunTool(call, ct);
+                if (refused == null) text += _brake.After(call.Name, ok);
+                if (text.Contains("Naming: \"", StringComparison.Ordinal)) _namingOpen = true; // a naming box opened: offer the name tool
+                else if (ok && call.Name == "name") _namingOpen = false;
                 _social.Observe(call.Name, ok, text);
                 results.Add(new LlmToolResult(call.Id, call.Name, text, !ok));
                 lastResults.Enqueue($"{call.Name}: {Prompts.Clip(text, 400)}");
@@ -326,6 +334,13 @@ public sealed class SeatBrain
         return "";
     }
 
+    /// <summary>
+    /// The tool list for this request. name is only offered while a naming box is open: a local Qwen3 called it 20 times in
+    /// a row with nothing to name (its tool-call format has a "name" key of its own).
+    /// </summary>
+    private IReadOnlyList<LlmTool> ToolsNow() =>
+        _namingOpen ? _llmTools : _withoutNaming ??= _llmTools.Where(t => t.Name != "name").ToList();
+
     private async Task<LlmResponse?> Ask(string system, List<ChatMessage> messages, CancellationToken ct)
     {
         int attempt = 0;
@@ -334,7 +349,7 @@ public sealed class SeatBrain
             try
             {
                 var sw = Stopwatch.StartNew();
-                var r = await _llm.Complete(system, messages, _llmTools, ct);
+                var r = await _llm.Complete(system, messages, ToolsNow(), ct);
                 InputTokens += r.InputTokens;
                 OutputTokens += r.OutputTokens;
                 _mon.Log($"[{Id}] {_llm.Model}: {r.ToolCalls.Count} tool call(s), {r.InputTokens}+{r.OutputTokens} tokens, {sw.ElapsedMilliseconds} ms", LogLevel.Trace);
