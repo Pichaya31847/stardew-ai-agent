@@ -443,6 +443,35 @@ public static partial class AgentTools
 
     internal static IEnumerator TalkTo(JsonElement a, CallContext c) => TalkToNpc(a, c);
 
+    /// <summary>talk_to for another farmer: go to their map and stand next to them; players talk with say, not talk_to.</summary>
+    private static IEnumerator WalkUpToFarmer(PlayerSlot mate, CallContext c)
+    {
+        static int Dist(Point a, Point b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y);
+        var label = SocialTools.Label(mate);
+        var them = Romance.FarmerOf(mate);
+        if (them?.currentLocation == null) { c.Fail(Reasons.NotHere, $"{label} is not in the world right now."); yield break; }
+        if (them.currentLocation.NameOrUniqueName != Loc.NameOrUniqueName)
+        {
+            var trip = new CallContext();
+            yield return TravelTo(them.currentLocation.Name, trip);
+            if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get to {label} in {them.currentLocation.Name}: {trip.Result}"); yield break; }
+        }
+        for (int leg = 0; leg < 6; leg++)
+        {
+            them = Romance.FarmerOf(mate);
+            if (them?.currentLocation == null || them.currentLocation.NameOrUniqueName != Loc.NameOrUniqueName) break;
+            var aim = them.TilePoint;
+            if (Dist(P.TilePoint, aim) <= 1) break;
+            var walk = new CallContext();
+            yield return WalkAdjacent(aim, walk, () => Romance.FarmerOf(mate) is { } f && Dist(f.TilePoint, aim) >= 2);
+            if (!walk.Ok) yield return Ticks(30);
+        }
+        them = Romance.FarmerOf(mate);
+        var near = them != null && them.currentLocation?.NameOrUniqueName == Loc.NameOrUniqueName && Dist(P.TilePoint, them.TilePoint) <= 3;
+        if (!near) { c.Fail(Reasons.NoPath, $"Couldn't catch up with {label}; they are in {them?.currentLocation?.Name ?? "?"}. look shows them when they are near."); yield break; }
+        c.Result = $"You are next to {label} now. Farmers talk with say, not talk_to: call say(text=...) now and they will hear you.";
+    }
+
     private static string? PlayerSocialHint(string name)
     {
         var other = Players.Slots.FirstOrDefault(s => (s.Role is SeatRole.Ai or SeatRole.Human) &&
@@ -497,8 +526,15 @@ public static partial class AgentTools
             yield break;
         }
         var npc = NpcInfo.ByName(name);
-        if (npc == null) { c.Fail(PlayerSocialHint(name) ?? $"No villager called \"{name}\". villagers() lists who you can talk to."); yield break; }
         bool go = NpcFlag(a, "go", true);
+        if (npc == null)
+        {
+            // Another farmer: walk up to them, so the next say is heard (the 14B run asked talk_to for AI2 twelve times).
+            var mate = go ? SocialTools.OtherAis().FirstOrDefault(s => string.Equals(SocialTools.Label(s), name, StringComparison.OrdinalIgnoreCase)) : null;
+            if (mate != null) { yield return WalkUpToFarmer(mate, c); yield break; }
+            c.Fail(PlayerSocialHint(name) ?? $"No villager called \"{name}\". villagers() lists who you can talk to.");
+            yield break;
+        }
 
         Item? giftItem = null;
         int giftSlot = -1;

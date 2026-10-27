@@ -1128,7 +1128,7 @@ public static partial class AgentTools
 
     private static IEnumerator ShopList(JsonElement a, CallContext c)
     {
-        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(Reasons.NotHere, "No shop is open. Entering the building does not open a shop. Walk to its counter and interact with BOTH x and y during opening hours first." + ShopCounterHint()); yield break; }
+        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(Reasons.NotHere, "No shop is open. Inside a shop, call buy or sell directly: they walk to the counter and open it. Or interact with BOTH x and y of the counter, then shop_list." + ShopCounterHint()); yield break; }
         var cur = CurrencyUnit(shop.currency);
         var sb = new StringBuilder($"Shop {shop.ShopId} — you have {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}\n");
         foreach (var s in shop.forSale)

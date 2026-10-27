@@ -89,7 +89,8 @@ public static partial class AgentTools
             // Check the room before the ingredients are used up, so a full pack never eats them.
             if (!P.couldInventoryAcceptThisItem(created))
             {
-                why = "your inventory is full";
+                // Said 17 times in a row in the 14B run without a way out: a full pack is why the farmer wanted a chest.
+                why = "your inventory is full: free one slot first (ship surplus Stone, Fiber or Sap from the Farm's shipping bin, eat something, or trash a stack you don't need), then craft again";
                 break;
             }
             cr.consumeIngredients(null);

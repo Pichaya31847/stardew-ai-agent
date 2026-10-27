@@ -106,7 +106,7 @@ During overnight farm events, fades or pass-out transitions, new gameplay/social
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `talk_to` | `name`, *`gift_item`*, *`go`* | Find a villager (travels across maps unless `go=false`, and re-aims while they walk), talk, optionally give a gift (also how quest deliveries are handed over; their money is claimed right after); reports friendship points before and after and their reaction. For NPCs only: a fellow AI farmer's name returns guidance to find them and use `say` nearby, including their last known position. |
+| `talk_to` | `name`, *`gift_item`*, *`go`* | Find a villager (travels across maps unless `go=false`, and re-aims while they walk), talk, optionally give a gift (also how quest deliveries are handed over; their money is claimed right after); reports friendship points before and after and their reaction. With a fellow farmer's name it walks up to them and tells you to use `say` (farmers don't talk_to each other). |
 | `bouquet` | `name`, *`go`* | Ask a villager to date you (8 hearts) |
 | `mermaid_pendant` | `name`, *`go`* | Propose to a villager (10 hearts, upgraded house) |
 | `festival` | `action`, *`to`*, *`max`* | On a festival day: `start` talks to Lewis and begins the main event, `leave` leaves the festival (alone it confirms; in co-op every farmer must leave together). Both wait up to a minute for the other farmers, tell them, and then cancel the wait with `not_ready`. `eggs` picks up eggs during the Egg Festival's egg hunt (nearest first, until the hunt ends or `max` are picked; `look` shows the eggs as `E`) |

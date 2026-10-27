@@ -464,6 +464,11 @@ public static class Briefing
         if (tomorrow != null)
             sb.Append($" Tomorrow: {tomorrow}.");
         sb.Append($" Luck: {LuckText(Game1.player.DailyLuck)}.");
+        // The 14B run walked to Pierre's on a Wednesday six times: say up front which shops are shut all day.
+        var weekday = CalendarData.DateAhead(0).Weekday;
+        var closed = CalendarData.Shops.Where(s => s.ClosedDays.Contains(weekday)).Select(s => $"{s.Name} ({s.Location})").ToList();
+        if (closed.Count > 0)
+            sb.Append($" CLOSED all day today ({CalendarData.DayNames[weekday]}): {string.Join(", ", closed)}.");
         return sb.ToString();
     }
 
