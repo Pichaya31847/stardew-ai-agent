@@ -61,6 +61,9 @@ public class DayStats
 
     public static void Init(AgentLog log) => _log = log;
 
+    /// <summary>The run's log, for other day-end files (the goals tool's progress_pN.json).</summary>
+    internal static AgentLog? Log => _log;
+
     private readonly PlayerLog _plog;
     private DayState? _day;
     private string _save = "";
@@ -202,6 +205,15 @@ public class DayStats
         catch (Exception ex)
         {
             _plog.Add("system", text: $"Day stats for day {_day!.Day} failed: {ex.Message}");
+        }
+        try
+        {
+            if (slot.Connected && _log != null)
+                AgentTools.WriteProgress(_log, Player, null, _day!.Day);
+        }
+        catch (Exception ex)
+        {
+            _plog.Add("system", text: $"Progress file for day {_day!.Day} failed: {ex.Message}");
         }
         Begin(newDay, scan);
     }

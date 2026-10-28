@@ -53,6 +53,8 @@ public static partial class AgentTools
         /// <summary>Tiles out to land the bobber.</summary>
         public int Tiles;
         public bool Bubbles;
+        /// <summary>The legendary fish whose spot the bobber is aimed into, or null.</summary>
+        public string? Legend;
         public int Score;
     }
 
@@ -69,6 +71,7 @@ public static partial class AgentTools
         Name = "fish",
         Description = "Fish with the fishing rod in your inventory. You walk to the best shore spot within about 25 tiles (a long stretch of water; fish bubbles * first), " +
                       "cast, wait for a bite, win the reel-in minigame and collect the fish and any treasure chest. " +
+                      "When a legendary fish you can catch today has its spot in reach, every cast aims into that spot (fish_guide says where each fish bites). " +
                       "Each cast costs energy and game time. Stops early when energy is low, the inventory is full, or it is after 00:30.",
         Schema = Obj(new { tries = Int("How many casts to attempt, 1-5 (default 3)"), reason = Str(ReasonDesc) }, "reason"),
         Run = Fish
@@ -160,7 +163,7 @@ public static partial class AgentTools
         if (slot < 0)
             return "";
         var rod = P.Items[slot];
-        return $"Fishing: level {P.fishingLevel.Value} · rod {rod.DisplayName}{RodNote(rod)} · use the fish tool near water";
+        return $"Fishing: level {P.fishingLevel.Value} · rod {rod.DisplayName}{RodNote(rod)} · use the fish tool near water; fish_guide says which fish bite where today";
     }
 
     // ------------------------------------------------------------------ planning
@@ -174,6 +177,7 @@ public static partial class AgentTools
         var me = P.TilePoint;
         Func<int, int, bool> fishable = (fx, fy) => loc.isTileOnMap(fx, fy) && (loc.isTileFishable(fx, fy) || loc.isWaterTile(fx, fy));
         var splash = SplashTile(loc);
+        var legends = FishGuide.BossTargets(loc);
         var found = new List<FishSpot>();
 
         for (int dx = -FishRadius; dx <= FishRadius; dx++)
@@ -204,14 +208,30 @@ public static partial class AgentTools
                             bubbles = true;
                         }
                     }
+                    // A legendary fish only bites when the bobber lands in its spot: aim there whenever a cast can reach it.
+                    string? legend = null;
+                    foreach (var (name, area, stand) in legends)
+                    {
+                        if (stand is Rectangle sr && !sr.Contains(x, y))
+                            continue;
+                        for (int k = Math.Min(run, reach); k >= 2 && legend == null; k--)
+                            if (area.Contains(x + CastMath.Dx[d] * k, y + CastMath.Dy[d] * k))
+                            {
+                                tiles = k;
+                                legend = name;
+                            }
+                        if (legend != null)
+                            break;
+                    }
                     found.Add(new FishSpot
                     {
                         Stand = new Point(x, y),
                         Dir = d,
                         Run = run,
                         Tiles = tiles,
-                        Bubbles = bubbles,
-                        Score = 10 * Math.Min(tiles, 6) + (bubbles ? 60 : 0) - (Math.Abs(dx) + Math.Abs(dy))
+                        Bubbles = bubbles && legend == null,
+                        Legend = legend,
+                        Score = 10 * Math.Min(tiles, 6) + (bubbles && legend == null ? 60 : 0) + (legend != null ? 500 : 0) - (Math.Abs(dx) + Math.Abs(dy))
                     });
                 }
             }
@@ -290,7 +310,7 @@ public static partial class AgentTools
             c.Fail(why);
             yield break;
         }
-        Rt.Log.Add("system", text: $"fish: assist={assist}, spot ({spot.Stand.X},{spot.Stand.Y}) facing {WorldText.DirName(spot.Dir)}, water run {spot.Run}, aim {spot.Tiles}{(spot.Bubbles ? ", bubbles" : "")}, added distance {added}");
+        Rt.Log.Add("system", text: $"fish: assist={assist}, spot ({spot.Stand.X},{spot.Stand.Y}) facing {WorldText.DirName(spot.Dir)}, water run {spot.Run}, aim {spot.Tiles}{(spot.Bubbles ? ", bubbles" : "")}{(spot.Legend != null ? $", legend {spot.Legend}" : "")}, added distance {added}");
 
         var walk = new CallContext();
         yield return WalkTo(spot.Stand, walk);
@@ -335,7 +355,7 @@ public static partial class AgentTools
         }
 
         var sb = new StringBuilder();
-        sb.Append($"Fished from ({spot.Stand.X},{spot.Stand.Y}) facing {WorldText.DirName(spot.Dir)} over {spot.Run} water tiles{(spot.Bubbles ? " with fish bubbles" : "")}: {casts} cast(s), {caught} fish.");
+        sb.Append($"Fished from ({spot.Stand.X},{spot.Stand.Y}) facing {WorldText.DirName(spot.Dir)} over {spot.Run} water tiles{(spot.Bubbles ? " with fish bubbles" : "")}{(spot.Legend != null ? $", aimed at the {spot.Legend} spot (legendary: it bites rarely, keep casting)" : "")}: {casts} cast(s), {caught} fish.");
         foreach (var l in lines)
             sb.Append('\n').Append(l);
         if (stop.Length > 0)

@@ -472,13 +472,14 @@ public static partial class AgentTools
         new()
         {
             Name = "museum",
-            Description = "The Museum (ArchaeologyHouse, Gunther). action list (default): the items in your inventory that the Museum still accepts. " +
-                          "donate: put an item (or \"all\") on the next free display spot; you must be inside the Museum (travel_to ArchaeologyHouse). " +
+            Description = "The Museum (ArchaeologyHouse in Town, Gunther). It takes one of each artifact, mineral and gem; Gunther gives rewards as the collection grows. " +
+                          "action list (default): the items you carry that the Museum still needs. " +
+                          "donate: walks you to the Museum and puts an item (default \"all\": every piece it still needs) on display. " +
                           "rewards: talk to Gunther and take the rewards you have earned. list keeps game time frozen.",
             Schema = Obj(new
             {
                 action = new { type = "string", @enum = new[] { "list", "donate", "rewards" }, description = "list (default), donate or rewards" },
-                item = Str("donate: item name from your inventory, or \"all\""),
+                item = Str("donate: item name from your inventory, or \"all\" (default)"),
                 reason = Str(ReasonDesc)
             }),
             InstantFor = a => S(a, "action").Trim().ToLowerInvariant() is "" or "list",
@@ -1044,10 +1045,35 @@ public static partial class AgentTools
         }
         sb.Append(rows.Count == 0
             ? "The Museum accepts none of the items you carry. It takes one of each artifact and mineral that is not on display yet."
-            : $"The Museum accepts: {string.Join(", ", rows)}. It keeps one of each; donate with museum(action=donate, item=...) inside the Museum (travel_to ArchaeologyHouse).");
+            : $"The Museum still needs: {string.Join(", ", rows)}. museum(action=donate) walks you there and puts them all on display (one of each).");
         int rewards = MuseumRewardCount(museum);
-        if (rewards > 0) sb.Append($"\nGunther has {rewards} reward(s) waiting for you: museum(action=rewards) inside the Museum.");
+        if (rewards > 0) sb.Append($"\nGunther has {rewards} reward(s) waiting for you: museum(action=rewards).");
         return sb.ToString();
+    }
+
+    /// <summary>One line for status / inventory: the carried pieces the Museum still needs and any rewards waiting; empty when there are none.</summary>
+    internal static string MuseumHint()
+    {
+        try
+        {
+            if (Game1.getLocationFromName("ArchaeologyHouse") is not LibraryMuseum museum) return "";
+            var wanted = P.Items.Where(it => it is SObject && MuseumAccepts(museum, it)).Select(it => it.DisplayName).Distinct().ToList();
+            int rewards = MuseumRewardCount(museum);
+            var parts = new List<string>();
+            if (wanted.Count > 0) parts.Add($"the Museum still needs your {string.Join(", ", wanted.Take(6))}{(wanted.Count > 6 ? $" and {wanted.Count - 6} more" : "")} (museum(action=donate), don't sell them)");
+            if (rewards > 0) parts.Add($"Gunther holds {rewards} reward(s) for you (museum(action=rewards))");
+            var geodes = P.Items.Where(it => it != null && IsGeode(it)).Sum(it => it.Stack);
+            if (geodes > 0) parts.Add($"{geodes} geode(s) to crack at Clint's (crack_geode)");
+            var unshipped = P.Items.Where(it => it is SObject o && !o.bigCraftable.Value && !P.basicShipped.ContainsKey(o.ItemId)
+                                                 && SObject.isPotentialBasicShipped(o.ItemId, o.Category, o.Type) && !wanted.Contains(o.DisplayName))
+                .Select(it => it.DisplayName).Distinct().ToList();
+            if (unshipped.Count > 0) parts.Add($"never shipped yet: {string.Join(", ", unshipped.Take(6))}{(unshipped.Count > 6 ? $" and {unshipped.Count - 6} more" : "")} (ship one of each for Full Shipment)");
+            return parts.Count > 0 ? "Finds: " + string.Join("; ", parts) : "";
+        }
+        catch (Exception)
+        {
+            return "";
+        }
     }
 
     /// <summary>
@@ -1056,14 +1082,27 @@ public static partial class AgentTools
     /// </summary>
     private static IEnumerator MuseumDonate(JsonElement a, CallContext c)
     {
-        if (Loc is not LibraryMuseum museum)
-        {
-            c.Fail($"Donate inside the Museum; you are in {Loc.Name}. Use travel_to ArchaeologyHouse first.");
-            yield break;
-        }
         if (Game1.activeClickableMenu != null || Game1.eventUp) { c.Fail("Close the open menu or finish the scene first."); yield break; }
         var want = S(a, "item").Trim();
-        if (want.Length == 0) { c.Fail("item is required: an inventory item name, or \"all\"."); yield break; }
+        if (want.Length == 0) want = "all";
+        if (Loc is not LibraryMuseum)
+        {
+            // Check before the walk that there is something to give.
+            if (Game1.getLocationFromName("ArchaeologyHouse") is LibraryMuseum far && want.Equals("all", StringComparison.OrdinalIgnoreCase)
+                && !P.Items.Any(it => it is SObject && MuseumAccepts(far, it)))
+            {
+                c.Fail(Reasons.NoItem, "The Museum accepts none of the items you carry. It takes one of each artifact and mineral that is not on display yet.");
+                yield break;
+            }
+            var trip = new CallContext();
+            yield return TravelTo("ArchaeologyHouse", trip);
+            if (!trip.Ok || Loc is not LibraryMuseum)
+            {
+                c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get into the Museum (ArchaeologyHouse, open 8:00-18:00): {trip.Result}");
+                yield break;
+            }
+        }
+        var museum = (LibraryMuseum)Loc;
 
         var items = new List<Item>();
         if (want.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -1087,7 +1126,6 @@ public static partial class AgentTools
 
         var pieces = LateBound.Require(museum, "museumPieces");
         if (pieces == null) { c.Fail("The Museum has no display list in this game version."); yield break; }
-        int rewardsBefore = MuseumRewardCount(museum);
         var donated = new List<string>();
         string? stopped = null;
         foreach (var it in items)
@@ -1111,7 +1149,13 @@ public static partial class AgentTools
         var text = $"Donated to the Museum: {string.Join(", ", donated)}.";
         if (stopped != null) text += " " + stopped;
         int rewardsAfter = MuseumRewardCount(museum);
-        if (rewardsAfter > 0 && rewardsAfter > rewardsBefore) text += $" Gunther has {rewardsAfter} reward(s) for you now: museum(action=rewards).";
+        if (rewardsAfter > 0)
+        {
+            // Collect them on the spot: the farmer is standing in the Museum already.
+            var collect = new CallContext();
+            yield return MuseumRewards(collect);
+            text += collect.Ok ? " " + collect.Result : $" Gunther has {rewardsAfter} reward(s) for you: museum(action=rewards) ({collect.Result}).";
+        }
         c.Result = text;
     }
 
@@ -1139,11 +1183,17 @@ public static partial class AgentTools
     /// <summary>Gunther's "Collect" answer opens a grab menu with the earned rewards; take them all.</summary>
     private static IEnumerator MuseumRewards(CallContext c)
     {
-        if (Loc is not LibraryMuseum museum)
+        if (Loc is not LibraryMuseum)
         {
-            c.Fail($"Gunther is in the Museum; you are in {Loc.Name}. Use travel_to ArchaeologyHouse first.");
-            yield break;
+            var trip = new CallContext();
+            yield return TravelTo("ArchaeologyHouse", trip);
+            if (!trip.Ok || Loc is not LibraryMuseum)
+            {
+                c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get into the Museum (ArchaeologyHouse, open 8:00-18:00): {trip.Result}");
+                yield break;
+            }
         }
+        var museum = (LibraryMuseum)Loc;
         if (Game1.activeClickableMenu != null || Game1.eventUp) { c.Fail("Close the open menu or finish the scene first."); yield break; }
         if (MuseumRewardCount(museum) == 0)
         {

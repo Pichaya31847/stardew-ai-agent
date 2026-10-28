@@ -35,6 +35,7 @@ internal static class NightEvents
         var player = rt.Log.Player;
         if (!Seats.TryGetValue(player, out var seat)) Seats[player] = seat = new Seat();
         var ev = Game1.farmEvent;
+        AnswerBabyQuestion(rt, ev);
         if (ev != null && !seat.Active)
         {
             seat.Active = true;
@@ -47,6 +48,22 @@ internal static class NightEvents
             seat.Active = false;
             Finish(rt, player, seat);
         }
+    }
+
+    /// <summary>
+    /// The spouse's "have a baby?" question (QuestionEvent) comes at night while the AI sleeps. Children are part of the
+    /// run's goal (Full House), so an AI seat answers "Yes" (response key "Yes") the way a click would; a human seat answers itself.
+    /// </summary>
+    private static void AnswerBabyQuestion(AgentRuntime rt, StardewValley.Events.FarmEvent? ev)
+    {
+        if (ev is not StardewValley.Events.QuestionEvent) return;
+        if (Players.ById(rt.Log.Player) is not { Role: SeatRole.Ai }) return;
+        if (Game1.activeClickableMenu is not StardewValley.Menus.DialogueBox { isQuestion: true } box || box.transitioning || box.responses == null) return;
+        int yes = Array.FindIndex(box.responses, r => r.responseKey == "Yes");
+        if (yes < 0) return;
+        box.selectedResponse = yes;
+        box.receiveLeftClick(0, 0);
+        rt.Log.Add("system", text: "Answered yes to the spouse's baby question (goal: Full House)");
     }
 
     /// <summary>Notes for this seat since its last result, once ("" when none). Appended to the footer.</summary>

@@ -12,7 +12,7 @@ namespace StardewMCP.Agent;
 
 /// <summary>
 /// Game knowledge read from the game's own data (Game1.cropData, Game1.objectData, Data/Shops, the recipe files),
-/// so it is always right and covers modded content too. Both tools are pure observations (Instant, no game time).
+/// so it is always right and covers modded content too. All its tools are pure observations (Instant, no game time); fish_guide lives in <see cref="FishGuide"/>.
 /// The planning arithmetic lives in <see cref="CropMath"/> and <see cref="RecipeMath"/>.
 /// </summary>
 public static class KnowledgeTools
@@ -40,11 +40,12 @@ public static class KnowledgeTools
             Schema = AgentTools.Obj(new { name = AgentTools.Str("Item name, e.g. Parsnip or Parsnip Seeds") }, "name"),
             Instant = true, AppendStatus = false,
             Run = (a, c) => Report(c, "item_info", () => ItemInfoReport(a))
-        }
+        },
+        FishGuide.Tool()
     };
 
     /// <summary>Runs a report; a data mismatch (a modded or changed game file) becomes a clear failure, not a crash.</summary>
-    private static IEnumerator Report(CallContext c, string tool, Func<(bool ok, string text)> build)
+    internal static IEnumerator Report(CallContext c, string tool, Func<(bool ok, string text)> build)
     {
         (bool ok, string text) r;
         try { r = build(); }

@@ -55,6 +55,7 @@ Read from the game's own data, costs no game time.
 |---|---|---|
 | `crops` ⚡ | *`season`* | Season planner: growth and regrow days, last day to plant, harvests that fit, seed and sell prices, gold per tile per day; marks the seeds you carry |
 | `item_info` ⚡ | `name` | An object's sell prices by quality, what it restores, shops that sell it and recipes that use it |
+| `fish_guide` ⚡ | *`name`*, *`season`* | Where every fish bites, from the game data: map, season, hours, weather, Fishing level, never-caught marks. No name: today's fish map by map plus the legendary fish with their exact spot; with a name: that fish's places and whether it bites today |
 | `calendar` ⚡ | *`days`* | Today and the next days: festivals, birthdays, the next festival, the main shops' hours and closed days |
 | `villagers` ⚡ | *`name`* | Everyone: where they are, hearts, talked and gifted today and this week, birthdays. With a name: the gift tastes found out so far and what a date or a proposal still needs |
 | `quests` | `action?`, `quest?`, `reason?` | Omit action or use `list` for an instant journal/board/Special Orders report, including unclaimed money. `claim_reward` opens the journal and clicks a completed quest's reward; `quest` selects its exact title (omit for the first available). Actions require a reason and no other menu open. Each quest has a "How:" line (what to bring to whom, and what you already carry), and the Community Center line says its next story step |
@@ -65,13 +66,16 @@ Read from the game's own data, costs no game time.
 |---|---|---|
 | `craft` | *`recipe`*, *`quantity`* | Craft from the recipes you know; `craft()` lists them with what the useful ones are for (Scarecrow, Sprinkler, Fertilizer, machines) and the useful recipes still to learn with how to unlock them. What is short but sits in your own chests is taken out first (walking there); otherwise the craft says how many of each you have and where to get the rest, and the same craft from an unchanged pack is refused at once |
 | `cook` | *`recipe`*, *`quantity`* | Cook the dishes you know in the farmhouse kitchen, from the pack and the fridge; `cook()` lists them |
+| `machine` | *`action`*, *`item`*, *`quantity`* | The machines where you stand (Furnace, Keg, Preserves Jar, Cheese Press, Mayonnaise Machine, Loom, Oil Maker...): `list` shows what each makes and when it is ready (and ready machines elsewhere on the farm), `load` walks to every idle machine that takes the item and puts it in (fuel such as Coal comes from the pack), `collect` takes every ready product |
+| `goals` ⚡ | *`area`* | The run's goal: every achievement except Joja, with this farmer's progress read from the game. `area`: summary (default), shipping (never shipped), cooking (not cooked yet, how to learn each recipe), crafting, fish, museum, friends, monsters (Marlon's goals), upgrades, family |
+| `upgrade_tool` | *`tool`* | Walks to Clint and orders a tool upgrade (Axe, Pickaxe, Hoe, Watering Can, Trash Can) through his upgrade shop; empty lists his offers or picks up a finished upgrade |
 | `chest` | *`x`*, *`y`*, *`action`*, *`item`*, *`items`*, *`quality`*, *`quantity`* | Store or take items in a chest or the fridge in one call: by name and quality, several items, or "everything". Without `x`/`y` it uses the open chest menu, or else your own nearest chest on the map; an `x`/`y` with no chest here but one at that tile in your house (or on the Farm) goes there first. Sale produce (crops, flowers, forage, fish, animal and artisan goods) is only stored as far as a bundle or quest still needs it; the rest stays in the pack to ship |
 | `equip` | `item`, *`slot`*, *`count`* | Put on a ring, boots or a hat (the old one goes back), or attach bait and tackle to the fishing rod |
 | `wear` | `item` | Put on a hat, shirt or pants from the pack |
 | `wardrobe` ⚡ | | What you wear and the clothes you carry |
 | `eat` | `item` | Eat or drink something |
 | `trash` | `item`, *`quantity`*, *`quality`*, *`confirm`* | Throw items away (never tools; valuables need `confirm`) |
-| `crack_geode` | *`item`*, *`quantity`* | Clint cracks geodes for 25g each |
+| `crack_geode` | *`item`*, *`quantity`* | Walks to Clint and cracks geodes (any kind the geode menu takes, Mystery Boxes too) for 25g each; quantity defaults to the whole stack; names the finds the Museum still needs. No item: a guide to each kind (where it comes from, what it holds) |
 
 ## Shops and money
 
@@ -121,14 +125,15 @@ During overnight farm events, fades or pass-out transitions, new gameplay/social
 | `community_center` | | The next Community Center step: reads the first Junimo note (walks to it), visits the Wizard once his letter came, then donates everything an open bundle needs, walking to each room's note; items for the bundles waiting in your own chests are taken out first |
 | `donate_bundle` | `item`, *`bundle`* | Walk into the Community Center to the room's note and donate an item (`all` for every fitting item, or gold for the Vault) to the first open bundle that needs it, through the game's own bundle page |
 | `joja` | `action`, *`project`*, *`confirm`* | The Joja route: `projects` lists the five projects, `membership` buys the 5,000g membership only with `confirm=true` (without it: a warning of what every player loses and gains), `buy_project` pays one |
-| `museum` | *`action`*, *`item`* | `list` what the Museum still accepts, `donate` one item or all, collect `rewards` from Gunther |
+| `museum` | *`action`*, *`item`* | `list` what the Museum still needs, `donate` walks to the Museum and gives one item or all (default) and collects any rewards, `rewards` collects from Gunther |
 
 ## Adventure
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `fish` | *`tries`* | Walk to the best shore, cast, play the BobberBar minigame and pick up treasure; one line per cast. Needs a rod |
+| `fish` | *`tries`* | Walk to the best shore, cast, play the BobberBar minigame and pick up treasure; one line per cast. Aims into a legendary fish's spot when one it can catch today is in reach. Needs a rod |
 | `fight` | `seconds`, *`eat_below`* | Fight nearby monsters: equips the best weapon, walks to the nearest one and swings; stops when all clear, at 30% health or when a menu opens. `eat_below` (HP %) eats healing food on the way |
+| `mine` | *`floors`* | Go down the Mines floor by floor: walks to the Mine, takes the elevator to the deepest floor reached, breaks rocks until the ladder shows, takes ladders and shafts, fights monsters that come close (eating below 40% health) and opens treasure chests. Stops at 22:00, low energy or health, a full pack or floor 120 |
 | `leave_mine` | | Get out of the Mines from any floor: climbs the up ladders, or warps out when health is low, it is 11 PM or the ladder can't be reached |
 | `search_trash` | *`x`*, *`y`* | Dig through a trash can; a villager who sees it likes you less |
 | `watch_tv` | *`channel`* | Watch a channel: weather, fortune, Queen of Sauce (learns the recipe), tips |

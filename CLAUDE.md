@@ -52,6 +52,10 @@ mod/StardewMCP/
     Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat interrupt events
     CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound shared with Joja
     JojaTools.cs       joja: membership (confirm guard) / projects / buy_project
+    GoalTools.cs       goals: every achievement (no Joja) measured from the game; progress_pN.json each night
+    MachineTools.cs    machine: list / load / collect placed machines through the game's own drop-in and click
+    UpgradeTools.cs    upgrade_tool: Clint's ClintUpgrade shop and the pickup at his counter
+    MineTools.cs       mine (down floor by floor), leave_mine, the damage interrupt
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
     JournalTools.cs    journal(diary, lessons, plan, notes, day); go_to_bed needs today's
@@ -145,6 +149,9 @@ mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, ti
 mod/StardewMCP/Agent/CompressedLogStore.cs  lossless appendable gzip logs, legacy migration and day discovery
 mod/StardewMCP/Agent/SaleReserve.cs  minimum crafting reserves and protected planting inputs for sales
 mod/StardewMCP/Agent/DaySafety.cs  morning readiness, early sleep (and its refusal text), committed-sleep social interruption, stale message boxes at bedtime
+mod/StardewMCP/Agent/GoalText.cs     the achievement goal list (no Joja), its targets and wording, recipe unlocks in words
+mod/StardewMCP/Agent/GeodeGuide.cs   crack_geode's guide per geode kind (where it comes from, what it holds) and loose name matching
+mod/StardewMCP/Agent/FishGuideText.cs  fish_guide's time/weather/condition wording, code-placed and legendary fish ids
 mod/StardewMCP/Agent/LanguageGuard.cs  Chinese characters in think / say / diary text that must be in another language
 mod/StardewMCP/Agent/Brain/DailySocialProgress.cs  per-day social progress and bounded reminders across context resets
 mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts

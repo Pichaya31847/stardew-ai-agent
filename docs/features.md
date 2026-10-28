@@ -22,19 +22,21 @@ makes every choice.
 - Walking cuts its way through weeds, stones and twigs when they wall the farmer in (up to 15 tiles; more is left to `clear_area`)
 - A whole-farm report: what is dry, ready, dead or won't make it this season (`farm_summary`)
 - Plan the season from the game's own data: growth days, last day to plant, gold per tile per day (`crops`)
-- Place machines, chests, sprinklers, fences and furniture (`place`), load machines (`interact` holding an item)
+- Place machines, chests, sprinklers, fences and furniture (`place`); load every idle machine that takes an item and collect what is ready, with fuel such as Coal taken from the pack (`machine`)
 
 ## 🎣 Fishing
 
 - Walk to the best shore for the rod, cast, play the BobberBar minigame and pick up treasure (`fish`)
+- Know where every fish bites (map, season, hours, weather, level), which ones it has never caught, and where the legendary fish are; `fish` aims at a legendary fish's spot by itself (`fish_guide`)
 - Play it perfectly or like a human who can lose the fish (`FishingAssist`)
 - Attach bait and tackle (`equip`)
 
 ## ⛏️ Mines and combat
 
+- Go down the Mines floor by floor: the elevator to the deepest floor, rocks broken until the ladder shows, monsters fought, treasure chests opened (`mine`)
 - Fight nearby monsters with the best weapon, eating when health drops (`fight`)
 - Get out of the Mines from any floor, or warp out when it gets dangerous (`leave_mine`)
-- Take the elevator, crack geodes at Clint's (`menu`, `crack_geode`)
+- Take the elevator, crack geodes at Clint's: walks there itself, knows every kind of geode and where it comes from, and points out finds the Museum still needs (`menu`, `crack_geode`)
 - Long actions stop by themselves when a monster hurts you
 
 ## 🍳 Crafting, cooking and items
@@ -48,7 +50,7 @@ makes every choice.
 ## 🛒 Shops and money
 
 - Read a shop, buy, sell for gold at once, ship for overnight pay (`shop_list`, `buy`, `sell`, `ship`)
-- Tool upgrades at the blacksmith, backpack upgrades at Pierre's
+- Tool upgrades at Clint's in one call, and picking them up when they are done (`upgrade_tool`); backpack upgrades at Pierre's
 - Separate wallets per farmer (or switch a shared-wallet save with `SeparateWallets`), and paying another farmer at any distance (`pay`)
 - In the last week of a season the morning briefing says which seeds can no longer ripen and which seeds the next season wants
 - `stats_NNN.json` adds a `progress` block: backpack size, Community Center bundles and next step, session breaks, rests, quests
@@ -58,6 +60,7 @@ makes every choice.
 - Buy animals from Marnie, pet them, collect eggs, milk and wool, fill the hay troughs (`buy_animal`, `animals`)
 - Order a Coop, Barn, Silo, Well or Shed from Robin and upgrade the house (`build`, `upgrade_house`)
 - Name pets, animals, the horse and children (`name`), ride the horse (`mount`)
+- When the spouse asks for a baby at night, an AI farmer says yes (children are part of the Full House goal)
 
 ## 💬 Villagers, romance and festivals
 
@@ -96,7 +99,8 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - Completed journal quests and Special Orders expose unclaimed money; `quests(action="claim_reward")` clicks the native journal reward button. The daily guidance covers objectives, delivery, reward collection, crafting shortages and reserving bundle items. These choices still depend on the model.
 - Community Center bundles and donations, gold for the Vault (`bundles`, `donate_bundle`); `community_center` does the next step itself (reads the first Junimo note, visits the Wizard, walks to each open room's note and hands in what fits), and `bundles` lists only the rooms that take donations now
 - The Joja route, with a warning before the membership that changes everyone's game (`joja`)
-- Museum donations and Gunther's rewards (`museum`)
+- The goal of the run is every achievement except Joja: `goals` reads each farmer's progress from the game (money, hearts, recipes cooked and crafted, fish, items shipped, Museum, Marlon's monster goals, mine depth, skills, house, tools, family) and lists exactly what is missing; status points out carried items never shipped. Every night `progress_pN.json` records what was shipped, cooked, crafted and caught and what is still missing
+- Museum donations and Gunther's rewards: status reminds the AI of carried pieces the Museum still needs, and one call walks there, donates and collects (`museum`)
 
 ## 🛏️ Daily life
 

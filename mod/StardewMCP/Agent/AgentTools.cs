@@ -141,6 +141,7 @@ public static partial class AgentTools
                 Run = UseTool
             },
             CombatTool(),
+            MineTool(),
             LeaveMineTool(),
             new()
             {
