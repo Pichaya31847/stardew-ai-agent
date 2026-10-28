@@ -11,6 +11,14 @@ public sealed class DailySocialProgress
 
     private int _day, _calls, _nextReminder, _reminders;
     private bool _hasOthers, _heard, _villager, _bedReminder;
+    private string? _nearestName, _nearestWhere;
+
+    /// <summary>The nearest villager not talked to today and where they are ("12 tiles away here on Town"), or null when unknown.</summary>
+    public void SetNearestVillager(string? name, string? where)
+    {
+        _nearestName = string.IsNullOrWhiteSpace(name) ? null : name;
+        _nearestWhere = where;
+    }
 
     public void Begin(int day, bool hasOthers)
     {
@@ -30,18 +38,22 @@ public sealed class DailySocialProgress
         if (tool == "say" && result.Contains("Heard by ", StringComparison.Ordinal)) _heard = true;
     }
 
+    // Day 56: "find a fellow farmer" sent AI2 after AI1 with travel_to for 300 game minutes. A farmer is met while working (the
+    // shared farm, the shops); the villager part names who is closest instead.
     public string Pending => (_hasOthers && !_heard ?
-        "Find a fellow farmer using look/status and their current location; travel/walk close enough, then say a short meaningful greeting or work update. A line with nobody in hearing range does not count. " : "") +
-        (!_villager ? "Use villagers() to choose a real NPC you have not talked to today, then talk_to(name, reason). The other farmers are players, not NPCs. " : "");
+        "When you meet a fellow farmer while working, say a short greeting or work update to them (it counts once they hear it); don't travel just to find them. " : "") +
+        (!_villager ? (_nearestName != null
+            ? $"Talk to the nearest villager you haven't talked to today: talk_to(name=\"{_nearestName}\") ({_nearestWhere}). The other farmers are players, not villagers. "
+            : "Use villagers() to choose a real NPC you have not talked to today, then talk_to(name, reason). The other farmers are players, not NPCs. ") : "");
 
     /// <summary>One line for a session handoff: what is still open, without the instructions the full reminder gives.</summary>
     public string Brief
     {
         get
         {
-            var open = (_hasOthers && !_heard ? "talk with a fellow farmer (say, in their view)" : "") +
+            var open = (_hasOthers && !_heard ? "say a word to a fellow farmer when you meet them" : "") +
                        (_hasOthers && !_heard && !_villager ? " and " : "") +
-                       (!_villager ? "talk_to a villager" : "");
+                       (!_villager ? (_nearestName != null ? $"talk_to a villager (nearest: {_nearestName})" : "talk_to a villager") : "");
             return open.Length == 0 ? "" : $"Social goal still open today: {open}.";
         }
     }

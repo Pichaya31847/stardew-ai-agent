@@ -17,6 +17,29 @@ public class DaySafetyTests
     }
 
     [Fact]
+    public void TheEarlyBedRefusalNamesOneTaskAndWhenBedIsAllowedAndIsShortTheSecondTime()
+    {
+        var first = DaySafety.EarlyBedRefusal("10:30", 200, 270, "harvest_all()", repeat: false);
+        Assert.Contains("harvest_all()", first);
+        Assert.Contains("17:00", first);
+        Assert.Contains("67 or less", first);
+        var again = DaySafety.EarlyBedRefusal("10:40", 198, 270, "harvest_all()", repeat: true);
+        Assert.Contains("harvest_all()", again);
+        Assert.True(again.Length < first.Length);
+    }
+
+    [Fact]
+    public void AnEmptyMessageClosesAtOnceAndAStaleOneOnlyWhileSomeoneWaitsInBed()
+    {
+        Assert.False(DaySafety.CloseStaleMessage(1, emptyText: true, isQuestion: false, othersWaitingInBed: false));
+        Assert.True(DaySafety.CloseStaleMessage(3, emptyText: true, isQuestion: false, othersWaitingInBed: false));
+        Assert.False(DaySafety.CloseStaleMessage(600, emptyText: false, isQuestion: false, othersWaitingInBed: false));
+        Assert.False(DaySafety.CloseStaleMessage(10, emptyText: false, isQuestion: false, othersWaitingInBed: true));
+        Assert.True(DaySafety.CloseStaleMessage(25, emptyText: false, isQuestion: false, othersWaitingInBed: true));
+        Assert.False(DaySafety.CloseStaleMessage(600, emptyText: true, isQuestion: true, othersWaitingInBed: true));
+    }
+
+    [Fact]
     public void RepeatedMorningSleepIsBlockedButExhaustionAndInjuryAreAllowed()
     {
         for (int attempt = 0; attempt < 5; attempt++)

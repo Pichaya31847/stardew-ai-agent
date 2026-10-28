@@ -81,6 +81,7 @@ public static class JournalTools
 
         var diary = AgentTools.S(a, "diary").Trim();
         if (diary.Length < MinDiary) { c.Fail($"Write a real diary entry in {Lang} first (diary parameter, at least {MinDiary} characters)."); yield break; }
+        if (LanguageGuard.Reject(diary, Lang, "diary") is { } drift) { c.Fail(Reasons.InvalidArgs, drift + " Nothing was saved: call journal again with all its parts."); yield break; }
 
         var lessons = Lines(AgentTools.S(a, "lessons"), MaxLessonChars);
         if (lessons.Count == 0) { c.Fail($"lessons is empty. Write 1-3 short lessons from day {day} in {WorkLang}, one per line (what worked, what failed and why)."); yield break; }

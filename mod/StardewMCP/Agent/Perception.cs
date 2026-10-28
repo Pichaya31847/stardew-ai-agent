@@ -485,6 +485,9 @@ public static class Perception
     {
         var q = Queues[seat.Screen];
         if (!Interrupts || q.IsEmpty) return;
+        // A farmer just coming into view waits for the next result: on the shared farm it stopped 8 harvests and walks a day
+        // (days 55-56) and threw their results away. Someone who wants a word says it, and a mention still interrupts.
+        if (q.All(e => e.Kind == "arrived")) return;
         var call = rt.CurrentCall;
         if (call == null || call.Instant || call.Done.Task.IsCompleted) return;
         // Speech/mentions and ambient events stay queued until morning. Never cancel a

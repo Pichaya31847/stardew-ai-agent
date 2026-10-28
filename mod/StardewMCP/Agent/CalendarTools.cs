@@ -196,6 +196,11 @@ public static partial class AgentTools
         var fest = CalendarData.Today();
         if (fest != null) sb.AppendLine($"Festival today: {CalendarData.Describe(fest, Game1.timeOfDay)} (calendar has more)");
         sb.Append($"Tomorrow: {TomorrowWeather()} · Luck today: {LuckText()}");
+        // Day 56 (summer 28): both AIs planned "winter seeds" for the next morning, which is fall 1.
+        var tomorrow = CalendarData.DateAhead(1);
+        if (tomorrow.Day == 1)
+            sb.Append($"\nLAST DAY OF {Game1.currentSeason.ToUpperInvariant()}: tomorrow is {CalendarData.Cap(tomorrow.Season)} 1. Tonight outdoor crops that don't grow in {tomorrow.Season} die " +
+                      $"(harvest what is ripe, don't water the rest); Pierre sells {tomorrow.Season} seeds from tomorrow.");
         return sb.ToString();
     }
 

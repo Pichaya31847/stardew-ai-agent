@@ -136,6 +136,7 @@ public class AgentRuntime
         _globalTicks++;
         AutoHandleOverlays();
         PassOut.Tick(this);
+        SleepWaitWatch.Tick(this);
         QuestEvents.Tick(this);
         AgentTools.FishingTick(this); // plays an open fishing minigame while this seat runs the fish tool
         SocialTools.Tick(Log.Player);

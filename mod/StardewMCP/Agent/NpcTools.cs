@@ -119,6 +119,31 @@ internal static class NpcInfo
     public static string WhereIs(NPC npc) =>
         npc.currentLocation == null ? "an unknown place" : $"{npc.currentLocation.NameOrUniqueName} ({npc.TilePoint.X},{npc.TilePoint.Y})";
 
+    /// <summary>
+    /// The nearest villager this farmer has not talked to today, with where they are and how far: someone on this map first
+    /// (by tiles), then someone outdoors in town, then anyone. Null when everyone has been talked to. Day 56: the social
+    /// reminder sent AI2 to find the other farmer (300 game minutes of travel_to) while villagers stood nearby.
+    /// </summary>
+    public static (string name, string where)? NearestUntalked()
+    {
+        var me = Game1.player;
+        var here = me.currentLocation;
+        var best = Social()
+            .Where(n => n.currentLocation != null && !(me.friendshipData.TryGetValue(n.Name, out var f) && f.TalkedToToday))
+            .Select(n =>
+            {
+                bool same = n.currentLocation.NameOrUniqueName == here?.NameOrUniqueName;
+                int tiles = same ? Math.Abs(n.TilePoint.X - me.TilePoint.X) + Math.Abs(n.TilePoint.Y - me.TilePoint.Y) : int.MaxValue;
+                int rank = same ? 0 : n.currentLocation.IsOutdoors ? 1 : 2;
+                return (npc: n, rank, tiles);
+            })
+            .OrderBy(x => x.rank).ThenBy(x => x.tiles)
+            .FirstOrDefault();
+        if (best.npc == null) return null;
+        var where = best.rank == 0 ? $"{best.tiles} tiles away here on {here!.Name}" : $"in {WhereIs(best.npc)}";
+        return (best.npc.displayName, where);
+    }
+
     // ------------------------------------------------------------------ friendship state
 
     public static VillagerInfo Of(Farmer who, NPC npc)
@@ -508,6 +533,7 @@ public static partial class AgentTools
             if (!walk.Ok)
             {
                 last = walk.Result;
+                if (last.Contains(LockedDoorNote)) break; // more legs only bump into the same door
                 yield return Ticks(30); // they may be in a doorway or a narrow path: give them a moment to move on
             }
         }
@@ -589,7 +615,18 @@ public static partial class AgentTools
                 var walk = new CallContext();
                 yield return ChaseNpc(name, walk);
                 npc = NpcInfo.ByName(name) ?? npc;
-                if (!walk.Ok) { failure = walk.Result.TrimEnd('.'); continue; }
+                if (!walk.Ok)
+                {
+                    failure = walk.Result.TrimEnd('.');
+                    // Behind a bedroom door the farmer may not open yet: stop here instead of bumping into it until the timeout.
+                    if (walk.Result.Contains(LockedDoorNote))
+                    {
+                        c.Fail(Reasons.NoPath, $"{npc.displayName} is behind a door you may not open yet (their bedroom needs more friendship). " +
+                                               $"Talk to someone else now, or to {npc.displayName} later when they come out. {walk.Result}");
+                        yield break;
+                    }
+                    continue;
+                }
                 var me = P.TilePoint;
                 if (Math.Abs(me.X - npc.TilePoint.X) + Math.Abs(me.Y - npc.TilePoint.Y) != 1) continue; // they moved
                 Face(npc.TilePoint);

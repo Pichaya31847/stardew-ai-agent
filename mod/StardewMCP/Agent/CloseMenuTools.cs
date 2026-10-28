@@ -51,6 +51,15 @@ public static partial class AgentTools
             }
             if (Game1.activeClickableMenu is not DialogueBox box) break;
             var line = box.getCurrentString() ?? "";
+            // A box with no text has nothing to read and clicks may never advance it (day 56: AI2 sat in one in Pierre's shop
+            // while AI1 waited in bed): close it.
+            if (line.Trim().Length == 0 && !box.isQuestion && !box.transitioning)
+            {
+                box.closeDialogue();
+                Game1.dialogueUp = false;
+                yield return Ticks(4);
+                continue;
+            }
             if (line != previous && line.Length > 0) notes.Add("Dialogue: " + line);
             previous = line;
             if (box.isQuestion)
@@ -68,6 +77,10 @@ public static partial class AgentTools
 
     private static IEnumerator PrepareForTravel(CallContext c)
     {
+        // A ready check that can't be cancelled any more (leaving a festival together) only waits on the other farmers: wait with it
+        // instead of failing every call at once (36 failed calls in one game minute at the Flower Dance, day 24).
+        for (int i = 0; i < 60 * 120 && Game1.activeClickableMenu is ReadyCheckDialog rc && !rc.isCancelable(); i++)
+            yield return null;
         var messages = new CallContext();
         yield return FinishMessages(messages);
         if (Game1.activeClickableMenu is ShopMenu or ItemGrabMenu or GameMenu or QuestLog or Billboard)

@@ -17,8 +17,9 @@ makes every choice.
 
 - Clear, till, plant and fertilize, tile by tile or a whole rectangle at once, row by row (`clear_area`, `till_area`, `plant`). Tilling stops at as many tiles as there are seeds; the Scythe clears the crops that died at the season change
 - Pick up forage on the maps around the farm (`forage`)
-- Water every dry crop on the map, refilling the can at the nearest water (`water_all`), or only your own crops
-- Harvest everything that is ripe, forage included (`harvest_all`)
+- Water every dry crop on the map, refilling the can at the nearest water it can reach (`water_all`), or only your own crops; on the last day of a season it leaves the crops that die overnight
+- Harvest your own ripe crops and every forage item (`harvest_all`); another farmer's crops are left for them unless asked with `whose=all`
+- Walking cuts its way through weeds, stones and twigs when they wall the farmer in (up to 15 tiles; more is left to `clear_area`)
 - A whole-farm report: what is dry, ready, dead or won't make it this season (`farm_summary`)
 - Plan the season from the game's own data: growth days, last day to plant, gold per tile per day (`crops`)
 - Place machines, chests, sprinklers, fences and furniture (`place`), load machines (`interact` holding an item)
@@ -38,8 +39,8 @@ makes every choice.
 
 ## 🍳 Crafting, cooking and items
 
-- Craft from known recipes, cook in the kitchen with the fridge's ingredients (`craft`, `cook`)
-- Store and take items in chests and the fridge in one call (`chest`)
+- Craft from known recipes, cook in the kitchen with the fridge's ingredients (`craft`, `cook`). The recipe list says what Scarecrows, Sprinklers, Fertilizer and machines are for and how to learn the ones still missing; a craft takes what is short out of the farmer's own chests, or says where to get it (Coal at Clint's or in the Mines) and won't repeat from an unchanged pack; every morning the AI hears which crops have no Scarecrow and what useful things it can craft now
+- Store and take items in chests and the fridge in one call (`chest`); produce goes into a chest only as far as a bundle or quest needs it, the rest stays in the pack for the shipping bin
 - Rings, boots, hats, shirts and pants (`equip`, `wear`, `wardrobe`)
 - Look up any item: sell prices, what it restores, shops, recipes (`item_info`)
 - Eat, throw things away (valuables need confirmation), watch TV and learn recipes (`eat`, `trash`, `watch_tv`)
@@ -83,16 +84,17 @@ Small local models get their own settings: the AI can think, write its diary and
 
 With two AIs and the bottom operator dashboard, only AI1 and AI2 join the game. The dashboard is a separate UI region without a farmer or cabin, and does not participate in sleeping or gameplay.
 
-Overnight farm events and pass-out/fade phases finish before brains begin the next day. Thinking pauses cannot freeze these transitions, speech/events cannot cancel committed sleep, and the dashboard stays drawn while validated SMAPI updates are suspended. Repeated early-sleep calls no longer bypass the healthy/energetic before-17:00 guard. With two inventory slots or fewer, tool results give actionable chest/storage and backpack-upgrade guidance; the model still chooses and performs the purchase/crafting actions.
+Overnight farm events and pass-out/fade phases finish before brains begin the next day. Thinking pauses cannot freeze these transitions, speech/events cannot cancel committed sleep, and the dashboard stays drawn while validated SMAPI updates are suspended. Repeated early-sleep calls no longer bypass the healthy/energetic before-17:00 guard; the refusal names one thing to do now as a ready call and when bed is allowed, in one line from the second time. While a farmer waits in bed, a message box left open on another AI's screen is closed after 20 real seconds (an empty one at once), the AI hears why and the day log keeps a line; a walk that bumps into a locked bedroom door stops instead of pressing on it. With two inventory slots or fewer, tool results give actionable chest/storage and backpack-upgrade guidance; the model still chooses and performs the purchase/crafting actions.
 
-Built-in brains track daily social progress across conversation resets. Mornings request both NPC conversation and nearby player speech; one reminder a day follows when goals remain, and a fresh session after a break gets a one-line note of what is still open. Unheard speech and failed NPC calls do not complete them. Before 21:00, outside the mine and with energy above 20, an early bedtime request gets one social reminder; a second sleep request is allowed. The model chooses its words, destination and person, and these reminders do not guarantee compliance.
+Built-in brains track daily social progress across conversation resets. Mornings request both NPC conversation and nearby player speech; one reminder a day follows when goals remain, naming the nearest villager not yet talked to and how far away they are (a fellow farmer counts once they hear a `say` while you work together; the AI is not sent off to find them), and a fresh session after a break gets a one-line note of what is still open. Unheard speech and failed NPC calls do not complete them. Before 21:00, outside the mine and with energy above 20, an early bedtime request gets one social reminder; a second sleep request is allowed. The model chooses its words, destination and person, and these reminders do not guarantee compliance.
 
 - Quest journal, Help Wanted board, Special Orders (`quests`, `accept_quest`, `special_orders`); each quest says how to finish it, deliveries are handed over with `talk_to` and their money is claimed straight away
-- Every morning the built-in AI opens the gift boxes, reads the mail and claims quest money before it starts thinking (`morning_chores`); it can also take the Help Wanted request by itself (`BrainAcceptBoardQuest`)
-- The Community Center story step by step: Lewis's scene (enter Town from the Bus Stop, no rain, spring 5+, 8:00-13:00; `quests` says when that works TODAY), the Junimo note, the Wizard, then the bundles
+- Every morning the built-in AI opens the gift boxes, reads the mail, claims quest money, plants the season's seeds it carries on its own empty tilled soil (only seeds that ripen before their seasons end, never on day 28) and points out produce left in its chests before it starts thinking (`morning_chores`); it can also take the Help Wanted request by itself (`BrainAcceptBoardQuest`)
+- Thoughts, speech and the diary stay in the configured language: text with Chinese characters (a local model drifting mid-sentence) is sent back to be written again (`think`, `say`, `journal`)
+- The Community Center story step by step: Lewis's scene (enter Town from the Bus Stop, no rain, spring 5+, 8:00-13:00; `quests` says when that works TODAY), the Junimo note, the Wizard, then the bundles. Once the door is open, `quests` and `bundles` say so plainly, so a farmer stops planning the Bus Stop trip from older notes. Each farmer learns the Junimo script from the Wizard himself: a farmhand can't donate on the host's knowledge, and `community_center` sends them to the tower. A `community_center` call that donated nothing reports a failure
 - Shops open at the counter by themselves once inside, `sell` names the shops that buy an item, and the backpack upgrade is one call (`upgrade_backpack`)
 - Completed journal quests and Special Orders expose unclaimed money; `quests(action="claim_reward")` clicks the native journal reward button. The daily guidance covers objectives, delivery, reward collection, crafting shortages and reserving bundle items. These choices still depend on the model.
-- Community Center bundles and donations, gold for the Vault (`bundles`, `donate_bundle`)
+- Community Center bundles and donations, gold for the Vault (`bundles`, `donate_bundle`); `community_center` does the next step itself (reads the first Junimo note, visits the Wizard, walks to each open room's note and hands in what fits), and `bundles` lists only the rooms that take donations now
 - The Joja route, with a warning before the membership that changes everyone's game (`joja`)
 - Museum donations and Gunther's rewards (`museum`)
 
@@ -110,7 +112,7 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - You can play P1 yourself next to them
 - Chat that only reaches farmers whose screen shows the speaker; emotes; handing over items (`say`, `emote`, `give`)
 - Each farmer sees what the others are *actually* doing next to what they last said, so lies can be caught
-- Interrupts: an @mention, a gift, someone arriving or entering your house, a theft, rain or crows stop a long action
+- Interrupts: an @mention, a gift, someone entering your house, a theft, rain or crows stop a long action; someone just coming into view is reported with the next result instead
 - Ownership: who planted a crop, who placed a chest, and a `theft` record when someone takes what isn't theirs
 - Marriage between players (`propose`, `answer_proposal`), a bedtime warning when the others wait for you
 

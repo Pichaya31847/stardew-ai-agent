@@ -18,13 +18,13 @@ Every tool the AI can call, grouped by job. Each farmer's MCP endpoint (`/mcp`, 
 | `look` ⚡ | *`radius`*, *`kinds`*, *`diff`* | The surroundings as a tile map (17×17 by default, radius 8) with a legend and a list of things in view, other players included. `kinds` (e.g. `["crops","debris"]`) limits the list; `diff=true` lists only the tiles that changed since the last look |
 | `inventory` ⚡ | | Items in the pack, what is worn and what is on the fishing rod |
 | `farm_summary` ⚡ | | Whole-map farm report: empty tilled soil, crops by type with days to harvest, unwatered, ready and dead crops, crops that won't mature this season, forage, debris, watering can and nearest water |
-| `think` ⚡ | `text` | A private thought, shown on the overlay. Nobody in the game sees it |
+| `think` ⚡ | `text` | A private thought, shown on the overlay. Nobody in the game sees it. Text with Chinese characters is sent back to be written in the configured language |
 
 ## Move
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `walk_to` | `x`, `y` | Pathfind to a tile on the current map |
+| `walk_to` | `x`, `y` | Pathfind to a tile on the current map; a tile that can't be reached ends at the closest reachable tile (partial). On the Farm and in the Backwoods a way walled in by up to 15 tiles of weeds, stones and twigs (never young trees) is cleared on the way, and the result says how many tiles and how much energy it took; bumping into a locked door stops the walk |
 | `travel_to` | `location` | Go to another map. A shop owner's, villager's or fellow farmer's name also works; a closed door says when it opens. Inside a festival it leaves the festival first. In co-op the game lets farmers into a festival only together: it waits up to a minute for the others (they are told), then gives up with `not_ready` instead of leaving you stuck in the box |
 | `mount`, `dismount` | | Ride the horse (needs a Stable) and get off |
 
@@ -32,11 +32,11 @@ Every tool the AI can call, grouped by job. Each farmer's MCP endpoint (`/mcp`, 
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `use_tool` | `tool`, `tiles`, *`max_hits`* | Use a tool on one or more tiles (hoe, watering can, axe, pickaxe, scythe...) |
-| `plant` | `item`, *`tiles`* or *`area`* | Plant seeds or fertilizer on tilled soil: listed tiles, an `[x, y, w, h]` area, or no tiles at all = every empty tilled tile on the map |
+| `use_tool` | `tool`, `tiles`, *`max_hits`* | Use a tool on one or more tiles (hoe, watering can, axe, pickaxe, scythe...); an empty watering can is refilled at the nearest reachable water first |
+| `plant` | `item`, *`tiles`* or *`area`* | Plant seeds or fertilizer on tilled soil: listed tiles, an `[x, y, w, h]` area, or no tiles at all = every empty tilled tile of yours (or nobody's) on the map; soil another farmer tilled or planted is left alone |
 | `harvest` | `tiles` | Harvest crops or forage on the given tiles |
-| `water_all` | *`whose`* | Water every dry crop on the map (`whose: "mine"` = only your own); refills the can at the nearest water and says whose crops it watered |
-| `harvest_all` | | Collect every ready crop and forage item on the map |
+| `water_all` | *`whose`* | Water every dry crop on the map (`whose: "mine"` = only your own); refills the can at the nearest reachable water and says whose crops it watered; on day 28 it skips crops that die when the season changes |
+| `harvest_all` | *`whose`* | Collect your ready crops and every forage item on the map; crops another farmer planted are left for them unless `whose=all` |
 | `forage` | *`places`*, *`max_places`*, *`list`* | Travel to the maps around the farm that have forage today, nearest first, and pick it all up; `list=true` only counts it |
 | `clear_area` | `x`, `y`, `w`, `h` | Clear a rectangle with the right tool, row by row from the end nearest you; the Scythe also cuts dead crops. Large stumps and boulders are skipped and reported. Over 100 tiles it does the first rows and says the call for the rest |
 | `till_area` | `x`, `y`, `w`, `h` | Clear, then till a rectangle row by row, but only as many tiles as you have this season's seeds for (minus the empty tilled soil already there); with no seeds it refuses |
@@ -63,9 +63,9 @@ Read from the game's own data, costs no game time.
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `craft` | *`recipe`*, *`quantity`* | Craft from the recipes you know; `craft()` lists them |
+| `craft` | *`recipe`*, *`quantity`* | Craft from the recipes you know; `craft()` lists them with what the useful ones are for (Scarecrow, Sprinkler, Fertilizer, machines) and the useful recipes still to learn with how to unlock them. What is short but sits in your own chests is taken out first (walking there); otherwise the craft says how many of each you have and where to get the rest, and the same craft from an unchanged pack is refused at once |
 | `cook` | *`recipe`*, *`quantity`* | Cook the dishes you know in the farmhouse kitchen, from the pack and the fridge; `cook()` lists them |
-| `chest` | *`x`*, *`y`*, *`action`*, *`item`*, *`items`*, *`quality`*, *`quantity`* | Store or take items in a chest or the fridge in one call: by name and quality, several items, or "everything". Without `x`/`y` it uses the open chest menu, or else your own nearest chest on the map |
+| `chest` | *`x`*, *`y`*, *`action`*, *`item`*, *`items`*, *`quality`*, *`quantity`* | Store or take items in a chest or the fridge in one call: by name and quality, several items, or "everything". Without `x`/`y` it uses the open chest menu, or else your own nearest chest on the map; an `x`/`y` with no chest here but one at that tile in your house (or on the Farm) goes there first. Sale produce (crops, flowers, forage, fish, animal and artisan goods) is only stored as far as a bundle or quest still needs it; the rest stays in the pack to ship |
 | `equip` | `item`, *`slot`*, *`count`* | Put on a ring, boots or a hat (the old one goes back), or attach bait and tackle to the fishing rod |
 | `wear` | `item` | Put on a hat, shirt or pants from the pack |
 | `wardrobe` ⚡ | | What you wear and the clothes you carry |
@@ -77,7 +77,7 @@ Read from the game's own data, costs no game time.
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `shop_list` ⚡ | | What the open shop sells, with prices |
+| `shop_list` | | What the shop sells, with prices; inside a shop building it opens the counter first |
 | `buy` | `item`, `quantity` | Buy from the shop (also tool upgrades that trade items). Inside a shop with no menu open it walks to the counter and opens it first |
 | `sell` | `item`, *`quantity`*, *`allow_reserved`* | Sell to the shop for gold at once; inside a shop it opens the counter first, elsewhere it names the shops that buy the item. Seeds, fertilizer and minimum crafting supplies are protected; reports safe surplus. `allow_reserved=true` permits a deliberate sale with an explanation in reason. |
 | `upgrade_backpack` | | Buy the next backpack size at Pierre's (24 slots for 2,000g, then 36 for 10,000g): walks to the shop and its backpack display |
@@ -106,7 +106,7 @@ During overnight farm events, fades or pass-out transitions, new gameplay/social
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `talk_to` | `name`, *`gift_item`*, *`go`* | Find a villager (travels across maps unless `go=false`, and re-aims while they walk), talk, optionally give a gift (also how quest deliveries are handed over; their money is claimed right after); reports friendship points before and after and their reaction. With a fellow farmer's name it walks up to them and tells you to use `say` (farmers don't talk_to each other). |
+| `talk_to` | `name`, *`gift_item`*, *`go`* | Find a villager (travels across maps unless `go=false`, and re-aims while they walk), talk, optionally give a gift (also how quest deliveries are handed over; their money is claimed right after); reports friendship points before and after and their reaction. With a fellow farmer's name it walks up to them and tells you to use `say` (farmers don't talk_to each other). A villager behind a bedroom door you may not open yet fails at once instead of walking into the door. |
 | `bouquet` | `name`, *`go`* | Ask a villager to date you (8 hearts) |
 | `mermaid_pendant` | `name`, *`go`* | Propose to a villager (10 hearts, upgraded house) |
 | `festival` | `action`, *`to`*, *`max`* | On a festival day: `start` talks to Lewis and begins the main event, `leave` leaves the festival (alone it confirms; in co-op every farmer must leave together). Both wait up to a minute for the other farmers, tell them, and then cancel the wait with `not_ready`. `eggs` picks up eggs during the Egg Festival's egg hunt (nearest first, until the hunt ends or `max` are picked; `look` shows the eggs as `E`) |
@@ -117,8 +117,9 @@ During overnight farm events, fades or pass-out transitions, new gameplay/social
 |---|---|---|
 | `accept_quest` | | Take today's Help Wanted request from the board |
 | `special_orders` | *`action`*, *`index`* | The Special Orders board in Town: `list`, `accept` one by index, `active` with progress |
-| `bundles` ⚡ | *`room`* | Community Center bundles room by room: what each needs, what is donated and by whom, the reward, which of your items fit |
-| `donate_bundle` | `item`, *`bundle`* | Donate an item (or gold, for the Vault) to the first bundle that needs it, through the game's own bundle page |
+| `bundles` ⚡ | *`room`*, *`all`* | Bundles that take donations now: the rooms whose Junimo note is up (with the note's tile), each unfinished bundle's missing items, the reward, and what you can donate now. `all=true` lists every room and finished bundles |
+| `community_center` | | The next Community Center step: reads the first Junimo note (walks to it), visits the Wizard once his letter came, then donates everything an open bundle needs, walking to each room's note; items for the bundles waiting in your own chests are taken out first |
+| `donate_bundle` | `item`, *`bundle`* | Walk into the Community Center to the room's note and donate an item (`all` for every fitting item, or gold for the Vault) to the first open bundle that needs it, through the game's own bundle page |
 | `joja` | `action`, *`project`*, *`confirm`* | The Joja route: `projects` lists the five projects, `membership` buys the 5,000g membership only with `confirm=true` (without it: a warning of what every player loses and gains), `buy_project` pays one |
 | `museum` | *`action`*, *`item`* | `list` what the Museum still accepts, `donate` one item or all, collect `rewards` from Gunther |
 
@@ -139,7 +140,7 @@ In the Mines the footer shows HP, and any long action except `fight`, `eat` and 
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `interact` | *`x`*, *`y`*, *`holding`* | The action button on a tile: doors, objects, machines, NPCs. `holding` holds an item first (load a machine, use a totem, a gift) |
+| `interact` | *`x`*, *`y`*, *`holding`* | The action button on a tile: doors, objects, machines, NPCs. `holding` holds an item first (load a machine, use a totem, a gift). With no tile and nothing held inside a shop building it opens the shop |
 | `respond` | *`option`* | Answer the open dialogue question |
 | `close_menu` | | Close the open menu; accepts a letter's quest and takes treasure or gift items that fit |
 | `menu` | *`action`*, *`item`*, *`count`*, *`quality`*, *`option`*, *`value`*, *`text`* | Read any open menu, then use it: take or put (chests), choose (mine elevator), amount (send money), type (names), ok or cancel, or click a listed button |
@@ -151,15 +152,15 @@ In the Mines the footer shows HP, and any long action except `fight`, `eat` and 
 |---|---|---|
 | `wait` | `minutes` | Let time pass |
 | `rest` | *`minutes`*, *`energy`* | Lie down on your own bed to get energy and health back while time passes (co-op only, about +14 energy every 10 minutes); ends when energy reaches `energy` (default full), after the minutes, or when someone calls you, then gets up and walks to the door to carry on |
-| `journal` ⚡ | `diary`, `lessons`, `plan`, *`notes`*, *`self`*, *`people`*, *`day`* | The AI's memory across days: a diary for the viewers, lessons (appended), a plan with Season / Week / Today sections, optional facts, a `self` note (who it is, overwritten each evening) and one line per other farmer in `people`. `day` catches up a missed day |
-| `go_to_bed` | | End the day. Refuses until today's `journal` is written; night events come back as an `Overnight:` line. Too early it names the farm work still waiting; tired before 18:00 in co-op it suggests `rest` once (a second call sleeps) |
-| `morning_chores` | | Start-of-day chores in one call: open the gift boxes in your house, read every letter in the mailbox (attachments and quests claimed) and claim finished quests' money; returns the letters' text |
+| `journal` ⚡ | `diary`, `lessons`, `plan`, *`notes`*, *`self`*, *`people`*, *`day`* | The AI's memory across days: a diary for the viewers, lessons (appended), a plan with Season / Week / Today sections, optional facts, a `self` note (who it is, overwritten each evening) and one line per other farmer in `people`. `day` catches up a missed day. A diary with Chinese characters is sent back to be written in the configured language |
+| `go_to_bed` | | End the day. Refuses until today's `journal` is written; night events come back as an `Overnight:` line. Too early (before 17:00 with energy above a quarter) it names one thing to do now as a ready call and when bed is allowed, in one line the second time that day; tired before 18:00 in co-op it suggests `rest` once (a second call sleeps) |
+| `morning_chores` | | Start-of-day chores in one call: open the gift boxes in your house, read every letter in the mailbox (attachments and quests claimed) and claim finished quests' money, plant this season's crop seeds you carry on your own empty tilled soil (seeds that can't ripen before their seasons end are skipped and named, and nothing is planted on day 28), report sale produce left in your chests, crops without a Scarecrow and useful things you can craft now; returns the letters' text |
 
 ## Together (split-screen)
 
 | Tool | Arguments | What it does |
 |---|---|---|
-| `say` ⚡ | `text` | Chat: the line shows in the chat box and above your head, heard only by the players whose screen shows you. `@name` gets someone's attention |
+| `say` ⚡ | `text` | Chat: the line shows in the chat box and above your head, heard only by the players whose screen shows you. `@name` gets someone's attention. A line with Chinese characters is sent back to be said in the configured language |
 | `emote` ⚡ | `name` | Show an emote bubble above your head |
 | `give` ⚡ | `to`, `item`, *`count`* | Hand an item to a nearby player |
 | `pay` ⚡ | `to`, `amount` | Send money (see *Shops and money*) |
@@ -177,4 +178,4 @@ come back as `Events:` in the next tool result and stop a running `wait`, `walk_
 |---|---|---|
 | `relationships_report` ⚡ | | This farmer's friendship data as JSON, for scripts (the same as [`/api/relationships`](api.md#endpoints) for one seat) |
 
-Local shop guidance: travel_to still stops at the building entrance. Nearby shop action coordinates (within radius 20, at most eight tiles) are included in arrival and missing-target/shop errors. interact requires both x and y for counters; it walks adjacent and presses the actual tile. shop_list, buy and sell still require an already-open ShopMenu and never open a shop or transact implicitly.
+Local shop guidance: travel_to still stops at the building entrance. Nearby shop action coordinates (within radius 20, at most eight tiles) are included in arrival and missing-target/shop errors. interact requires both x and y for counters; it walks adjacent and presses the actual tile. Inside a shop building shop_list, buy and sell open the counter themselves (walking to it, or through the game's shop opening when the shopkeeper is there); they never transact beyond what was asked.

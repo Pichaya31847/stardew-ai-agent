@@ -175,6 +175,14 @@ public static partial class AgentTools
                 c.Fail(Reasons.MenuOpen, "A menu is open. close_menu first, or leave out x and y to use the chest menu that is open.");
                 yield break;
             }
+            // Days 51-53: craft named the chest "at FarmHouse (5,10)" and the AI asked for (5,10) from the Farm 34 times. A chest
+            // that isn't on this map but is at that tile in the farmer's house (or another farm map) is gone to first.
+            if (!(Loc.Objects.TryGetValue(tile.ToVector2(), out var here) && here is Chest) && ChestElsewhere(tile) is { } other)
+            {
+                var trip = new CallContext();
+                yield return TravelTo(other, trip);
+                if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"The chest at ({tile.X},{tile.Y}) is in {other}, and the way there failed: {trip.Result}"); yield break; }
+            }
             // interact walks next to the tile and presses the action button; it is the same path a player's hands take.
             var sub = new CallContext();
             yield return Interact(ArgsOf(new { x = tile.X, y = tile.Y, reason = Reason(a) }), sub);
@@ -199,6 +207,18 @@ public static partial class AgentTools
     }
 
     /// <summary>The nearest player chest on this map that this seat placed, else one nobody owns; never another player's (that would be theft).</summary>
+    /// <summary>The name of the farm map (your home first, then the farmhouse and the Farm) that has a chest at this tile, or null.</summary>
+    private static string? ChestElsewhere(Point tile)
+    {
+        foreach (var name in new[] { P.homeLocation.Value, "FarmHouse", "Farm" }.Where(n => !string.IsNullOrEmpty(n)).Distinct())
+        {
+            var loc = Game1.getLocationFromName(name);
+            if (loc != null && loc != Loc && loc.Objects.TryGetValue(tile.ToVector2(), out var o) && o is Chest { playerChest.Value: true })
+                return name;
+        }
+        return null;
+    }
+
     private static Point? NearestOwnChest()
     {
         var me = Rt.Log.Player;
@@ -243,6 +263,7 @@ public static partial class AgentTools
             allowed = it => menu.inventory.highlightMethod(it);
         }
         var jobs = PlanMoves(source, names, everything, quality, quantity, allowed, store, problems);
+        if (store) jobs = KeepProduceForSale(jobs, menu.ItemsToGrabMenu.actualInventory, problems);
 
         var moved = new List<(string label, int count)>();
         var left = new List<(string label, int count)>();
@@ -297,6 +318,85 @@ public static partial class AgentTools
 
         if (moved.Count == 0) c.Fail(("Nothing " + (store ? "stored." : "taken.") + " " + sb).Trim());
         else c.Result = sb.ToString().Trim();
+    }
+
+    // ------------------------------------------------------------------ produce is for selling
+
+    /// <summary>Crops, fruit, flowers, forage, fish and animal or artisan goods: what the shipping bin pays for.</summary>
+    internal static bool IsSaleProduce(Item it) =>
+        it is StardewValley.Object { bigCraftable.Value: false } && it.Category is -75 or -79 or -80 or -81 or -4 or -5 or -6 or -14 or -18 or -26;
+
+    /// <summary>How many of this item the unfinished bundles still take (any room), counting only stacks of a fitting quality.</summary>
+    internal static int BundleWants(Item it)
+    {
+        if (BundleReader.IsJoja(P)) return 0;
+        return BundleReader.Read().Where(b => !b.Complete).SelectMany(b => b.Needs.Where(n => !n.Done && BundleReader.Fits(it, n))).Sum(n => n.Count);
+    }
+
+    /// <summary>An active quest names this item (deliveries, gifts asked for).</summary>
+    internal static bool QuestWants(Item it)
+    {
+        foreach (var q in P.questLog)
+        {
+            string text;
+            try { text = q.GetDescription() + " " + string.Join(" ", q.GetObjectiveDescriptions()); }
+            catch { continue; }
+            if (text.Contains(it.DisplayName, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Sale produce goes to the shipping bin, not a chest: only what a bundle still needs (minus what this chest holds) or a quest asks for
+    /// is stored (day 24: 54 parsnips went into chests and stayed there while both farmers were short of seed money).
+    /// </summary>
+    private static List<(Item item, int count)> KeepProduceForSale(List<(Item item, int count)> jobs, IList<Item> inside, List<string> problems)
+    {
+        var kept = new List<(Item item, int count)>();
+        var refused = new List<(string label, int count)>();
+        foreach (var (item, count) in jobs)
+        {
+            if (!IsSaleProduce(item) || QuestWants(item)) { kept.Add((item, count)); continue; }
+            int stored = inside.Where(i => i != null && i.QualifiedItemId == item.QualifiedItemId && i.Quality >= item.Quality).Sum(i => i.Stack);
+            int room = Math.Max(0, BundleWants(item) - stored);
+            if (room >= count) { kept.Add((item, count)); continue; }
+            if (room > 0) kept.Add((item, room));
+            refused.Add((StackLabel(item), count - room));
+        }
+        if (refused.Count > 0)
+            problems.Add($"Kept in your pack to sell: {Tally(refused)}. Produce is money: ship it at the Farm's shipping bin (paid overnight) or sell it at a shop; " +
+                         "a chest only keeps what a Community Center bundle or a quest still needs.");
+        return kept;
+    }
+
+    /// <summary>"33x Parsnip, 7x Daffodil (about 1,400g)" for the sale produce in your own (or unowned) chests that no bundle or quest needs, or "".</summary>
+    internal static string ChestProduceForSale()
+    {
+        var me = Rt.Log.Player;
+        var counts = new Dictionary<string, (int n, int g)>();
+        foreach (var loc in new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation })
+        {
+            if (loc == null) continue;
+            foreach (var obj in loc.objects.Values)
+            {
+                if (obj is not Chest { playerChest.Value: true, fridge.Value: false } chest) continue;
+                var owner = Ownership.OwnerOf(chest);
+                if (owner != null && owner != me) continue;
+                foreach (var it in chest.Items)
+                {
+                    if (it == null || !IsSaleProduce(it) || QuestWants(it)) continue;
+                    int spare = it.Stack - BundleWants(it);
+                    if (spare <= 0) continue;
+                    int each = it is StardewValley.Object o ? o.sellToStorePrice() : 0;
+                    counts.TryGetValue(it.DisplayName, out var cur);
+                    counts[it.DisplayName] = (cur.n + spare, cur.g + spare * each);
+                }
+            }
+        }
+        if (counts.Count == 0) return "";
+        int total = counts.Values.Sum(v => v.g);
+        var list = string.Join(", ", counts.OrderByDescending(kv => kv.Value.g).Take(6).Select(kv => $"{kv.Value.n}x {kv.Key}"));
+        return $"{list} (about {total:N0}g)";
     }
 
     // ------------------------------------------------------------------ planning

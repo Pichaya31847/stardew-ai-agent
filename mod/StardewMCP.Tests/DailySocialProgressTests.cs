@@ -36,11 +36,25 @@ public class DailySocialProgressTests
     {
         var progress = new DailySocialProgress();
         progress.Begin(4, true);
-        Assert.Equal("Social goal still open today: talk with a fellow farmer (say, in their view) and talk_to a villager.", progress.Brief);
+        Assert.Equal("Social goal still open today: say a word to a fellow farmer when you meet them and talk_to a villager.", progress.Brief);
         progress.Observe("say", true, "Heard by AI2.");
         Assert.Equal("Social goal still open today: talk_to a villager.", progress.Brief);
         progress.Begin(5, false);
         Assert.Equal("Social goal still open today: talk_to a villager.", progress.Brief);
+    }
+
+    [Fact]
+    public void TheVillagerReminderNamesTheNearestOneAndNeverSendsAfterTheOtherFarmer()
+    {
+        var progress = new DailySocialProgress();
+        progress.Begin(56, true);
+        progress.SetNearestVillager("Caroline", "4 tiles away here on SeedShop");
+        Assert.Contains("talk_to(name=\"Caroline\") (4 tiles away here on SeedShop)", progress.Pending);
+        Assert.Contains("don't travel just to find them", progress.Pending);
+        Assert.DoesNotContain("Find a fellow", progress.Pending);
+        Assert.Contains("nearest: Caroline", progress.Brief);
+        progress.Observe("say", true, "You said hi. Heard by AI1.");
+        Assert.DoesNotContain("fellow farmer", progress.Pending);
     }
 
     [Fact]

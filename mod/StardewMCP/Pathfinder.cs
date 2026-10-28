@@ -23,6 +23,20 @@ public partial class Pathfinder
     public List<Vector2>? FindPath(GameLocation location, Vector2 start, Vector2 goal) =>
         FindPath(new LocationGrid(location), start, goal);
 
+    /// <summary>As <see cref="FindPath(GameLocation, Vector2, Vector2)"/>, never stepping on <paramref name="avoid"/> (where villagers stand).</summary>
+    public List<Vector2>? FindPath(GameLocation location, Vector2 start, Vector2 goal, ISet<Point> avoid) =>
+        FindPath(new AvoidingGrid(new LocationGrid(location), avoid), start, goal);
+
+    private sealed class AvoidingGrid : IWalkableGrid
+    {
+        private readonly IWalkableGrid _inner;
+        private readonly ISet<Point> _avoid;
+
+        public AvoidingGrid(IWalkableGrid inner, ISet<Point> avoid) { _inner = inner; _avoid = avoid; }
+
+        public bool IsWalkable(int x, int y) => !_avoid.Contains(new Point(x, y)) && _inner.IsWalkable(x, y);
+    }
+
     /// <summary>
     /// Whether the farmer could stand on this tile right now: inside the map and not colliding
     /// with anything the game would stop the player on (walls, water, objects, crops with

@@ -104,6 +104,7 @@ public class ToolArgsTests
     [InlineData("{'tiles':['(12, 29)','13,29']}")]
     [InlineData("{'tiles':[12,29,13,29]}")]             // flat numbers, paired up
     [InlineData("{'tiles':[['12','29'],[13,29]]}")]
+    [InlineData("{'tiles':[['12,29'],['13,29']]}")]
     public void TileList_reads_the_shapes_small_models_send(string args)
     {
         Assert.Equal(new List<Point> { new Point(12, 29), new Point(13, 29) }, AgentTools.TileList(Json(args), "tiles"));

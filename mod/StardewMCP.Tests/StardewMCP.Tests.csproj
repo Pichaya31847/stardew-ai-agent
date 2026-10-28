@@ -32,6 +32,7 @@
     <Compile Include="..\StardewMCP\Agent\CompressedLogStore.cs" Link="Mod\CompressedLogStore.cs" />
     <Compile Include="..\StardewMCP\Agent\SaleReserve.cs" Link="Mod\SaleReserve.cs" />
     <Compile Include="..\StardewMCP\Agent\DaySafety.cs" Link="Mod\DaySafety.cs" />
+    <Compile Include="..\StardewMCP\Agent\LanguageGuard.cs" Link="Mod\LanguageGuard.cs" />
     <Compile Include="..\StardewMCP\Agent\Brain\DailySocialProgress.cs" Link="Mod\Brain\DailySocialProgress.cs" />
     <Compile Include="..\StardewMCP\PathSearch.cs" Link="Mod\PathSearch.cs" />
     <Compile Include="..\StardewMCP\Agent\ToolDef.cs" Link="Mod\ToolDef.cs" />

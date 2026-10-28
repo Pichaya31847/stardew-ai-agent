@@ -233,6 +233,7 @@ public sealed class SeatBrain
 
             var results = new List<LlmToolResult>();
             bool breakNow = false;
+            _social.SetNearestVillager(State?.NearestVillager?.name, State?.NearestVillager?.where);
             foreach (var call in resp.ToolCalls)
             {
                 // One bounded reminder, never a hard social quota or a delay when it is late/in the mines.

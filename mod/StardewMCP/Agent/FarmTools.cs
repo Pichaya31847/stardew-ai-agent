@@ -65,9 +65,14 @@ public static partial class AgentTools
     private static ToolDef HarvestAllTool() => new()
     {
         Name = "harvest_all",
-        Description = "Collect every ready crop and every forage item on the current map (by hand, then with the Scythe for crops that need it). " +
+        Description = "Collect your ready crops and every forage item on the current map (by hand, then with the Scythe for crops that need it). " +
+                      "Crops another farmer planted are theirs to sell: they are left unless whose=all. " +
                       "Stops when the inventory is full, a menu opens or it is late, and says what was left. Fruit trees and bushes are not included.",
-        Schema = Obj(new { reason = Str(ReasonDesc) }, "reason"),
+        Schema = Obj(new
+        {
+            whose = Str("mine (default): your crops and crops nobody owns; all: also other farmers' crops (take them only when they agreed)"),
+            reason = Str(ReasonDesc)
+        }, "reason"),
         Run = HarvestAll
     };
 
@@ -162,6 +167,18 @@ public static partial class AgentTools
     private static bool FarmCropNeedsWater(GameLocation loc, int x, int y) =>
         FarmDirt(loc, x, y) is { crop: not null } d && !d.crop.dead.Value && !d.readyForHarvest() && !d.isWatered();
 
+    /// <summary>
+    /// An outdoor crop that the change of season kills tonight (day 28, the crop doesn't grow next season). Watering it is
+    /// wasted: on day 56 both AIs spent the afternoon watering tomatoes on summer 28.
+    /// </summary>
+    private static bool FarmCropDiesTonight(GameLocation loc, Crop crop)
+    {
+        if (Game1.dayOfMonth < FarmSeasonDays || !loc.IsOutdoors || loc.SeedsIgnoreSeasonsHere()) return false;
+        var seasons = crop.GetData()?.Seasons;
+        if (seasons == null || seasons.Count == 0) return false;
+        return !seasons.Contains((Season)(((int)Game1.season + 1) % 4));
+    }
+
     /// <summary>Seat id of the farmer who planted the crop on this tile, or null when nobody is recorded.</summary>
     private static string? FarmCropOwner(GameLocation loc, int x, int y) => FarmDirt(loc, x, y) is { } d ? Ownership.OwnerOf(d) : null;
 
@@ -220,17 +237,7 @@ public static partial class AgentTools
     {
         var farm = Game1.getFarm();
         if (farm == null) return "";
-        int ripe = 0, dry = 0, empty = 0, dead = 0;
-        int w = farm.Map.Layers[0].LayerWidth, h = farm.Map.Layers[0].LayerHeight;
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-            {
-                if (FarmDirt(farm, x, y) is not { } d) continue;
-                if (d.crop == null) { if (!farm.Objects.ContainsKey(new Vector2(x, y))) empty++; }
-                else if (d.crop.dead.Value) dead++;
-                else if (FarmRipeCrop(farm, x, y)) ripe++;
-                else if (!Game1.IsRainingHere(farm) && FarmCropNeedsWater(farm, x, y)) dry++;
-            }
+        var (ripe, dry, empty, dead) = FarmWorkCounts(farm);
         int seeds = P.Items.Where(i => i != null && i.Category == SObject.SeedsCategory).Sum(i => i.Stack);
         var parts = new List<string>();
         if (ripe > 0) parts.Add($"{ripe} ripe crop(s) to harvest_all and ship");
@@ -240,6 +247,42 @@ public static partial class AgentTools
         else if (seeds > 0) parts.Add($"{seeds} seed(s) in your pack: till_area a field and plant them");
         else if (empty > 0) parts.Add($"{empty} empty tilled tile(s): buy seeds at Pierre's and plant");
         return parts.Count == 0 ? "" : "Waiting on the farm: " + string.Join("; ", parts) + ". ";
+    }
+
+    /// <summary>
+    /// The one thing to do next instead of sleeping, as a call the model can make as it is: farm work first, then the nearest
+    /// villager not yet talked to today, then foraging.
+    /// </summary>
+    internal static string NextTask()
+    {
+        var farm = Game1.getFarm();
+        var (ripe, dry, empty, dead) = farm == null ? (0, 0, 0, 0) : FarmWorkCounts(farm);
+        if (ripe > 0) return $"harvest_all() — {ripe} ripe crop(s), then ship them";
+        if (dry > 0) return $"water_all() — {dry} dry crop(s)";
+        var seed = P.Items.FirstOrDefault(i => IsSeasonCropSeed(i) && SeedTooLate(i!) == null);
+        if (seed != null && empty > 0) return $"plant(item=\"{seed.DisplayName}\") — {empty} empty tilled tile(s) of yours";
+        if (dead > 0) return $"clear_area over the {dead} dead crop(s) with the Scythe";
+        if (NpcInfo.NearestUntalked() is { } npc) return $"talk_to(name=\"{npc.name}\") — {npc.where}";
+        return "forage() — wild food to pick up and sell";
+    }
+
+    /// <summary>Ripe, dry (and not dying tonight), empty (of yours, not on day 28) and dead tiles on the farm.</summary>
+    private static (int ripe, int dry, int empty, int dead) FarmWorkCounts(Farm farm)
+    {
+        int ripe = 0, dry = 0, empty = 0, dead = 0;
+        int w = farm.Map.Layers[0].LayerWidth, h = farm.Map.Layers[0].LayerHeight;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                if (FarmDirt(farm, x, y) is not { } d) continue;
+                if (d.crop == null) { if (!farm.Objects.ContainsKey(new Vector2(x, y)) && Ownership.OwnerOf(d) is var o && (o == null || o == Rt.Log.Player)) empty++; }
+                else if (d.crop.dead.Value) dead++;
+                else if (FarmRipeCrop(farm, x, y)) ripe++;
+                else if (!Game1.IsRainingHere(farm) && FarmCropNeedsWater(farm, x, y) && !FarmCropDiesTonight(farm, d.crop)) dry++;
+            }
+        // Pierre sells only this season's seeds, and they would die tonight: the empty soil waits for tomorrow.
+        if (Game1.dayOfMonth >= FarmSeasonDays) empty = 0;
+        return (ripe, dry, empty, dead);
     }
 
     // ------------------------------------------------------------------ farm_summary
@@ -412,12 +455,16 @@ public static partial class AgentTools
         // water_all could only water everyone's)
         bool mineOnly = S(a, "whose").Trim().Equals("mine", StringComparison.OrdinalIgnoreCase);
         string me = Players.Current.Id;
-        var todo = FarmTilesWhere(loc, (l, x, y) => FarmCropNeedsWater(l, x, y) && (!mineOnly || FarmCropOwner(l, x, y) == me));
+        var dry0 = FarmTilesWhere(loc, (l, x, y) => FarmCropNeedsWater(l, x, y) && (!mineOnly || FarmCropOwner(l, x, y) == me));
+        var todo = dry0.Where(t => !FarmCropDiesTonight(loc, FarmDirt(loc, t.X, t.Y)!.crop)).ToList();
+        string dying = dry0.Count > todo.Count
+            ? $" Skipped {dry0.Count - todo.Count} dry crop(s) that die tonight when {Game1.currentSeason} ends (they don't grow next season): harvest what is ripe, the rest is lost."
+            : "";
         if (todo.Count == 0)
         {
             bool rain = loc is Farm && (Game1.isRaining || Game1.isLightning);
             c.Result = rain ? "It is raining: the rain watered every crop. Nothing to do."
-                : $"No unwatered crops{(mineOnly ? " of yours" : "")} on {loc.Name}.";
+                : $"No unwatered crops{(mineOnly ? " of yours" : "")} worth watering on {loc.Name}.{dying}";
             yield break;
         }
         var byOwner = new Dictionary<string, int>();
@@ -470,6 +517,7 @@ public static partial class AgentTools
         sb.Append(dry == 0 ? ". partial=false" : $". {dry} still dry, partial=true");
         sb.Append($". Watering can {can.WaterLeft}/{can.waterCanMax}.");
         if (wet > 0) sb.Append($" {wet} were already watered.");
+        sb.Append(dying);
         if (stop != null) sb.Append($"\nStopped: {stop}.");
         if (remaining.Count > 0) sb.Append($"\nNot reached: {FarmTilesText(remaining)}");
         foreach (var p in problems.Take(6)) sb.Append('\n').Append(p);
@@ -483,13 +531,21 @@ public static partial class AgentTools
         var loc = Loc;
         var can = (WateringCan)P.Items[slot];
         var me = P.TilePoint;
-        var waters = FarmTilesWhere(loc, FarmIsWater).OrderBy(t => FarmDist(me, t)).Take(6).ToList();
+        // Only shore tiles can be reached. Day 56: the six nearest tiles were all one fenced-off pond, so the can stayed empty
+        // while the pond at (71,28) worked by hand; a failed shore now rules out its whole pond and the next one is tried.
+        var waters = FarmTilesWhere(loc, FarmIsWater)
+            .Where(t => Dirs.Any(d => Pathfinder.IsWalkable(loc, t.X + d.X, t.Y + d.Y)))
+            .OrderBy(t => FarmDist(me, t)).ToList();
         if (waters.Count == 0) { c.Fail($"the can is empty and {loc.Name} has no water tile to refill it"); yield break; }
+        var failed = new List<Point>();
+        int tries = 0;
         foreach (var water in waters)
         {
+            if (failed.Any(f => FarmDist(f, water) <= 8)) continue;
+            if (++tries > 6) break;
             var walk = new CallContext();
             yield return WalkAdjacent(water, walk);
-            if (!walk.Ok) continue;
+            if (!walk.Ok) { failed.Add(water); continue; }
             P.CurrentToolIndex = slot;
             yield return Swing(water);
             if (can.WaterLeft > 0) yield break;
@@ -502,8 +558,16 @@ public static partial class AgentTools
     private static IEnumerator HarvestAll(JsonElement a, CallContext c)
     {
         var loc = Loc;
-        var route = RouteOrder(FarmTilesWhere(loc, FarmPickable), P.TilePoint);
-        if (route.Count == 0) { c.Result = $"Nothing to harvest on {loc.Name}: no ready crops or forage."; yield break; }
+        bool everyones = S(a, "whose").Trim().Equals("all", StringComparison.OrdinalIgnoreCase);
+        var me = Rt.Log.Player;
+        // Crops another farmer planted are theirs (day 20 and 24: the two AIs harvested and sold each other's parsnips).
+        bool Theirs(GameLocation l, int x, int y) =>
+            FarmDirt(l, x, y) is { crop: not null } d && Ownership.OwnerOf(d) is { } owner && owner != me;
+        var pickable = FarmTilesWhere(loc, FarmPickable);
+        int others = everyones ? 0 : pickable.Count(t => Theirs(loc, t.X, t.Y));
+        var route = RouteOrder(everyones ? pickable : pickable.Where(t => !Theirs(loc, t.X, t.Y)).ToList(), P.TilePoint);
+        var othersNote = others > 0 ? $"\nLeft {others} ripe crop(s) other farmers planted: theirs to harvest and sell (whose=all only if they asked you to)." : "";
+        if (route.Count == 0) { c.Result = $"Nothing of yours to harvest on {loc.Name}: no ready crops or forage.{othersNote}"; yield break; }
 
         var before = Snapshot();
         string? stop = null;
@@ -556,7 +620,7 @@ public static partial class AgentTools
             sb.Append($"\nLeft {left.Count}: {FarmTilesText(left)}");
             if (stop == null) sb.Append(" (unreachable, or they need a Scythe you don't have)");
         }
-        c.Result = sb.ToString();
+        c.Result = sb.Append(othersNote).ToString();
     }
 
     // ------------------------------------------------------------------ clear_area / till_area
@@ -788,16 +852,33 @@ public static partial class AgentTools
         int n = 0;
         foreach (var it in P.Items)
         {
-            if (it == null || it.Category != SObject.SeedsCategory || it.Name.Contains("Sapling", StringComparison.OrdinalIgnoreCase)) continue;
-            if (Crop.TryGetData(it.ItemId, out var data) && data.Seasons != null && data.Seasons.Count > 0 && !data.Seasons.Contains(Game1.season)) continue;
-            n += it.Stack;
+            if (IsSeasonCropSeed(it)) n += it.Stack;
         }
         return n;
     }
 
-    /// <summary>Tilled soil on this map with nothing planted or placed on it.</summary>
+    /// <summary>Crop seeds that grow this season. Tree seeds (Acorn, Maple Seed, Pine Cone) share the seed category but have no crop data:
+    /// planted in a field they grow into trees (day 26), so they don't count.</summary>
+    internal static bool IsSeasonCropSeed(Item? it) =>
+        it != null && it.Category == SObject.SeedsCategory && Crop.TryGetData(it.ItemId, out var data)
+        && (data.Seasons == null || data.Seasons.Count == 0 || data.Seasons.Contains(Game1.season));
+
+    /// <summary>Tilled soil on this map with nothing planted or placed on it, of this farmer or nobody's.</summary>
     private static int EmptyTilled(GameLocation loc) =>
-        loc.terrainFeatures.Pairs.Count(kv => kv.Value is HoeDirt { crop: null } && !loc.Objects.ContainsKey(kv.Key));
+        loc.terrainFeatures.Pairs.Count(kv => kv.Value is HoeDirt { crop: null } d && !loc.Objects.ContainsKey(kv.Key)
+                                              && Ownership.OwnerOf(d) is var o && (o == null || o == Rt.Log.Player));
+
+    /// <summary>
+    /// Why a crop seed planted outdoors today would not be harvested before its seasons end (CropMath, as farm_summary's too-late
+    /// count), or null when it makes it. Days 25-28 and 53-56: morning chores planted seeds that could only die.
+    /// </summary>
+    internal static string? SeedTooLate(Item seed)
+    {
+        if (!Crop.TryGetData(seed.ItemId, out var data)) return null;
+        var grows = new[] { Season.Spring, Season.Summer, Season.Fall, Season.Winter }.Select(s => data.Seasons?.Contains(s) == true).ToArray();
+        var plan = CropMath.Plan(CropMath.SeasonIndex(Game1.currentSeason), Game1.dayOfMonth, grows, CropMath.GrowthDays(data.DaysInPhase), data.RegrowDays);
+        return plan.Matures ? null : $"needs {CropMath.GrowthDays(data.DaysInPhase)} days to grow, only {plan.DaysAvailable} left before it dies";
+    }
 
     /// <summary>Hoe every bare tile that can be tilled and note why the others can't; at most <paramref name="budget"/> new tiles.</summary>
     private static IEnumerator FarmTill(GameLocation loc, List<Point> tiles, FarmReport rep, int budget = int.MaxValue)
@@ -826,7 +907,12 @@ public static partial class AgentTools
             P.CurrentToolIndex = hoe;
             yield return Swing(t);
             rep.Swings++;
-            if (FarmCoverAt(loc, t.X, t.Y).cover == FarmCover.Tilled) rep.Tilled++;
+            if (FarmCoverAt(loc, t.X, t.Y).cover == FarmCover.Tilled)
+            {
+                rep.Tilled++;
+                // Soil belongs to whoever tilled it, so the other farmer's plant and morning chores leave it alone.
+                if (FarmDirt(loc, t.X, t.Y) is { } tilled) Ownership.ClaimCrop(tilled, Rt.Log.Player);
+            }
             else rep.CannotTill("the Hoe had no effect", t);
         }
     }
@@ -927,8 +1013,19 @@ public static partial class AgentTools
             where = $"({ax},{ay}) {aw}x{ah} on {loc.Name}";
         }
 
-        var spots = FarmTilesWhere(loc, (l, tx, ty) => inArea(l, tx, ty) && FarmDirt(l, tx, ty) is { crop: null });
-        if (spots.Count == 0) { c.Result = $"No empty tilled soil in {where}. Use till_area to prepare a field first."; yield break; }
+        // Another farmer's soil (they tilled or planted it) is theirs: morning chores planted into the other plot (day 57).
+        var me = Rt.Log.Player;
+        bool Mine(HoeDirt d) => Ownership.OwnerOf(d) is var o && (o == null || o == me);
+        int theirs = 0;
+        var spots = FarmTilesWhere(loc, (l, tx, ty) =>
+        {
+            if (!inArea(l, tx, ty) || FarmDirt(l, tx, ty) is not { crop: null } d) return false;
+            if (Mine(d)) return true;
+            theirs++;
+            return false;
+        });
+        var othersNote = theirs > 0 ? $" Left {theirs} empty tilled tile(s) of another farmer alone." : "";
+        if (spots.Count == 0) { c.Result = $"No empty tilled soil of yours in {where}. Use till_area to prepare a field first.{othersNote}"; yield break; }
 
         var route = RouteOrder(spots, P.TilePoint);
         int startStack = P.Items[slot].Stack;
@@ -959,6 +1056,7 @@ public static partial class AgentTools
         int used = startStack - (P.Items[slot]?.Stack ?? 0);
         var sb = new StringBuilder($"Planted {used} {name} on {used} of {route.Count} empty tilled tiles in {where}.");
         if (P.Items[slot] is { } left) sb.Append($" {left.Stack} left.");
+        sb.Append(othersNote);
         if (stop != null) sb.Append($"\nStopped: {stop}.");
         foreach (var f in failures.Take(5)) sb.Append('\n').Append(f);
         if (failures.Count > 5) sb.Append($"\n(+{failures.Count - 5} more)");

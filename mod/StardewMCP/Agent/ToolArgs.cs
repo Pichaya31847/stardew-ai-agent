@@ -104,6 +104,10 @@ public static partial class AgentTools
                 list.Add(new Point(ox, oy));
             else if (t.ValueKind == JsonValueKind.String)
                 AddPairs(t.GetString(), list);
+            // [["73,25"]]: a pair written as text inside its own array (22 use_tool calls lost to "No tiles given").
+            else if (t.ValueKind == JsonValueKind.Array)
+                foreach (var s in t.EnumerateArray().Where(s => s.ValueKind == JsonValueKind.String))
+                    AddPairs(s.GetString(), list);
         }
         return list;
     }

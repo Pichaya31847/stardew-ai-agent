@@ -27,8 +27,8 @@ add an HTTP endpoint or an event here and consume it there.
   heard only by the AIs whose screen shows the speaker, so plans and deals are made face to face; a line
   stays up `ChatSeconds`), `think` (private, overlay only), `emote`, `give`.
 - **Perception and interrupts**: observations show what nearby players are *actually* doing next
-  to what they last heard them say; mentions, gifts, theft, arrivals and weather interrupt a running
-  long action and come back as `Events:`.
+  to what they last heard them say; mentions, gifts, theft, someone entering your house and weather interrupt a running
+  long action and come back as `Events:` (an arrival in view only comes back with the next result).
 - The AIs only ever read farmer names, never seat ids (`p1`, `p2`...), in prompts, results and tool descriptions.
 - **Memory**: `journal` (diary, lessons, plan, notes), `self` / `people` notes that emerge from play.
 - **Seats** (`ModConfig.Seats`, `SeatRole`): each of P1–P4 is `ai`, `human` (P1 only, keyboard and mouse,
@@ -144,7 +144,8 @@ mod/StardewMCP/Agent/BubbleText.cs   Line breaking for the speech bubbles (Thai-
 mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, timed only while the world runs
 mod/StardewMCP/Agent/CompressedLogStore.cs  lossless appendable gzip logs, legacy migration and day discovery
 mod/StardewMCP/Agent/SaleReserve.cs  minimum crafting reserves and protected planting inputs for sales
-mod/StardewMCP/Agent/DaySafety.cs  morning readiness, early sleep and committed-sleep social interruption policy
+mod/StardewMCP/Agent/DaySafety.cs  morning readiness, early sleep (and its refusal text), committed-sleep social interruption, stale message boxes at bedtime
+mod/StardewMCP/Agent/LanguageGuard.cs  Chinese characters in think / say / diary text that must be in another language
 mod/StardewMCP/Agent/Brain/DailySocialProgress.cs  per-day social progress and bounded reminders across context resets
 mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts
 ```

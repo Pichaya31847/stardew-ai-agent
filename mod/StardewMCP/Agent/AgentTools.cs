@@ -211,9 +211,8 @@ public static partial class AgentTools
             new()
             {
                 Name = "shop_list",
-                Description = "List items for sale in the open shop menu with prices.",
-                Schema = Obj(new { }),
-                Instant = true,
+                Description = "List the items for sale with prices. Inside a shop it opens the counter first (walks to it), like buy and sell.",
+                Schema = Obj(new { reason = Str("Optional: why you look at the shop") }),
                 Run = ShopList
             },
             new()
@@ -290,9 +289,11 @@ public static partial class AgentTools
         var text = TextArg(a, "text");
         if (text.Length == 0)
         {
-            c.Fail(Reasons.InvalidArgs, "text is empty: call think(text=\"your thought\")");
+            // An empty think is a model that wants to pause, not a mistake worth a failure (11 of them on days 21-28): move it on.
+            c.Result = "Nothing was written. Don't think again now: call the tool for your next step.";
             yield break;
         }
+        if (LanguageGuard.Reject(text, Lang, "thought") is { } drift) { c.Fail(Reasons.InvalidArgs, drift); yield break; }
         Rt.Log.Add("think", text: text);
         c.Result = "ok";
     }
@@ -304,8 +305,49 @@ public static partial class AgentTools
             yield return WalkTo(target, c);
         else
             yield return WalkAdjacent(target, c);
+        if (!c.Ok && c.Reason == Reasons.NoPath && NearestReachable(target) is Point near)
+        {
+            // Days 46-56: 46 walk_to calls failed with "No reachable tile next to", most toward a pond to refill the can.
+            var sub = new CallContext();
+            yield return WalkTo(near, sub);
+            if (sub.Ok)
+            {
+                bool water = Loc.isWaterTile(target.X, target.Y);
+                c.Ok = true;
+                c.Partial = true;
+                c.Reason = Reasons.Partial;
+                c.Result = $"({target.X},{target.Y}) can't be reached; stopped at the closest reachable tile ({P.TilePoint.X},{P.TilePoint.Y})." +
+                           (water ? " The watering can refills itself in water_all and use_tool when it runs dry." : "");
+                yield break;
+            }
+        }
         if (c.Ok)
             c.Result = $"Arrived at ({P.TilePoint.X},{P.TilePoint.Y}).";
+    }
+
+    /// <summary>A walkable tile within 6 of <paramref name="target"/> with a path from here, nearest to the target first; null if none.</summary>
+    private static Point? NearestReachable(Point target)
+    {
+        var loc = Loc;
+        var me = P.TilePoint;
+        var finder = new Pathfinder();
+        int tried = 0;
+        for (int r = 1; r <= 6 && tried < 12; r++)
+            foreach (var p in TilesAtDistance(target, r))
+            {
+                if (!Pathfinder.IsWalkable(loc, p.X, p.Y) || FarmerOn(loc, p)) continue;
+                if (p == me) return p;
+                if (++tried > 12) return null;
+                if (finder.FindPath(loc, me.ToVector2(), p.ToVector2()) != null) return p;
+            }
+        return null;
+    }
+
+    private static IEnumerable<Point> TilesAtDistance(Point c, int r)
+    {
+        for (int dx = -r; dx <= r; dx++)
+            for (int dy = -r; dy <= r; dy++)
+                if (Math.Abs(dx) + Math.Abs(dy) == r) yield return new Point(c.X + dx, c.Y + dy);
     }
 
     private static IEnumerator Wait(JsonElement a, CallContext c)
@@ -398,6 +440,19 @@ public static partial class AgentTools
         if (start == target) yield break;
 
         var path = new Pathfinder().FindPath(loc, start.ToVector2(), target.ToVector2());
+        if (path == null && !_clearingWay && ClearsWayOn(loc))
+        {
+            // Walled in by weeds, stones and twigs (days 22-26: no way out of the Farm or Backwoods): cut a way through them.
+            var cleared = new CallContext();
+            yield return ClearWayTo(loc, target, cleared);
+            if (cleared.Ok && Loc == loc)
+                path = new Pathfinder().FindPath(loc, P.TilePoint.ToVector2(), target.ToVector2());
+            if (path == null && cleared.Result.Length > 0)
+            {
+                c.Fail(Reasons.NoPath, $"No walkable path to ({target.X},{target.Y}) on {loc.Name}: {cleared.Result}");
+                yield break;
+            }
+        }
         if (path == null)
         {
             c.Fail(Reasons.NoPath, $"No walkable path to ({target.X},{target.Y}) on {loc.Name}.");
@@ -417,23 +472,44 @@ public static partial class AgentTools
         P.setRunning(true, true);
 
         int limit = 60 * 5 + path.Count * 40;
-        int stuck = 0;
+        int stuck = 0, replans = 0;
         var last = P.Position;
+        var menuAtStart = Game1.activeClickableMenu;
         for (int t = 0; t < limit; t++)
         {
             if (Game1.currentLocation != loc) yield break; // walked through a warp
             // Stepped onto a warp: stop pushing into it, or the game re-warps (restarting the fade) every tick.
             if (Game1.isWarping) { P.controller = null; yield break; }
             if (stopWhen?.Invoke() == true) { P.controller = null; P.Halt(); yield break; }
+            // A message that pops up mid-walk is a locked door the farmer bumped into ("not close enough to enter her room").
+            // Day 56: talk_to Caroline pushed AI2 into Pierre's bedroom door for 6 real minutes while AI1 waited in bed.
+            if (Game1.activeClickableMenu is DialogueBox { isQuestion: false } bump && !ReferenceEquals(bump, menuAtStart))
+            {
+                var said = (bump.getCurrentString() ?? "").Replace("\n", " ").Trim();
+                bump.closeDialogue();
+                Game1.dialogueUp = false;
+                P.controller = null;
+                P.Halt();
+                c.Fail(Reasons.NoPath, $"{LockedDoorNote} toward ({target.X},{target.Y}); stopped at ({P.TilePoint.X},{P.TilePoint.Y}). {(said.Length > 0 ? $"The door said: \"{said}\"" : "")}".Trim());
+                yield break;
+            }
             if (P.controller == null) break;
             if (Vector2.DistanceSquared(P.Position, last) < 0.01f) stuck++; else stuck = 0;
             last = P.Position;
             if (stuck > 90)
             {
-                // Something moved into the way (villager, animal): re-plan once from here.
+                // Something moved into the way (villager, animal), or the farmer is wedged against a wall: re-plan from here.
+                // Days 10 and 28: AI1 stood under Maru's locked door in Robin's house and every walk out stopped at (7,11)
+                // without moving, 21 times. Stand square on the tile, put away the door's message and route around villagers.
+                if (++replans > 3) break;
                 P.controller = null;
                 P.Halt();
-                var re = new Pathfinder().FindPath(loc, P.TilePoint.ToVector2(), target.ToVector2());
+                if (Game1.activeClickableMenu is DialogueBox { isQuestion: false } msg) { msg.closeDialogue(); Game1.dialogueUp = false; }
+                var here = P.TilePoint;
+                if (Pathfinder.IsWalkable(loc, here.X, here.Y)) P.setTileLocation(here.ToVector2());
+                var avoid = new HashSet<Point>(loc.characters.Select(n => n.TilePoint).Where(t => t != target && t != here));
+                var re = new Pathfinder().FindPath(loc, here.ToVector2(), target.ToVector2(), avoid)
+                         ?? new Pathfinder().FindPath(loc, here.ToVector2(), target.ToVector2());
                 if (re == null) break;
                 var s2 = new Stack<Point>();
                 for (int i = re.Count - 1; i >= 0; i--) s2.Push(new Point((int)re[i].X, (int)re[i].Y));
@@ -447,6 +523,72 @@ public static partial class AgentTools
         if (P.TilePoint != target && Game1.currentLocation == loc)
             c.Fail(Reasons.NoPath, $"Could not reach ({target.X},{target.Y}); stopped at ({P.TilePoint.X},{P.TilePoint.Y}).");
     }
+
+    /// <summary>How a walk that ran into a locked door fails; talk_to stops chasing on it.</summary>
+    internal const string LockedDoorNote = "A locked door is in the way";
+
+    /// <summary>True while <see cref="ClearWayTo"/> clears: its own walks must not start another clearing.</summary>
+    private static bool _clearingWay;
+
+    private const int ClearWayMaxTiles = 15;
+
+    /// <summary>Walkable, or covered by something the basic tools clear (weeds, grass, twigs, stones, stumps, dead crops). Young
+    /// trees are not cut on the way: someone may have planted them.</summary>
+    private sealed class DebrisGrid : IWalkableGrid
+    {
+        private readonly GameLocation _loc;
+        public DebrisGrid(GameLocation loc) => _loc = loc;
+        public bool IsWalkable(int x, int y) => Pathfinder.IsWalkable(_loc, x, y) ||
+            (_loc.isTileOnMap(x, y) && FarmCoverAt(_loc, x, y).cover is var cover && cover != FarmCover.Sapling && FarmClearable(cover));
+    }
+
+    /// <summary>
+    /// No route to <paramref name="target"/>: find one that crosses clearable debris and clear those tiles in route order.
+    /// Fails with an empty result when even that route doesn't exist (the caller then reports a plain no path).
+    /// </summary>
+    private static IEnumerator ClearWayTo(GameLocation loc, Point target, CallContext c)
+    {
+        var rough = new Pathfinder().FindPath(new DebrisGrid(loc), P.TilePoint.ToVector2(), target.ToVector2());
+        if (rough == null) { c.Fail(Reasons.NoPath, ""); yield break; }
+        var blockers = rough.Select(v => new Point((int)v.X, (int)v.Y)).Where(t => !Pathfinder.IsWalkable(loc, t.X, t.Y)).ToList();
+        if (blockers.Count == 0) yield break;
+        if (blockers.Count > ClearWayMaxTiles)
+        {
+            c.Fail(Reasons.NoPath, $"the only way there crosses {blockers.Count} tiles of weeds, stones and twigs, starting at {FarmTilesText(blockers, 4)}; clear_area them first.");
+            yield break;
+        }
+
+        _clearingWay = true;
+        var rep = new FarmReport();
+        float energyBefore = P.Stamina;
+        int startTime = Game1.timeOfDay;
+        try
+        {
+            foreach (var t in blockers)
+            {
+                yield return FarmClear(loc, new List<Point> { t }, rep);
+                if (rep.Stop != null || Loc != loc) break;
+                if (!Pathfinder.IsWalkable(loc, t.X, t.Y)) break;
+            }
+        }
+        finally { _clearingWay = false; }
+
+        if (blockers.Any(t => !Pathfinder.IsWalkable(loc, t.X, t.Y)))
+        {
+            var left = blockers.Where(t => !Pathfinder.IsWalkable(loc, t.X, t.Y)).ToList();
+            c.Fail(Reasons.NoPath, $"tried to clear the way but {left.Count} tile(s) still block it ({FarmTilesText(left, 4)})" +
+                                   (rep.Stop != null ? $": {rep.Stop}" : rep.MissingTools.Count > 0 ? $": missing {string.Join(", ", rep.MissingTools)}" : "") + ".");
+            yield break;
+        }
+        // The farmer pays for the clearing in energy and time, so its result says so (it used to reach only the system log).
+        var cost = $"Cleared a way through {blockers.Count} tile(s) on {loc.Name} ({FarmCounts(rep.Cleared)}): energy {(int)energyBefore} → {(int)P.Stamina}, " +
+                   $"{WorldText.FormatTime(startTime)} → {WorldText.FormatTime(Game1.timeOfDay)}.";
+        Rt.Log.Add("system", text: cost);
+        SocialTools.Notify(Rt.Log.Player, cost);
+    }
+
+    /// <summary>Only the farm and the Backwoods next to it are walled in by debris worth cutting through on the way.</summary>
+    private static bool ClearsWayOn(GameLocation loc) => loc is Farm || loc.Name == "Backwoods";
 
     /// <summary>Another farmer stands on this tile: farmers don't collide in the game, so walking there stacks them.</summary>
     private static bool FarmerOn(GameLocation loc, Point tile) =>
@@ -628,7 +770,18 @@ public static partial class AgentTools
             if (tool is WateringCan can)
             {
                 bool water = loc.isWaterTile(t.X, t.Y) || loc.doesTileHaveProperty(t.X, t.Y, "Water", "Back") != null;
-                if (!water && can.WaterLeft <= 0) { lines.Add($"({t.X},{t.Y}) skipped: watering can is EMPTY — refill it on a water tile (~)."); batch.Skip(); continue; }
+                if (!water && can.WaterLeft <= 0)
+                {
+                    // Refill the way water_all does (days 46-56: 27 "can is EMPTY" skips, and the AIs then guessed water tiles they couldn't reach).
+                    var refill = new CallContext();
+                    yield return FarmRefill(slot, refill);
+                    if (!refill.Ok) { lines.Add($"({t.X},{t.Y}) skipped: watering can is EMPTY and {refill.Result.Replace("the can is empty and ", "")}."); batch.Skip(); continue; }
+                    lines.Add($"refilled the watering can at the nearest water ({can.WaterLeft}/{can.waterCanMax})");
+                    var back = new CallContext();
+                    yield return WalkAdjacent(t, back);
+                    if (!back.Ok) { lines.Add($"({t.X},{t.Y}) skipped: {back.Result}"); batch.Skip(back.Reason); continue; }
+                    P.CurrentToolIndex = slot;
+                }
                 yield return Swing(t);
                 bool wet = loc.terrainFeatures.TryGetValue(t.ToVector2(), out var tf2) && tf2 is HoeDirt hd && hd.isWatered();
                 lines.Add(water ? $"({t.X},{t.Y}) refilled watering can ({can.WaterLeft}/{can.waterCanMax})" : $"({t.X},{t.Y}) watered{(wet ? "" : " (nothing to water here)")} · can {can.WaterLeft}/{can.waterCanMax}");
@@ -818,6 +971,19 @@ public static partial class AgentTools
         int slot = holding.Length > 0 ? FindItem(holding) : -1;
         if (holding.Length > 0 && slot < 0) { c.Fail(Reasons.NoItem, $"No \"{holding}\" in inventory."); yield break; }
         bool atTile = Has(a, "x") && Has(a, "y");
+        // interact() with nothing in a shop building means "open the shop" (83 failures in the second 9B run, most in Pierre's).
+        if (!atTile && slot < 0 && Game1.activeClickableMenu == null && ShopOfPlace.ContainsKey(Loc.Name))
+        {
+            var shop = new CallContext();
+            yield return OpenShopHere(shop);
+            if (Game1.activeClickableMenu is ShopMenu)
+            {
+                c.Result = "Opened the shop. " + WorldText.MenuState().Trim() + "\nBuy with buy(item, quantity) or sell with sell(item); close_menu when done.";
+                yield break;
+            }
+            c.Fail(shop.Reason ?? Reasons.ShopClosed, shop.Result);
+            yield break;
+        }
         if (!atTile && slot < 0) { c.Fail(Reasons.InvalidArgs, "Nothing was pressed: supply BOTH x and y from look, or holding to use an item where you stand." + ShopCounterHint() + NearbyActionTiles()); yield break; }
 
         var before = Snapshot();
@@ -937,6 +1103,16 @@ public static partial class AgentTools
     private static IEnumerator TravelTo(JsonElement a, CallContext c)
     {
         var asked = S(a, "location").Trim();
+        // 19 calls in the second 9B run sent only a reason, or the place under another key.
+        if (asked.Length == 0 && a.ValueKind == JsonValueKind.Object)
+            asked = a.EnumerateObject().Where(p => p.Name != "reason" && p.Value.ValueKind == JsonValueKind.String)
+                .Select(p => (p.Value.GetString() ?? "").Trim()).FirstOrDefault(s => s.Length > 0) ?? "";
+        if (asked.Length == 0)
+        {
+            c.Fail(Reasons.InvalidArgs, "No destination given: put the place in location, e.g. travel_to(location=\"Town\", reason=\"...\"). " +
+                                        "location takes a map name (Farm, Town, SeedShop...), a shop keeper's or villager's name, or another farmer's name.");
+            yield break;
+        }
         if (IsSkullCavernName(asked)) { yield return TravelToSkullCavern(c); yield break; }
         var (dest, note) = NpcInfo.ResolvePlace(asked); // map names, shop keepers (Pierre = SeedShop), villagers (where they are now)
         var target = dest == null ? null : Game1.getLocationFromName(dest);
@@ -1049,40 +1225,59 @@ public static partial class AgentTools
                 continue;
             }
             var me = P.TilePoint;
-            var exit = Exits(loc).Where(e => e.Target == next)
-                .OrderBy(e => Math.Abs(e.Tile.X - me.X) + Math.Abs(e.Tile.Y - me.Y)).FirstOrDefault();
-            if (exit == null) { c.Fail(Reasons.NoPath, $"No exit from {loc.Name} to {next}."); yield break; }
+            // Reachable exits first, then the nearest: the closest way out can sit behind a locked bedroom door
+            // (day 21: Robin's house, AI2 walked into the bedroom door until bedtime).
+            var exits = Exits(loc).Where(e => e.Target == next)
+                .OrderBy(e => ExitReachable(loc, me, e) ? 0 : 1)
+                .ThenBy(e => Math.Abs(e.Tile.X - me.X) + Math.Abs(e.Tile.Y - me.Y)).ToList();
+            if (exits.Count == 0) { c.Fail(Reasons.NoPath, $"No exit from {loc.Name} to {next}."); yield break; }
 
-            var sub = new CallContext();
-            if (exit.IsDoor)
+            Exit exit = exits[0];
+            string? lastFail = null;
+            string? lastReason = null;
+            foreach (var cand in exits)
             {
-                // Stand below the door and open it; the game checks opening hours/locks.
-                var d = exit.Tile;
-                var stand = new Point(d.X, d.Y + 1);
-                if (Pathfinder.IsWalkable(loc, stand.X, stand.Y)) yield return WalkTo(stand, sub);
-                else yield return WalkAdjacent(d, sub);
-                if (Loc == loc)
+                exit = cand;
+                var sub = new CallContext();
+                lastFail = null;
+                if (exit.IsDoor)
                 {
-                    if (!sub.Ok) { c.Fail(sub.Reason ?? Reasons.NoPath, $"Can't reach the door to {next}: {sub.Result}"); yield break; }
-                    Face(d);
-                    Game1.tryToCheckAt(d.ToVector2(), P);
+                    // Stand below the door and open it; the game checks opening hours/locks.
+                    var d = exit.Tile;
+                    var stand = new Point(d.X, d.Y + 1);
+                    if (Pathfinder.IsWalkable(loc, stand.X, stand.Y)) yield return WalkTo(stand, sub);
+                    else yield return WalkAdjacent(d, sub);
+                    if (Loc == loc)
+                    {
+                        if (!sub.Ok) { lastFail = $"Can't reach the door to {next}: {sub.Result}"; lastReason = sub.Reason; continue; }
+                        Face(d);
+                        Game1.tryToCheckAt(d.ToVector2(), P);
+                    }
                 }
+                else
+                {
+                    // Edge exits sit just off the walkable map: get as close as possible, then step through.
+                    var near = Pathfinder.IsWalkable(loc, exit.Tile.X, exit.Tile.Y) ? exit.Tile : NearestWalkable(loc, exit.Tile, 3);
+                    if (near == null) { lastFail = $"Can't find a walkable tile near the exit to {next}."; lastReason = Reasons.NoPath; continue; }
+                    yield return WalkTo(near.Value, sub);
+                    if (Loc == loc && !Game1.isWarping)
+                    {
+                        // The last step onto an edge exit is often blocked by the map edge itself, so being right next to it is enough.
+                        var here = P.TilePoint;
+                        bool atExit = Math.Abs(here.X - exit.Tile.X) + Math.Abs(here.Y - exit.Tile.Y) <= 1;
+                        if (!sub.Ok && !atExit) { lastFail = $"Can't reach the exit to {next}: {sub.Result}"; lastReason = sub.Reason; continue; }
+                        var w = exit.Warp!;
+                        Game1.warpFarmer(w.TargetName, w.TargetX, w.TargetY, false);
+                    }
+                }
+                break;
             }
-            else
+            if (lastFail != null)
             {
-                // Edge exits sit just off the walkable map: get as close as possible, then step through.
-                var near = Pathfinder.IsWalkable(loc, exit.Tile.X, exit.Tile.Y) ? exit.Tile : NearestWalkable(loc, exit.Tile, 3);
-                if (near == null) { c.Fail(Reasons.NoPath, $"Can't find a walkable tile near the exit to {next}."); yield break; }
-                yield return WalkTo(near.Value, sub);
-                if (Loc == loc && !Game1.isWarping)
-                {
-                    // The last step onto an edge exit is often blocked by the map edge itself, so being right next to it is enough.
-                    var here = P.TilePoint;
-                    bool atExit = Math.Abs(here.X - exit.Tile.X) + Math.Abs(here.Y - exit.Tile.Y) <= 1;
-                    if (!sub.Ok && !atExit) { c.Fail(sub.Reason ?? Reasons.NoPath, $"Can't reach the exit to {next}: {sub.Result}"); yield break; }
-                    var w = exit.Warp!;
-                    Game1.warpFarmer(w.TargetName, w.TargetX, w.TargetY, false);
-                }
+                // A locked door's "not close enough" line stays up otherwise.
+                if (Game1.activeClickableMenu is DialogueBox) yield return FinishMessages(new CallContext());
+                c.Fail(lastReason ?? Reasons.NoPath, lastFail + (exits.Count > 1 ? $" (tried all {exits.Count} ways out to {next})" : ""));
+                yield break;
             }
 
             for (int i = 0; i < 300 && Loc == loc && Game1.activeClickableMenu is not ReadyCheckDialog; i++) yield return null;
@@ -1101,12 +1296,36 @@ public static partial class AgentTools
                 var msg = Game1.activeClickableMenu != null ? WorldText.MenuState().Trim() : "the door may be locked (check opening hours)";
                 var finished = new CallContext();
                 yield return FinishMessages(finished);
+                // Day 56: before a festival opens the game shows "being set up" and sends the farmer back; the closed dialogue's
+                // "use respond()" line had both AIs alternate travel_to and respond for an hour.
+                if (CalendarData.Today() is { Start: > 0 } fest && fest.Where == next && Game1.timeOfDay < fest.Start)
+                {
+                    c.Fail(Reasons.ShopClosed, $"{next} is closed until the {fest.Name} opens at {CalendarData.Clock(fest.Start)}: the villagers are setting it up. " +
+                        $"Do other work meanwhile and travel_to {next} at {CalendarData.Clock(fest.Start)} or later (it runs until {CalendarData.Clock(fest.End)}). Nothing to respond to.");
+                    yield break;
+                }
                 c.Fail(Game1.activeClickableMenu != null ? Reasons.MenuOpen : npcInterrupted ? Reasons.Interrupted : Reasons.ShopClosed, $"Couldn't go from {loc.Name} to {next}: {NpcInfo.DoorHours(loc, exit.Tile, next)}{msg}\n{finished.Result}");
                 yield break;
             }
             if (Loc.Name != next) { c.Fail($"Ended up in {Loc.Name} instead of {next}."); yield break; }
             yield return Ticks(20);
         }
+    }
+
+    /// <summary>A walking route exists from <paramref name="from"/> to where this exit is used.</summary>
+    private static bool ExitReachable(GameLocation loc, Point from, Exit e)
+    {
+        Point? goal;
+        if (e.IsDoor)
+        {
+            var below = new Point(e.Tile.X, e.Tile.Y + 1);
+            goal = Pathfinder.IsWalkable(loc, below.X, below.Y) ? below
+                : Dirs.Select(d => new Point(e.Tile.X + d.X, e.Tile.Y + d.Y)).Where(n => Pathfinder.IsWalkable(loc, n.X, n.Y)).Cast<Point?>().FirstOrDefault();
+        }
+        else
+            goal = Pathfinder.IsWalkable(loc, e.Tile.X, e.Tile.Y) ? e.Tile : NearestWalkable(loc, e.Tile, 3);
+        if (goal == null) return false;
+        return goal.Value == from || new Pathfinder().FindPath(loc, from.ToVector2(), goal.Value.ToVector2()) != null;
     }
 
     private static Point? NearestWalkable(GameLocation loc, Point p, int radius)
@@ -1128,7 +1347,10 @@ public static partial class AgentTools
 
     private static IEnumerator ShopList(JsonElement a, CallContext c)
     {
-        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(Reasons.NotHere, "No shop is open. Inside a shop, call buy or sell directly: they walk to the counter and open it. Or interact with BOTH x and y of the counter, then shop_list." + ShopCounterHint()); yield break; }
+        // Inside a shop building it opens the counter itself, like buy and sell (shop_list failed 26 times on days 21-28 with no menu open).
+        var opening = new CallContext();
+        if (Game1.activeClickableMenu is not ShopMenu) yield return OpenShopHere(opening);
+        if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(opening.Reason ?? Reasons.NotHere, $"No shop is open here: {opening.Result} travel_to the shop during opening hours (Pierre's is SeedShop), then shop_list." + ShopCounterHint()); yield break; }
         var cur = CurrencyUnit(shop.currency);
         var sb = new StringBuilder($"Shop {shop.ShopId} — you have {ShopMenu.getPlayerCurrencyAmount(P, shop.currency)}{cur}\n");
         foreach (var s in shop.forSale)
@@ -1340,6 +1562,20 @@ public static partial class AgentTools
         var spot = house.GetPlayerBedSpot();
         var walk = new CallContext();
         yield return WalkTo(spot, walk);
+        // A pet asleep between the door and the bed blocks the only path (day 21: lying down at the door held the sleep check
+        // for good). Move it aside and walk again; if the bed still can't be reached, step into it the way passing out does.
+        if (!walk.Ok && MovePetsAside(house))
+        {
+            walk = new CallContext();
+            yield return WalkTo(spot, walk);
+        }
+        if (!walk.Ok)
+        {
+            Rt.Log.Add("system", text: $"Bed blocked ({walk.Result}): stepped into bed at ({spot.X},{spot.Y})");
+            P.controller = null;
+            P.Halt();
+            P.setTileLocation(spot.ToVector2());
+        }
         if (Game1.activeClickableMenu is DialogueBox db)
             db.closeDialogue();
         else if (Game1.activeClickableMenu != null)
@@ -1355,6 +1591,22 @@ public static partial class AgentTools
         c.Result = "In bed";
     }
 
+    /// <summary>Move the pets in the house to a random open spot. True when one moved.</summary>
+    private static bool MovePetsAside(FarmHouse house)
+    {
+        bool moved = false;
+        foreach (var pet in house.characters.OfType<StardewValley.Characters.Pet>().ToList())
+        {
+            var to = house.getRandomOpenPointInHouse(Game1.random, 1);
+            if (to == Point.Zero || to == pet.TilePoint) continue;
+            pet.Halt();
+            pet.setTileLocation(to.ToVector2());
+            Rt.Log.Add("system", text: $"{pet.Name} was in the way to the bed: moved it to ({to.X},{to.Y})");
+            moved = true;
+        }
+        return moved;
+    }
+
     private static IEnumerator GoToBed(JsonElement a, CallContext c)
     {
         if (!Rt.Log.HasJournal(AgentLog.FarmDay))
@@ -1367,10 +1619,11 @@ public static partial class AgentTools
         // and do quests or socialize instead; exhausted or seriously hurt farmers may sleep.
         if (DaySafety.BlockEarlyBed(Game1.timeOfDay, P.Stamina, P.MaxStamina, P.health, P.maxHealth))
         {
+            bool repeat = Rt.EarlyBedDay == AgentLog.FarmDay;
             Rt.EarlyBedDay = AgentLog.FarmDay;
-            c.Fail(Reasons.NotReady, $"It's only {WorldText.FormatTime(Game1.timeOfDay)} and you aren't tired at all (energy {(int)P.Stamina}/{P.MaxStamina}): " +
-                                     "lying down now you'd just stare at the ceiling. " + PendingFarmWork() + "The shops, the townspeople, the beach and the mines are all open for hours yet. " +
-                                     "Do not repeat go_to_bed to skip the day. Work on quests, meet villagers, craft/place a Chest, organize supplies or upgrade your backpack. If paths fail, use look and replan; a full inventory is not a reason to sleep.");
+            var refusal = DaySafety.EarlyBedRefusal(WorldText.FormatTime(Game1.timeOfDay), (int)P.Stamina, P.MaxStamina, NextTask(), repeat);
+            if (!repeat && PendingFarmWork() is { Length: > 0 } work) refusal += " " + work.Trim();
+            c.Fail(Reasons.NotReady, refusal);
             yield break;
         }
 

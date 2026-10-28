@@ -25,7 +25,8 @@ public static partial class AgentTools
         {
             Name = "morning_chores",
             Description = "Start-of-day chores in one call: opens the gift boxes in your house, reads every letter in your mailbox (walks there; " +
-                          "attached items and quests are claimed) and claims the money of finished quests. Returns the letters' text: a letter " +
+                          "attached items and quests are claimed), claims the money of finished quests, plants this season's seeds you carry on empty tilled soil, " +
+                          "and tells you about produce sitting in your chests. Returns the letters' text: a letter " +
                           "can invite you to a place at a time, so put that in today's plan.",
             Schema = Obj(new { reason = Str(ReasonDesc) }, "reason"),
             Run = MorningChores
@@ -111,8 +112,47 @@ public static partial class AgentTools
             if (!sub.Ok) break;
         }
 
+        // Seeds bought for this season wait in the pack while tilled soil lies empty (day 26: 46 empty tiles, parsnip seeds in the pack).
+        var farm = Game1.getFarm();
+        // Only seeds that are harvested before their seasons end, never on day 28 (they die that night), and only on this
+        // farmer's own or unclaimed soil (PlantTool skips the other farmer's).
+        var skipped = new List<string>();
+        var sowable = new List<string>();
+        foreach (var seed in P.Items.Where(IsSeasonCropSeed).GroupBy(i => i!.DisplayName).Select(g => g.First()!))
+        {
+            var late = Game1.dayOfMonth >= CropMath.DaysPerSeason ? "the last day of the season: anything planted today dies tonight" : SeedTooLate(seed);
+            if (late != null) skipped.Add($"{seed.DisplayName} ({late})");
+            else sowable.Add(seed.DisplayName);
+        }
+        if (skipped.Count > 0) parts.Add("Seeds not planted: " + string.Join("; ", skipped) + ". Keep them for their season, or sell them.");
+        if (sowable.Count > 0 && EmptyTilled(farm) > 0)
+        {
+            if (Loc != farm)
+            {
+                var trip = new CallContext();
+                yield return TravelTo("Farm", trip);
+                if (!trip.Ok) parts.Add($"Couldn't get to the farm to plant your seeds: {trip.Result}");
+            }
+            foreach (var seed in sowable)
+            {
+                if (Loc != farm || EmptyTilled(farm) == 0) break;
+                var sub = new CallContext();
+                yield return PlantTool(ArgsOf(new { item = seed, reason = "seeds in the pack go into the empty tilled soil" }), sub);
+                if (sub.Result.Length > 0) parts.Add(sub.Result.Split('\n')[0]);
+            }
+        }
+
+        var hoard = ChestProduceForSale();
+        if (hoard.Length > 0)
+            parts.Add($"Your chests hold produce no bundle or quest needs: {hoard}. That is money: chest(action=take) it and ship it today.");
+        parts.Add(CraftAdvice());
+
         c.Result = string.Join("\n", parts.Where(p => p.Length > 0));
     }
+
+    /// <summary>Names of the seed stacks in the pack that grow this season (as <see cref="PlantableSeeds"/> counts them).</summary>
+    private static List<string> SeasonSeedNames() =>
+        P.Items.Where(IsSeasonCropSeed).Select(it => it.DisplayName).Distinct().ToList();
 
     // ------------------------------------------------------------------ forage
 
@@ -211,7 +251,29 @@ public static partial class AgentTools
         if (Game1.activeClickableMenu != null) { c.Fail(Reasons.MenuOpen, "Close the open menu first. " + WorldText.MenuState().Trim()); yield break; }
         var me = P.TilePoint;
         var counters = FindActionTiles(Loc, IsShopCounter).OrderBy(t => Math.Abs(t.X - me.X) + Math.Abs(t.Y - me.Y)).Take(3).ToList();
-        if (counters.Count == 0) { c.Fail(Reasons.NotHere, $"There is no shop counter on {Loc.Name}."); yield break; }
+        if (counters.Count == 0)
+        {
+            // Pierre's counter is no tile action in this game version (6 buy failures in SeedShop on days 18-27): open the map's own
+            // shop the way the game does, which checks that the shopkeeper is behind the counter.
+            if (ShopOfPlace.TryGetValue(Loc.Name, out var shopId))
+            {
+                var owner = Loc.characters.FirstOrDefault(n => n.Name == ShopOwner(shopId));
+                if (owner != null)
+                {
+                    var walk = new CallContext();
+                    yield return WalkAdjacent(owner.TilePoint, walk);
+                }
+                Utility.TryOpenShopMenu(shopId, Loc, null, null, false);
+                for (int i = 0; i < 60 && Game1.activeClickableMenu == null; i++) yield return null;
+                if (Game1.activeClickableMenu is ShopMenu) yield break;
+                var why = Game1.activeClickableMenu != null ? WorldText.MenuState().Trim() : "";
+                if (Game1.activeClickableMenu != null) yield return FinishMessages(new CallContext());
+                c.Fail(Reasons.ShopClosed, $"{ShopOwner(shopId)} is not at the counter (away, or outside opening hours). {why}".Trim());
+                yield break;
+            }
+            c.Fail(Reasons.NotHere, $"There is no shop counter on {Loc.Name}.");
+            yield break;
+        }
 
         string last = "";
         foreach (var t in counters)
@@ -235,6 +297,18 @@ public static partial class AgentTools
         }
         c.Fail(Reasons.ShopClosed, $"The counter on {Loc.Name} did not open a shop (the shopkeeper may be away or it is outside opening hours). {last}".Trim());
     }
+
+    /// <summary>The shop (Data/Shops id) a shop building sells from.</summary>
+    private static readonly Dictionary<string, string> ShopOfPlace = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["SeedShop"] = "SeedShop", ["FishShop"] = "FishShop", ["Blacksmith"] = "Blacksmith", ["AnimalShop"] = "AnimalShop",
+        ["ScienceHouse"] = "Carpenter", ["Saloon"] = "Saloon", ["JojaMart"] = "Joja"
+    };
+
+    private static string ShopOwner(string shopId) => shopId switch
+    {
+        "SeedShop" => "Pierre", "FishShop" => "Willy", "Blacksmith" => "Clint", "AnimalShop" => "Marnie", "Carpenter" => "Robin", "Saloon" => "Gus", _ => "the shopkeeper"
+    };
 
     private static readonly Dictionary<string, string> ShopPlaces = new(StringComparer.OrdinalIgnoreCase)
     {

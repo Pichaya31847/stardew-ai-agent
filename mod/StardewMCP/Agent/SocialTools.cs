@@ -223,6 +223,7 @@ public static class SocialTools
         }
         var text = Clip(Clean(AgentTools.S(a, "text")), MaxChat);
         if (text.Length == 0) { c.Fail("text is empty"); yield break; }
+        if (LanguageGuard.Reject(text, AgentTools.Config.SpeechLanguageName(), "line") is { } drift) { c.Fail(Reasons.InvalidArgs, drift); yield break; }
         var me = Game1.player;
 
         // Heard only on screens that show the speaker: in the video a line appears on the speaker's and the listeners' screens.

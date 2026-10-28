@@ -125,7 +125,8 @@ An `@name` in a say, which interrupts the farmer it names.
 What a farmer sees of the others in view: what each is actually doing, next to what it last heard them say.
 
 **Interrupt**:
-Something that happens to a farmer (a mention, a gift, an arrival, a theft, rain, crows) and stops its long action.
+Something that happens to a farmer (a mention, a gift, someone entering its house, a theft, rain, crows) and stops its long action.
+A farmer merely coming into view is an event too, but it waits for the next result instead of stopping the action.
 It reaches the farmer as an event in its next result.
 
 **Ownership**:

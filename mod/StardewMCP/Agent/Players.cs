@@ -111,6 +111,22 @@ public class ScreenState
     /// <summary>How many gift tastes this player has found out (they are discovered by gifting, not known from the start).</summary>
     public int KnownTastes { get; init; }
 
+    /// <summary>The nearest villager this farmer has not talked to today and where (for the brain's social reminder), refreshed every few seconds.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public (string name, string where)? NearestVillager { get; init; }
+
+    private static readonly System.Collections.Generic.Dictionary<int, (DateTime at, (string name, string where)? who)> NearestCache = new();
+
+    private static (string name, string where)? CachedNearestVillager()
+    {
+        var now = DateTime.UtcNow;
+        if (NearestCache.TryGetValue(Context.ScreenId, out var c) && (now - c.at).TotalSeconds < 3) return c.who;
+        (string name, string where)? who;
+        try { who = NpcInfo.NearestUntalked(); }
+        catch (Exception) { who = null; }
+        NearestCache[Context.ScreenId] = (now, who);
+        return who;
+    }
+
     /// <summary>The map this screen shows (unique: every cabin is "Cabin") and the world pixels in view: who sees whom, for say.</summary>
     [System.Text.Json.Serialization.JsonIgnore] public string? Map { get; init; }
     [System.Text.Json.Serialization.JsonIgnore] public Microsoft.Xna.Framework.Rectangle View { get; init; }
@@ -152,6 +168,7 @@ public class ScreenState
             Menu = menu?.GetType().Name,
             Dialogue = menu is StardewValley.Menus.DialogueBox box ? box.characterDialogue?.speaker?.displayName ?? "" : null,
             KnownTastes = NpcKnowledge.Count(p),
+            NearestVillager = CachedNearestVillager(),
             Sleep = menu is StardewValley.Menus.ReadyCheckDialog { checkName: "sleep" } || Context.IsMainPlayer && Game1.netReady.GetNumberRequired("sleep") > 0
                 ? $"{Game1.netReady.GetNumberReady("sleep")}/{Game1.netReady.GetNumberRequired("sleep")}{(Game1.netReady.IsReady("sleep") ? " done" : "")}"
                 : null,
