@@ -132,6 +132,17 @@ if ($automate -and -not (Test-Path (Join-Path $automate.FullName 'config.json'))
     Copy-Item (Join-Path $here 'automate-config.json') (Join-Path $automate.FullName 'config.json')
     Note 'Automate: shipping-bin automation turned off (a chest beside the bin would be sold).'
 }
+# Thai speech and thoughts in an English game: the Thai pack's fonts (Thai + Latin glyphs) loaded in English too.
+$thai = Get-ChildItem $ModsPath -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'assets\Content\Fonts\SmallFont.xnb') } | Select-Object -First 1
+if ($thai) {
+    $pack = Join-Path $ModsPath 'ThaiFontInEnglish'
+    New-Item -ItemType Directory -Force (Join-Path $pack 'assets') | Out-Null
+    Copy-Item (Join-Path $here 'mods\ThaiFontInEnglish\*.json') $pack -Force
+    foreach ($f in 'SmallFont.xnb', 'SpriteFont1.xnb') { Copy-Item (Join-Path $thai.FullName "assets\Content\Fonts\$f") (Join-Path $pack "assets\$f") -Force }
+    Note "Thai font in English: installed from $($thai.Name) (needs Content Patcher)"
+} else {
+    Note 'Thai font in English: skipped (install "Stardew Valley - THAI", https://www.nexusmods.com/stardewvalley/mods/7052, for Thai chat in an English game)'
+}
 Note "Mods folder: $ModsPath (unzip each mod there, then run setup.ps1 again)"
 
 # ---------------------------------------------------------------- 5. Ollama and the model

@@ -31,7 +31,8 @@ Without such a GPU, give the seats a Claude, GPT or Gemini key in `config.json` 
    done is skipped, so run it again after adding mods.
 3. Optional: unzip Automate and Generic Mod Config Menu into `local\Mods`, then run `setup.ps1` again (it gives
    Automate its config: shipping-bin automation off, or a chest beside the bin would be sold).
-4. Start with `local\start.cmd`. Start a new farm (the farm creation is filled in for you) or load a save.
+4. Thai chat in an English game: also unzip [Stardew Valley - THAI](https://www.nexusmods.com/stardewvalley/mods/7052) and its font mod into `local\Mods` and run `setup.ps1` again; it adds the `ThaiFontInEnglish` pack, which loads the Thai fonts while the game stays English (the best setting for the model). The example config has thoughts, speech and diary in Thai.
+5. Start with `local\start.cmd`. Start a new farm (the farm creation is filled in for you) or load a save.
    The overlay is at `http://localhost:8770/overlay`.
 
 Options: `-GamePath "D:\...\Stardew Valley"`, `-ModsPath`, `-BuildFromSource`, `-SkipOllama` (API models only),

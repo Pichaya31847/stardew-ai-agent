@@ -116,6 +116,11 @@ every system prompt, and English costs a small local model far fewer tokens than
 diary, chat) in Thai while the reasons, lessons, plan and notes are in English. The overlay's labels follow
 `ThoughtLanguage`; `?lang=` overrides them.
 
+With the game itself in English (best for a small model: every name is English), Thai speech and thoughts need a font
+with Thai glyphs: the `ThaiFontInEnglish` pack in [`local/mods`](../local/mods) loads the Thai pack's fonts in English too
+(`local/setup.ps1` installs it when the Thai pack is there), and speech bubbles with letters the game's bitmap font
+lacks are drawn with that font. Without it, keep `SpeechLanguage` English: Thai shows as boxes in the chat and bubbles.
+
 None of these settings changes the names the AI reads: tool results, the briefing and the system prompt always name
 villagers, items, professions, monsters, achievements, places and quests by their English keys, and villager lines,
 letters and menu options come from the game's English text when the game runs in another language.

@@ -84,7 +84,8 @@ mod/StardewMCP/
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source, the overlay pages and the docs (see Tests)
 local/                 Local-model kit (Windows): setup.ps1 (game, SMAPI, mod, Ollama, stardew-local), start.cmd/.ps1,
-                       Modelfile, config.example.json, automate-config.json (docs/local-ai.md)
+                       Modelfile, config.example.json, automate-config.json, mods/ThaiFontInEnglish (CP pack, fonts copied
+                       from the Thai pack at setup, never committed) (docs/local-ai.md)
 README.md, README.en.md   Landing page (Thai = the front page / English): the EP.1 video, install, quick start, links into docs/
 CONTEXT.md             Glossary: the project's words
 docs/

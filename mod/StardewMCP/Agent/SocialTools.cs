@@ -52,15 +52,38 @@ public static class SocialTools
         float lift = DrawName(__instance, b);
         if (__instance.currentLocation is not { } loc || Speech.Showing(loc.NameOrUniqueName) is not { } line
             || line.Speaker != __instance.UniqueMultiplayerID) return;
-        var widest = line.Lines.MaxBy(l => SpriteText.getWidthOfString(l))!; // every line's box gets this width
         // at its real place in the world, the same on every screen, cut at the edge like the game's own bubbles: kept
         // on screen it was pushed over other farmers and stood where the speaker wasn't (2026-10-19)
         float x = __instance.StandingPixel.X, bottom = __instance.StandingPixel.Y - 192 - lift;
+        if (!SpriteTextDraws(line.Text))
+        {
+            DrawFontBubble(b, line.Lines, Game1.GlobalToLocal(new Vector2(x, bottom)));
+            return;
+        }
+        var widest = line.Lines.MaxBy(l => SpriteText.getWidthOfString(l))!; // every line's box gets this width
         for (int i = 0; i < line.Lines.Count; i++)
         {
             var at = Game1.GlobalToLocal(new Vector2(x, bottom - (line.Lines.Count - 1 - i) * BubbleLineHeight));
             SpriteText.drawStringWithScrollCenteredAt(b, line.Lines[i], (int)at.X, (int)at.Y, widest, 1f, null, 1, 0.99f);
         }
+    }
+
+    /// <summary>
+    /// False when the game's bitmap font can't draw the text: in a Latin-script game SpriteText only has Latin letters, so a
+    /// Thai line came out as boxes (2026-10-29). Such lines go through the small font, which a font pack can extend.
+    /// </summary>
+    private static bool SpriteTextDraws(string text) => !LocalizedContentManager.CurrentLanguageLatin || text.All(ch => ch < 'ɐ');
+
+    /// <summary>A speech box drawn with the small font (one box for all lines), its bottom centre at <paramref name="bottomCentre"/>.</summary>
+    private static void DrawFontBubble(SpriteBatch b, List<string> lines, Vector2 bottomCentre)
+    {
+        var font = Game1.smallFont;
+        var sizes = lines.Select(l => font.MeasureString(l)).ToList();
+        int w = (int)sizes.Max(s => s.X) + 40, lineH = font.LineSpacing + 4, h = lines.Count * lineH + 28;
+        int left = (int)bottomCentre.X - w / 2, top = (int)bottomCentre.Y - h + 40;
+        IClickableMenu.drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18), left, top, w, h, Color.White, 4f, false, 0.99f);
+        for (int i = 0; i < lines.Count; i++)
+            b.DrawString(font, lines[i], new Vector2(bottomCentre.X - sizes[i].X / 2, top + 14 + i * lineH), Game1.textColor, 0f, Vector2.Zero, 1f, SpriteEffects.None, 0.991f);
     }
 
     /// <summary>

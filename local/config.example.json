@@ -1,5 +1,6 @@
 {
   "PrefillNewGame": true,
+  "_comment": "Game in English for the model; thoughts, speech and diary in Thai. Thai in the game needs the ThaiFontInEnglish pack (setup.ps1 installs it with the Thai pack).",
   "NewGamePlayerName": "AI1",
   "NewGameFarmName": "AI Farm",
   "NewGameFavoriteThing": "Farming",

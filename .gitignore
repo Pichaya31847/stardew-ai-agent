@@ -23,6 +23,7 @@ mod/StardewMCP/config.json
 local/Mods/
 local/downloads/
 local/settings.json
+local/mods/*/assets/
 .env
 
 # Claude Code local state
