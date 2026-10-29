@@ -95,6 +95,16 @@ public class BrainTests
         Assert.Equal("[Meeting over]", msgs[4]!["content"]!.GetValue<string>());
         Assert.Equal("function", body["tools"]![0]!["type"]!.GetValue<string>());
         Assert.Equal(500, body["max_completion_tokens"]!.GetValue<int>());
+        Assert.False(body.ContainsKey("reasoning_effort")); // left to the server unless configured
+    }
+
+    [Fact]
+    public void OpenAi_body_carries_the_configured_reasoning_effort()
+    {
+        var p = new OpenAiProvider(Http, "qwen3:14b", "", "http://localhost:11434/v1", 500, " None ");
+        Assert.Equal("none", p.BuildBody("SYS", Conversation(), Tools)["reasoning_effort"]!.GetValue<string>());
+        var viaSettings = LlmProviders.Create(new LlmSettings("openai", "m", "", "http://localhost:11434/v1", 500, "low"), Http) as OpenAiProvider;
+        Assert.Equal("low", viaSettings!.BuildBody("SYS", Conversation(), Tools)["reasoning_effort"]!.GetValue<string>());
     }
 
     [Fact]
@@ -239,7 +249,7 @@ public class BrainTests
     [Fact]
     public void System_prompt_fills_every_placeholder()
     {
-        var template = "{MODEL_NAME}|{PLAYER_NAME}|{SEAT}|{LANGUAGE}|{TIME_MODE}|{OTHERS}|{SELF}|{PEOPLE}|{LESSONS}|{PLAN}|{NOTES}";
+        var template = "{MODEL_NAME}|{PLAYER_NAME}|{SEAT}|{LANGUAGE}|{SPEECH_LANGUAGE}|{WORK_LANGUAGE}|{TIME_MODE}|{OTHERS}|{SELF}|{PEOPLE}|{LESSONS}|{PLAN}|{NOTES}";
         var text = Prompts.System(template, new Prompts.SystemInputs(
             "m", "Duck", "p1", "Thai", FreezeWhileThinking: false,
             new[] { ("p2", "Gemini", "an AI") }, Self: "", People: "", Lessons: "l1\nl2", Plan: "## Today\nwater", Notes: ""));
@@ -248,6 +258,19 @@ public class BrainTests
         Assert.Contains("Gemini (an AI)", text);
         Assert.DoesNotContain("p2", text); // the AIs only ever read farmer names, never seat ids
         Assert.Contains("(nothing yet", text); // empty self
+        Assert.Contains("|Thai|Thai|Thai|", text);  // speech and work text follow the thought language when not set
+    }
+
+    [Fact]
+    public void System_prompt_can_speak_another_language_and_keep_fewer_memory_lines()
+    {
+        var lessons = string.Join("\n", Enumerable.Range(1, 50).Select(i => $"lesson {i}"));
+        var text = Prompts.System("{LANGUAGE}|{SPEECH_LANGUAGE}|{WORK_LANGUAGE}|{LESSONS}", new Prompts.SystemInputs(
+            "m", "Duck", "p1", "Thai", FreezeWhileThinking: true, new (string, string, string)[0],
+            Self: "", People: "", Lessons: lessons, Plan: "", Notes: "", Speech: "Thai", MemoryLines: 5, Work: "English"));
+        Assert.StartsWith("Thai|Thai|English|", text);
+        Assert.Contains("lesson 50", text);
+        Assert.DoesNotContain("lesson 45\n", text);
     }
 
     [Fact]

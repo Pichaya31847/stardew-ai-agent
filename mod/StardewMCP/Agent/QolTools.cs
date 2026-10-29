@@ -9,12 +9,13 @@ namespace StardewMCP.Agent;
 /// <summary>
 /// Registry of the daily-life tools of issue #14, each in its own partial-class file:
 /// cook (CookingTools.cs), quests / accept_quest (QuestTools.cs, QuestEvents.cs), crack_geode (GeodeTools.cs),
-/// trash (TrashTools.cs) and watch_tv (TvTools.cs).
+/// trash (TrashTools.cs) and watch_tv (TvTools.cs); goals (GoalTools.cs), upgrade_tool (UpgradeTools.cs) and machine (MachineTools.cs).
 /// </summary>
 public static partial class AgentTools
 {
     private static IEnumerable<ToolDef> QolToolDefs() =>
-        CookToolDefs().Concat(QuestToolDefs()).Concat(GeodeToolDefs()).Concat(TrashToolDefs()).Concat(TvToolDefs());
+        CookToolDefs().Concat(QuestToolDefs()).Concat(GeodeToolDefs()).Concat(TrashToolDefs()).Concat(TvToolDefs())
+            .Concat(new[] { GoalsTool(), UpgradeToolTool(), MachineTool() });
 
     /// <summary>Tiles of <paramref name="loc"/> whose Buildings-layer Action property satisfies <paramref name="match"/> (the kitchen, the Help Wanted board).</summary>
     private static List<Point> FindActionTiles(GameLocation loc, Func<string, bool> match)

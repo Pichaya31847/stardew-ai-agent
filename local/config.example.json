@@ -1,0 +1,63 @@
+{
+  "PrefillNewGame": true,
+  "NewGamePlayerName": "AI1",
+  "NewGameFarmName": "AI Farm",
+  "NewGameFavoriteThing": "Farming",
+  "NewGameSkipIntro": true,
+  "Seats": [
+    {
+      "Role": "ai",
+      "Brain": "openai",
+      "Model": "stardew-local",
+      "ApiKey": "",
+      "BaseUrl": "http://127.0.0.1:11434/v1",
+      "Name": "AI1"
+    },
+    {
+      "Role": "ai",
+      "Brain": "openai",
+      "Model": "stardew-local",
+      "ApiKey": "",
+      "BaseUrl": "http://127.0.0.1:11434/v1",
+      "Name": "AI2"
+    },
+    {
+      "Role": "camera",
+      "Brain": "none",
+      "Name": "Control"
+    },
+    {
+      "Role": "off",
+      "Brain": "none",
+      "Name": ""
+    }
+  ],
+  "ShowHud": true,
+  "OperatorDashboard": true,
+  "DashboardLayout": "bottom",
+  "SeparateWallets": true,
+  "AutoBuildCabins": true,
+  "MaxOutputTokens": 2048,
+  "DailyTokenBudget": 0,
+  "BrainTools": "compact",
+  "BrainMemoryLines": 20,
+  "BrainMorningChores": true,
+  "BrainAcceptBoardQuest": true,
+  "HttpPort": 8770,
+  "FreezeTimeWhileThinking": true,
+  "LogDir": "",
+  "ThoughtLanguage": "Thai",
+  "SpeechLanguage": "Thai",
+  "WorkLanguage": "English",
+  "SplitScreen": true,
+  "FarmhandNames": [ "AI2", "Control", "Off" ],
+  "ThinkTimeoutSeconds": 900,
+  "AutoZoom": true,
+  "BedtimeWarning": 2200,
+  "FishingAssist": "perfect",
+  "SessionBreakTimes": [ 1200, 1800 ],
+  "SessionBreakToolCalls": 60,
+  "SessionBreakResultChars": 32000,
+  "PauseKey": "F8",
+  "ChatSeconds": 5
+}

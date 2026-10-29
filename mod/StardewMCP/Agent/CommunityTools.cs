@@ -188,6 +188,12 @@ internal static class BundleReader
     public static bool HasMail(Farmer who, string id) =>
         who.mailReceived.Contains(id) || Game1.MasterPlayer.mailReceived.Contains(id);
 
+    /// <summary>
+    /// This farmer can read the Junimo script. Per farmer, not the host's: the game's bundle page ignores clicks from a
+    /// farmer the Wizard has not taught yet, even when the host can read it.
+    /// </summary>
+    public static bool CanRead(Farmer who) => who.hasOrWillReceiveMail("canReadJunimoText");
+
     /// <summary>The membership is bought (#26): received, or already queued for tomorrow's mail on the day it was bought.</summary>
     public static bool IsJoja(Farmer who) => HasMail(who, "JojaMember") || JojaRoute.Pending(who, "JojaMember");
 
@@ -198,7 +204,71 @@ internal static class BundleReader
             return "This farm took a Joja membership, so the Community Center bundles are closed for good.";
         if (Game1.currentLocation is CommunityCenter || HasMail(who, "ccDoorUnlock") || HasMail(who, "canReadJunimoText") || HasMail(who, "ccIsComplete"))
             return null;
-        return "The Community Center is not open yet: its door has not been unlocked (the Community Center scene), and the Wizard teaches you to read the Junimo notes.";
+        return "The Community Center is not open yet. " + NextStep(who);
+    }
+
+    /// <summary>
+    /// The next step of the Community Center story, from the mail flags the game sets along it: Lewis's scene (entering Town
+    /// from the Bus Stop, no rain, spring 5+, 8:00-13:00) unlocks the door (ccDoorUnlock), the Junimo note inside brings the Wizard's letter (wizardJunimoNote), his tower teaches the
+    /// script (canReadJunimoText), then the bundles until every room is restored (ccIsComplete).
+    /// </summary>
+    public static string NextStep(Farmer who)
+    {
+        if (IsJoja(who)) return "none: the farm chose Joja.";
+        if (HasMail(who, "ccIsComplete")) return "done: the Community Center is restored.";
+        if (!HasMail(who, "ccDoorUnlock"))
+        {
+            const string how = "enter Pelican Town (Town) from the Bus Stop on a day without rain, spring 5 or later, between 8:00 and 13:00: " +
+                               "Mayor Lewis's cutscene shows you the old Community Center and unlocks its door. travel_to Town from the Farm goes through the Bus Stop; if you are already in Town, walk out to the Bus Stop and back in.";
+            bool today = Game1.Date.TotalDays >= 4 && !Game1.isRaining && Game1.timeOfDay < 1300;
+            bool laterToday = today && Game1.timeOfDay < 800;
+            return today
+                ? $"TODAY the conditions are met: {how} {(laterToday ? "Be in Town after 8:00." : "Go now, before 13:00.")}"
+                : how + (Game1.Date.TotalDays < 4 ? " It is too early in the year yet." : Game1.isRaining ? " Not today: it is raining." : " Too late for today; try tomorrow morning.");
+        }
+        // Past this point the door is open: say so, because a model's older notes may still plan the Bus Stop trip.
+        const string open = "The Community Center door is ALREADY UNLOCKED (Lewis's scene is done; ignore older notes about going to the Bus Stop for it). Next: ";
+        if (!CanRead(who) && !NoteRead(who))
+            return open + "read the glowing Junimo note inside the Community Center: call community_center (it walks there and reads it); the Wizard writes to you the next day.";
+        if (!CanRead(who))
+            return open + (who.mailForTomorrow.Contains("wizardJunimoNote")
+                ? "the Junimo note is read: the Wizard's letter comes tomorrow morning, then community_center takes you to his tower."
+                : "visit the Wizard yourself: call community_center (it goes to his tower, west of Cindersap Forest): he teaches you to read the Junimo notes. Each farmer must learn it; until then the bundles take nothing from you.");
+        return open + "you can read the Junimo notes. Fill the bundles: bundles lists what the open rooms still need and which of your items fit; community_center (or donate_bundle) walks to the room's note and hands them in. " +
+               "Plan crops, fish and forage by season, because many items only exist in one season.";
+    }
+
+    /// <summary>The first Junimo note was read: the Wizard's letter is queued, waiting in the mailbox or already opened.</summary>
+    public static bool NoteRead(Farmer who) =>
+        who.mailForTomorrow.Contains("wizardJunimoNote") || who.mailbox.Contains("wizardJunimoNote") || who.mailReceived.Contains("wizardJunimoNote");
+
+    public static CommunityCenter? Center => Game1.getLocationFromName("CommunityCenter") as CommunityCenter;
+
+    /// <summary>The room's Junimo note is on the wall: its bundles take donations now (rooms open one by one as bundles complete).</summary>
+    public static bool RoomOpen(int area) => area >= 0 && Center is { } cc && cc.shouldNoteAppearInArea(area);
+
+    /// <summary>The tile of the room's Junimo note.</summary>
+    public static Point NoteTile(int area) => Center is { } cc ? NoteTile(cc, area) : Point.Zero;
+
+    /// <summary>CommunityCenter.getNotePosition is not public.</summary>
+    public static Point NoteTile(CommunityCenter cc, int area) =>
+        typeof(CommunityCenter).GetMethod("getNotePosition", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(int) }, null)
+            ?.Invoke(cc, new object[] { area }) is Point p ? p : Point.Zero;
+
+    /// <summary>Bundles taking donations right now: unfinished, in a room whose note is up.</summary>
+    public static List<BundleInfo> Active(IEnumerable<BundleInfo> all) => all.Where(b => !b.Complete && RoomOpen(b.Area)).ToList();
+
+    /// <summary>"Parsnip → Spring Crops (Crafts Room)" for each inventory stack that fills an active bundle slot now.</summary>
+    public static List<string> Donatable(IReadOnlyList<BundleInfo> all, Farmer who)
+    {
+        var lines = new List<string>();
+        foreach (var b in Active(all))
+            foreach (var n in b.Needs.Where(n => !n.Done))
+            {
+                bool ok = n.Id == "-1" ? who.Money >= n.Count : who.Items.Any(i => i != null && Fits(i, n) && i.Stack >= n.Count);
+                if (ok) lines.Add($"{Describe(n)} → {b.Name} ({b.Room})");
+            }
+        return lines;
     }
 
     /// <summary>Every bundle, rooms in game order. Empty when the world has no bundle data.</summary>
@@ -294,20 +364,34 @@ internal static class BundleReader
     }
 
     /// <summary>The text of the bundles tool: rooms, bundles, what is donated (and by whom, when this mod saw it) and what is missing.</summary>
-    public static string Report(IReadOnlyList<BundleInfo> all, Farmer who, string? room)
+    /// <param name="every">false: only the rooms whose note is up and their unfinished bundles (what to gather now).</param>
+    public static string Report(IReadOnlyList<BundleInfo> all, Farmer who, string? room, bool every = false)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Community Center: {all.Count(b => b.Complete)}/{all.Count} bundles complete. Donate with donate_bundle(item) while standing inside the Community Center.");
-        if (!HasMail(who, "canReadJunimoText"))
-            sb.AppendLine("(You can't read Junimo script yet: the Wizard teaches it. The data below is exact anyway.)");
+        sb.AppendLine($"Community Center: {all.Count(b => b.Complete)}/{all.Count} bundles complete. community_center (or donate_bundle(item)) walks to the room's note and donates.");
+        if (!CanRead(who))
+            sb.AppendLine("(You can't read Junimo script yet: the Wizard teaches each farmer himself, and no bundle takes items from you before that. The data below is exact anyway.)");
+        var ready = Donatable(all, who);
+        if (ready.Count > 0 && CanRead(who))
+            sb.AppendLine("You can donate NOW: " + string.Join("; ", ready) + ". Call community_center.");
+        if (!every && room == null)
+        {
+            var locked = all.Where(b => b.Area >= 0 && !b.Complete && !RoomOpen(b.Area)).Select(b => b.Room).Distinct().ToList();
+            if (locked.Count > 0)
+                sb.AppendLine($"Rooms still sealed (the Community Center itself is open; these rooms' notes appear as more bundles are completed): {string.Join(", ", locked)}. Below: only the rooms with a note up; bundles(all=true) lists every room.");
+        }
         foreach (var g in all.GroupBy(b => b.Room))
         {
             if (room != null && !RoomMatches(g.Key, room)) continue;
-            sb.AppendLine($"== {g.Key}: {g.Count(b => b.Complete)}/{g.Count()} bundles complete");
+            int area = g.First().Area;
+            if (!every && room == null && (area < 0 || !RoomOpen(area))) continue;
+            var note = area >= 0 ? NoteTile(area) : Point.Zero;
+            sb.AppendLine($"== {g.Key}: {g.Count(b => b.Complete)}/{g.Count()} bundles complete" + (note != Point.Zero ? $" (note at {note.X},{note.Y})" : ""));
             foreach (var b in g)
             {
                 if (b.Complete)
                 {
+                    if (!every) continue;
                     sb.AppendLine($"  [{b.Index}] {b.Name} COMPLETE → {RewardText(b.Reward)}");
                     continue;
                 }
@@ -351,23 +435,35 @@ public static partial class AgentTools
         new()
         {
             Name = "bundles",
-            Description = "Community Center bundles, room by room: what each bundle needs (item, quality, count), what is already donated and by whom, the reward, " +
-                          "and which of your inventory items fit a missing slot. Needs the Community Center to be open (the Wizard teaches you to read the notes). " +
+            Description = "Community Center bundles that take donations now: the rooms whose Junimo note is up, each unfinished bundle's missing items (item, quality, count), " +
+                          "the reward, and which of your inventory items fit (\"You can donate NOW\"). all=true lists every room, finished bundles too. " +
                           "Game time stays frozen.",
-            Schema = Obj(new { room = Str("Optional: only this room (Pantry, Crafts Room, Fish Tank, Boiler Room, Vault, Bulletin Board)") }),
+            Schema = Obj(new
+            {
+                room = Str("Optional: only this room (Pantry, Crafts Room, Fish Tank, Boiler Room, Vault, Bulletin Board)"),
+                all = new { type = "boolean", description = "Optional: every room and bundle, also locked rooms and finished bundles" }
+            }),
             Instant = true,
             Run = (a, c) => CommunityGuard(BundlesRun(a, c), c)
         },
         new()
         {
+            Name = "community_center",
+            Description = "Do the next Community Center step yourself: read the first Junimo note (walks into the Community Center to it), visit the Wizard once his letter came, " +
+                          "then hand in every item you carry that an open bundle needs (walks to each room's note). With nothing to donate it lists what the open bundles still need.",
+            Schema = Obj(new { reason = Str(ReasonDesc) }, "reason"),
+            Run = (a, c) => CommunityGuard(CommunityCenterRun(c), c)
+        },
+        new()
+        {
             Name = "donate_bundle",
-            Description = "Donate an item from your inventory to the first Community Center bundle that needs it. You must be inside the Community Center (travel_to CommunityCenter). " +
+            Description = "Donate an item from your inventory to the first open Community Center bundle that needs it: it walks into the Community Center to the room's note. " +
                           "It uses the game's own bundle page, so rewards and room-complete scenes happen as for a player. " +
-                          "item \"gold\" pays a Vault bundle. bundle (name or number from bundles) picks the bundle if several take the item. " +
+                          "item \"all\" donates everything you carry that fits; \"gold\" pays a Vault bundle. bundle (name or number from bundles) picks the bundle if several take the item. " +
                           "Reports the bundle's progress and any bundle or room it completes.",
             Schema = Obj(new
             {
-                item = Str("Item name from your inventory, or \"gold\" for a Vault bundle"),
+                item = Str("Item name from your inventory, \"all\", or \"gold\" for a Vault bundle"),
                 bundle = Str("Optional: bundle name or number (see bundles)"),
                 reason = Str(ReasonDesc)
             }, "item", "reason"),
@@ -376,13 +472,14 @@ public static partial class AgentTools
         new()
         {
             Name = "museum",
-            Description = "The Museum (ArchaeologyHouse, Gunther). action list (default): the items in your inventory that the Museum still accepts. " +
-                          "donate: put an item (or \"all\") on the next free display spot; you must be inside the Museum (travel_to ArchaeologyHouse). " +
+            Description = "The Museum (ArchaeologyHouse in Town, Gunther). It takes one of each artifact, mineral and gem; Gunther gives rewards as the collection grows. " +
+                          "action list (default): the items you carry that the Museum still needs. " +
+                          "donate: walks you to the Museum and puts an item (default \"all\": every piece it still needs) on display. " +
                           "rewards: talk to Gunther and take the rewards you have earned. list keeps game time frozen.",
             Schema = Obj(new
             {
                 action = new { type = "string", @enum = new[] { "list", "donate", "rewards" }, description = "list (default), donate or rewards" },
-                item = Str("donate: item name from your inventory, or \"all\""),
+                item = Str("donate: item name from your inventory, or \"all\" (default)"),
                 reason = Str(ReasonDesc)
             }),
             InstantFor = a => S(a, "action").Trim().ToLowerInvariant() is "" or "list",
@@ -419,12 +516,161 @@ public static partial class AgentTools
         var all = BundleReader.Read();
         if (all.Count == 0) { c.Fail("The game has no bundle data yet."); yield break; }
         var room = S(a, "room").Trim();
+        bool every = Has(a, "all") && a.GetProperty("all").ValueKind == JsonValueKind.True;
+        if (room.Equals("all", StringComparison.OrdinalIgnoreCase) || room.Equals("every", StringComparison.OrdinalIgnoreCase)) { room = ""; every = true; }
         if (room.Length > 0 && !all.Any(b => BundleReader.RoomMatches(b.Room, room)))
         {
             c.Fail($"No room \"{room}\". Rooms: {string.Join(", ", all.Select(b => b.Room).Distinct())}");
             yield break;
         }
-        c.Result = BundleReader.Report(all, P, room.Length > 0 ? room : null);
+        c.Result = BundleReader.Report(all, P, room.Length > 0 ? room : null, every);
+    }
+
+    /// <summary>The next Community Center step: the first Junimo note, the Wizard, then every donation the farmer can make now.</summary>
+    private static IEnumerator CommunityCenterRun(CallContext c)
+    {
+        if (BundleReader.IsJoja(P)) { c.Fail("This farm took a Joja membership: the Community Center bundles are closed for good."); yield break; }
+        if (BundleReader.HasMail(P, "ccIsComplete")) { c.Result = "The Community Center is already restored."; yield break; }
+        if (!BundleReader.HasMail(P, "ccDoorUnlock")) { c.Fail(Reasons.NotReady, "The Community Center is still locked: " + BundleReader.NextStep(P)); yield break; }
+
+        if (!BundleReader.CanRead(P))
+        {
+            if (BundleReader.NoteRead(P))
+            {
+                if (P.mailForTomorrow.Contains("wizardJunimoNote"))
+                {
+                    c.Fail(Reasons.NotReady, "You already read the Junimo note. The Wizard's letter arrives tomorrow morning; call community_center again after it came. Carry on with farm work today.");
+                    yield break;
+                }
+                var go = new CallContext();
+                yield return TravelTo("WizardHouse", go);
+                if (!go.Ok) { c.Fail(go.Reason ?? Reasons.NoPath, $"Couldn't get to the Wizard's tower: {go.Result}"); yield break; }
+                for (int i = 0; i < 600 && (Game1.eventUp || Game1.activeClickableMenu != null || Game1.isWarping); i++)
+                {
+                    if (Game1.activeClickableMenu is DialogueBox db && i % 30 == 0) db.receiveLeftClick(0, 0);
+                    yield return null;
+                }
+                c.Result = BundleReader.CanRead(P)
+                    ? "The Wizard taught you to read the Junimo script: the bundles take donations now. bundles shows what the open rooms need."
+                    : "You are in the Wizard's tower, but he has not taught you yet. talk_to Wizard to hear him out.";
+                yield break;
+            }
+
+            var sub = new CallContext();
+            yield return TravelTo("CommunityCenter", sub);
+            if (!sub.Ok) { c.Fail(sub.Reason ?? Reasons.NoPath, $"Couldn't get into the Community Center: {sub.Result}"); yield break; }
+            var cc = (CommunityCenter)Loc;
+            int area = Enumerable.Range(0, 6).FirstOrDefault(a => cc.isJunimoNoteAtArea(a), 1);
+            var tile = BundleReader.NoteTile(cc, area);
+            if (tile == Point.Zero) { c.Fail("Couldn't find the Junimo note's position in this game version: look for it and interact with its x and y."); yield break; }
+            var walk = new CallContext();
+            yield return WalkAdjacent(tile, walk);
+            if (!walk.Ok) { c.Fail(walk.Reason ?? Reasons.NoPath, $"Couldn't reach the Junimo note at ({tile.X},{tile.Y}): {walk.Result}"); yield break; }
+            PressAction(tile);
+            yield return Ticks(30);
+            var done = new CallContext();
+            yield return FinishMessages(done);
+            if (BundleReader.NoteRead(P))
+            {
+                Rt.Stats.Count("junimo_note_read");
+                c.Result = $"You read the glowing Junimo note at ({tile.X},{tile.Y}): strange writing you can't understand. The Wizard will write to you tomorrow; then call community_center again.";
+            }
+            else
+                c.Fail($"Pressed the Junimo note at ({tile.X},{tile.Y}) but nothing happened. {done.Result}".Trim());
+            yield break;
+        }
+
+        var all = BundleReader.Read();
+        // Bundle items wait in the chests too (they are kept out of the shipping bin for this): bring them along first.
+        var fetched = new List<string>();
+        yield return FetchBundleItems(all, fetched);
+        var prefix = fetched.Count > 0 ? string.Join("\n", fetched) + "\n" : "";
+        if (BundleReader.Donatable(all, P).Count == 0)
+        {
+            c.Result = prefix + "Neither your pack nor your chests hold anything an open bundle needs right now. Gather these, then call community_center again:\n" + BundleReader.Report(all, P, null);
+            yield break;
+        }
+        yield return DonateAll(c);
+        if (prefix.Length > 0) c.Result = prefix + c.Result;
+    }
+
+    /// <summary>
+    /// Takes out of this farmer's chests (farm and house, its own or nobody's) the stacks that fill an open bundle slot the pack
+    /// can't fill. Days 44-58 of the second 9B run: 27 calls said "you carry nothing an open bundle needs" while chests held some.
+    /// </summary>
+    private static IEnumerator FetchBundleItems(IReadOnlyList<BundleInfo> all, List<string> notes)
+    {
+        var me = Rt.Log.Player;
+        var plan = new List<(string map, Point tile, string name, int quality, int count)>();
+        var claimed = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
+        var chests = new List<(string map, Point tile, StardewValley.Objects.Chest chest)>();
+        foreach (var loc in new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation })
+        {
+            if (loc == null) continue;
+            foreach (var (t, obj) in loc.objects.Pairs)
+                if (obj is StardewValley.Objects.Chest { playerChest.Value: true, fridge.Value: false } ch && Ownership.OwnerOf(ch) is var o && (o == null || o == me))
+                    chests.Add((loc.Name, new Point((int)t.X, (int)t.Y), ch));
+        }
+        if (chests.Count == 0) yield break;
+        foreach (var b in BundleReader.Active(all))
+            foreach (var n in b.Needs.Where(n => !n.Done && n.Id != "-1"))
+            {
+                if (P.Items.Any(i => i != null && BundleReader.Fits(i, n) && i.Stack >= n.Count)) continue;
+                foreach (var (map, tile, chest) in chests)
+                {
+                    var it = chest.Items.FirstOrDefault(i => i != null && BundleReader.Fits(i, n) && i.Stack - claimed.GetValueOrDefault(i) >= n.Count);
+                    if (it == null) continue;
+                    claimed[it] = claimed.GetValueOrDefault(it) + n.Count;
+                    plan.Add((map, tile, it.DisplayName, it.Quality, n.Count));
+                    break;
+                }
+            }
+        // One map at a time, this one first, so the house and the farm are each visited once.
+        foreach (var (map, tile, name, quality, count) in plan.Take(8).OrderBy(p => p.map == Loc.Name ? 0 : 1).ThenBy(p => p.map).ThenBy(p => p.tile.X).ThenBy(p => p.tile.Y).ToList())
+        {
+            if (Loc.Name != map)
+            {
+                var trip = new CallContext();
+                yield return TravelTo(map, trip);
+                if (!trip.Ok) { notes.Add($"Couldn't get to your chest in {map} for {name}: {trip.Result}"); yield break; }
+            }
+            var sub = new CallContext();
+            yield return ChestTool(ArgsOf(new { x = tile.X, y = tile.Y, action = "take", item = name, quality = QualityName(quality), quantity = count, reason = "bundle item for the Community Center" }), sub);
+            notes.Add(sub.Ok ? $"For the bundles: {sub.Result.Split('\n')[0]}" : $"Couldn't take {name} from your chest at {map} ({tile.X},{tile.Y}): {sub.Result}");
+        }
+    }
+
+    /// <summary>Donates every inventory stack (and no gold) that fills an open bundle slot, one donation at a time.</summary>
+    private static IEnumerator DonateAll(CallContext c)
+    {
+        var lines = new List<string>();
+        int donated = 0;
+        string? failReason = null;
+        for (int round = 0; round < 24; round++)
+        {
+            var all = BundleReader.Read();
+            DonationPick? pick = null;
+            foreach (var b in BundleReader.Active(all))
+            {
+                foreach (var n in b.Needs.Where(n => !n.Done && n.Id != "-1"))
+                {
+                    int slot = Enumerable.Range(0, P.Items.Count).Where(i => P.Items[i] is { } it && BundleReader.Fits(it, n) && it.Stack >= n.Count)
+                        .OrderBy(i => P.Items[i].Quality).DefaultIfEmpty(-1).First();
+                    if (slot >= 0) { pick = new DonationPick(b, n, slot); break; }
+                }
+                if (pick != null) break;
+            }
+            if (pick == null) break;
+            var one = new CallContext();
+            yield return DonateOne(P.Items[pick.InvSlot].Name, pick.Bundle.Index.ToString(), one);
+            lines.Add(one.Result ?? "");
+            if (!one.Ok) { failReason = one.Reason; break; }
+            donated++;
+        }
+        if (lines.Count == 0) { c.Fail(Reasons.NoItem, "Nothing you carry fits an open bundle. bundles shows what they need."); yield break; }
+        // Nothing went in: a failure, not a result the model reads as done.
+        if (donated == 0) { c.Fail(failReason ?? Reasons.Other, string.Join("\n", lines)); yield break; }
+        c.Result = string.Join("\n", lines);
     }
 
     private sealed record DonationPick(BundleInfo Bundle, BundleNeed Need, int InvSlot);
@@ -450,9 +696,10 @@ public static partial class AgentTools
     /// <summary>The first open bundle slot (rooms in game order) that the named item, or gold, can fill. Lower-quality stacks go first.</summary>
     private static (DonationPick? pick, string? error) PickDonation(List<BundleInfo> all, string want, bool gold, string bundleArg)
     {
-        var open = all.Where(b => b.Area >= 0 && !b.Complete && BundleReader.BundleMatches(b, bundleArg)).ToList();
+        var open = BundleReader.Active(all).Where(b => BundleReader.BundleMatches(b, bundleArg)).ToList();
         if (open.Count == 0)
-            return (null, bundleArg.Length > 0 ? $"No unfinished bundle matches \"{bundleArg}\". Use bundles to see them." : "Every bundle in the Community Center is already complete.");
+            return (null, bundleArg.Length > 0 ? $"No bundle in an open room matches \"{bundleArg}\" (its room's note may not be up yet). Use bundles to see the open ones."
+                                                : "No room has an unfinished bundle open right now. Use bundles(all=true).");
 
         var stacks = gold ? new List<int>() : StacksNamed(want);
         if (!gold && stacks.Count == 0)
@@ -484,28 +731,51 @@ public static partial class AgentTools
     {
         var closed = BundleReader.ClosedReason(P);
         if (closed != null) { c.Fail(closed); yield break; }
-        if (Loc is not CommunityCenter)
+        if (!BundleReader.CanRead(P))
         {
-            c.Fail($"Bundles are donated inside the Community Center; you are in {Loc.Name}. Use travel_to CommunityCenter first.");
+            c.Fail(Reasons.NotReady, "The bundles take nothing before the Wizard teaches you the Junimo script. Next: " + BundleReader.NextStep(P));
             yield break;
         }
+        var want = S(a, "item").Trim();
+        if (want.Length == 0) { c.Fail("item is required: an inventory item name, \"all\", or \"gold\"."); yield break; }
+        if (want.Equals("all", StringComparison.OrdinalIgnoreCase) || want.Equals("everything", StringComparison.OrdinalIgnoreCase))
+            yield return DonateAll(c);
+        else
+            yield return DonateOne(want, S(a, "bundle").Trim(), c);
+    }
+
+    private static IEnumerator DonateOne(string want, string bundleArg, CallContext c)
+    {
+        var all = BundleReader.Read();
+        if (all.Count == 0) { c.Fail("The game has no bundle data yet."); yield break; }
+        bool gold = want.Equals("gold", StringComparison.OrdinalIgnoreCase) || want.Equals("money", StringComparison.OrdinalIgnoreCase);
+
+        var (pick, error) = PickDonation(all, want, gold, bundleArg);
+        if (pick == null) { c.Fail(error!); yield break; }
+        var b = pick.Bundle;
+        var need = pick.Need;
+        if (gold && P.Money < need.Count) { c.Fail($"{b.Name} costs {need.Count}g and you have {P.Money}g."); yield break; }
+
+        // Walk to the room's note like a player: into the Community Center, up to the note on the wall.
+        if (Loc is not CommunityCenter)
+        {
+            var go = new CallContext();
+            yield return TravelTo("CommunityCenter", go);
+            if (!go.Ok) { c.Fail(go.Reason ?? Reasons.NoPath, $"Couldn't get into the Community Center: {go.Result}"); yield break; }
+        }
+        var note = BundleReader.NoteTile(b.Area);
+        if (note != Point.Zero && Math.Abs(P.TilePoint.X - note.X) + Math.Abs(P.TilePoint.Y - note.Y) > 1)
+            yield return WalkAdjacent(note, new CallContext()); // best effort: the page opens from anywhere in the building
         if (Game1.activeClickableMenu != null || Game1.eventUp)
         {
             c.Fail("Close the open menu or finish the scene first.");
             yield break;
         }
-
-        var all = BundleReader.Read();
-        if (all.Count == 0) { c.Fail("The game has no bundle data yet."); yield break; }
-        var want = S(a, "item").Trim();
-        if (want.Length == 0) { c.Fail("item is required: an inventory item name, or \"gold\"."); yield break; }
-        bool gold = want.Equals("gold", StringComparison.OrdinalIgnoreCase) || want.Equals("money", StringComparison.OrdinalIgnoreCase);
-
-        var (pick, error) = PickDonation(all, want, gold, S(a, "bundle").Trim());
-        if (pick == null) { c.Fail(error!); yield break; }
-        var b = pick.Bundle;
-        var need = pick.Need;
-        if (gold && P.Money < need.Count) { c.Fail($"{b.Name} costs {need.Count}g and you have {P.Money}g."); yield break; }
+        if (P.Items.ElementAtOrDefault(pick.InvSlot) is { } still && !gold && !BundleReader.Fits(still, need))
+        {
+            c.Fail($"Your inventory changed on the way; call donate_bundle again.");
+            yield break;
+        }
 
         var itemName = gold ? "gold" : P.Items[pick.InvSlot].DisplayName;
         int doneBefore = BundleReader.Flags(b.Index).Count(x => x);
@@ -775,10 +1045,35 @@ public static partial class AgentTools
         }
         sb.Append(rows.Count == 0
             ? "The Museum accepts none of the items you carry. It takes one of each artifact and mineral that is not on display yet."
-            : $"The Museum accepts: {string.Join(", ", rows)}. It keeps one of each; donate with museum(action=donate, item=...) inside the Museum (travel_to ArchaeologyHouse).");
+            : $"The Museum still needs: {string.Join(", ", rows)}. museum(action=donate) walks you there and puts them all on display (one of each).");
         int rewards = MuseumRewardCount(museum);
-        if (rewards > 0) sb.Append($"\nGunther has {rewards} reward(s) waiting for you: museum(action=rewards) inside the Museum.");
+        if (rewards > 0) sb.Append($"\nGunther has {rewards} reward(s) waiting for you: museum(action=rewards).");
         return sb.ToString();
+    }
+
+    /// <summary>One line for status / inventory: the carried pieces the Museum still needs and any rewards waiting; empty when there are none.</summary>
+    internal static string MuseumHint()
+    {
+        try
+        {
+            if (Game1.getLocationFromName("ArchaeologyHouse") is not LibraryMuseum museum) return "";
+            var wanted = P.Items.Where(it => it is SObject && MuseumAccepts(museum, it)).Select(it => it.DisplayName).Distinct().ToList();
+            int rewards = MuseumRewardCount(museum);
+            var parts = new List<string>();
+            if (wanted.Count > 0) parts.Add($"the Museum still needs your {string.Join(", ", wanted.Take(6))}{(wanted.Count > 6 ? $" and {wanted.Count - 6} more" : "")} (museum(action=donate), don't sell them)");
+            if (rewards > 0) parts.Add($"Gunther holds {rewards} reward(s) for you (museum(action=rewards))");
+            var geodes = P.Items.Where(it => it != null && IsGeode(it)).Sum(it => it.Stack);
+            if (geodes > 0) parts.Add($"{geodes} geode(s) to crack at Clint's (crack_geode)");
+            var unshipped = P.Items.Where(it => it is SObject o && !o.bigCraftable.Value && !P.basicShipped.ContainsKey(o.ItemId)
+                                                 && SObject.isPotentialBasicShipped(o.ItemId, o.Category, o.Type) && !wanted.Contains(o.DisplayName))
+                .Select(it => it.DisplayName).Distinct().ToList();
+            if (unshipped.Count > 0) parts.Add($"never shipped yet: {string.Join(", ", unshipped.Take(6))}{(unshipped.Count > 6 ? $" and {unshipped.Count - 6} more" : "")} (ship one of each for Full Shipment)");
+            return parts.Count > 0 ? "Finds: " + string.Join("; ", parts) : "";
+        }
+        catch (Exception)
+        {
+            return "";
+        }
     }
 
     /// <summary>
@@ -787,14 +1082,27 @@ public static partial class AgentTools
     /// </summary>
     private static IEnumerator MuseumDonate(JsonElement a, CallContext c)
     {
-        if (Loc is not LibraryMuseum museum)
-        {
-            c.Fail($"Donate inside the Museum; you are in {Loc.Name}. Use travel_to ArchaeologyHouse first.");
-            yield break;
-        }
         if (Game1.activeClickableMenu != null || Game1.eventUp) { c.Fail("Close the open menu or finish the scene first."); yield break; }
         var want = S(a, "item").Trim();
-        if (want.Length == 0) { c.Fail("item is required: an inventory item name, or \"all\"."); yield break; }
+        if (want.Length == 0) want = "all";
+        if (Loc is not LibraryMuseum)
+        {
+            // Check before the walk that there is something to give.
+            if (Game1.getLocationFromName("ArchaeologyHouse") is LibraryMuseum far && want.Equals("all", StringComparison.OrdinalIgnoreCase)
+                && !P.Items.Any(it => it is SObject && MuseumAccepts(far, it)))
+            {
+                c.Fail(Reasons.NoItem, "The Museum accepts none of the items you carry. It takes one of each artifact and mineral that is not on display yet.");
+                yield break;
+            }
+            var trip = new CallContext();
+            yield return TravelTo("ArchaeologyHouse", trip);
+            if (!trip.Ok || Loc is not LibraryMuseum)
+            {
+                c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get into the Museum (ArchaeologyHouse, open 8:00-18:00): {trip.Result}");
+                yield break;
+            }
+        }
+        var museum = (LibraryMuseum)Loc;
 
         var items = new List<Item>();
         if (want.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -818,7 +1126,6 @@ public static partial class AgentTools
 
         var pieces = LateBound.Require(museum, "museumPieces");
         if (pieces == null) { c.Fail("The Museum has no display list in this game version."); yield break; }
-        int rewardsBefore = MuseumRewardCount(museum);
         var donated = new List<string>();
         string? stopped = null;
         foreach (var it in items)
@@ -842,7 +1149,13 @@ public static partial class AgentTools
         var text = $"Donated to the Museum: {string.Join(", ", donated)}.";
         if (stopped != null) text += " " + stopped;
         int rewardsAfter = MuseumRewardCount(museum);
-        if (rewardsAfter > 0 && rewardsAfter > rewardsBefore) text += $" Gunther has {rewardsAfter} reward(s) for you now: museum(action=rewards).";
+        if (rewardsAfter > 0)
+        {
+            // Collect them on the spot: the farmer is standing in the Museum already.
+            var collect = new CallContext();
+            yield return MuseumRewards(collect);
+            text += collect.Ok ? " " + collect.Result : $" Gunther has {rewardsAfter} reward(s) for you: museum(action=rewards) ({collect.Result}).";
+        }
         c.Result = text;
     }
 
@@ -870,11 +1183,17 @@ public static partial class AgentTools
     /// <summary>Gunther's "Collect" answer opens a grab menu with the earned rewards; take them all.</summary>
     private static IEnumerator MuseumRewards(CallContext c)
     {
-        if (Loc is not LibraryMuseum museum)
+        if (Loc is not LibraryMuseum)
         {
-            c.Fail($"Gunther is in the Museum; you are in {Loc.Name}. Use travel_to ArchaeologyHouse first.");
-            yield break;
+            var trip = new CallContext();
+            yield return TravelTo("ArchaeologyHouse", trip);
+            if (!trip.Ok || Loc is not LibraryMuseum)
+            {
+                c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get into the Museum (ArchaeologyHouse, open 8:00-18:00): {trip.Result}");
+                yield break;
+            }
         }
+        var museum = (LibraryMuseum)Loc;
         if (Game1.activeClickableMenu != null || Game1.eventUp) { c.Fail("Close the open menu or finish the scene first."); yield break; }
         if (MuseumRewardCount(museum) == 0)
         {
@@ -905,7 +1224,7 @@ public static partial class AgentTools
         var box = Game1.activeClickableMenu as DialogueBox;
         if (box == null || !box.isQuestion || box.responses == null)
         {
-            var said = box != null ? box.getCurrentString() : "nothing opened";
+            var said = box != null ? GameEnglish.Said(box) : "nothing opened";
             c.Fail($"Gunther did not offer a choice ({said}). Stand next to his desk and use interact on it, then menu/respond.");
             yield break;
         }

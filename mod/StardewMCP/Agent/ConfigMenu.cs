@@ -65,6 +65,10 @@ public static class ConfigMenu
             () => "Show AI thoughts on screen", () => "A panel on each AI's screen with its thoughts, chat and current action.");
         api.AddTextOption(manifest, () => config.ThoughtLanguage, v => config.ThoughtLanguage = v,
             () => "Language of the AI's thoughts", () => "E.g. English, Thai, Japanese. Empty = the game's language.");
+        api.AddTextOption(manifest, () => config.SpeechLanguage, v => config.SpeechLanguage = v,
+            () => "Language the AI speaks", () => "What say is written in, e.g. Thai with English thoughts (fewer tokens for a small model). Empty = the thoughts' language.");
+        api.AddTextOption(manifest, () => config.WorkLanguage, v => config.WorkLanguage = v,
+            () => "Language of reasons and notes", () => "Action reasons, lessons, plan, notes and self/people notes, e.g. English while thoughts and the diary stay Thai. Empty = the thoughts' language.");
         api.AddBoolOption(manifest, () => config.LockHostInput, v => config.LockHostInput = v,
             () => "Lock keyboard and mouse on an AI's P1", () => "Split-screen with an AI at P1: ignore the real keyboard, mouse and pad so nobody moves its farmer by accident.");
         api.AddNumberOption(manifest, () => config.HttpPort, v => config.HttpPort = v,

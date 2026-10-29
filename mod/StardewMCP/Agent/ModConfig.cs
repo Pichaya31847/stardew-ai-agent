@@ -35,6 +35,12 @@ public class SeatConfig
 /// <summary>User-editable settings (config.json in the mod folder).</summary>
 public class ModConfig
 {
+    public bool PrefillNewGame { get; set; } = false;
+    public string NewGamePlayerName { get; set; } = "AI1";
+    public string NewGameFarmName { get; set; } = "AI Farm";
+    public string NewGameFavoriteThing { get; set; } = "Farming";
+    public bool NewGameSkipIntro { get; set; } = true;
+
     /// <summary>
     /// The four seats P1-P4 (P1 is the save's own farmer and the host screen). Defaults: P1-P3 AI seats driven from
     /// outside through MCP, P4 the camera. Set a seat's Brain and ApiKey to let the mod play it by itself.
@@ -63,6 +69,16 @@ public class ModConfig
 
     /// <summary>Show each AI seat's thoughts, chat and current action on its own screen (no OBS needed).</summary>
     public bool ShowHud { get; set; } = true;
+    /// <summary>Use a camera seat as an operator dashboard with all AI logs and an order box.</summary>
+    public bool OperatorDashboard { get; set; } = false;
+    /// <summary>"bottom" puts two AI views above a full-width camera dashboard; "quadrant" keeps the original grid.</summary>
+    public string DashboardLayout { get; set; } = "quadrant";
+
+    /// <summary>
+    /// Split-screen: give every farmer their own wallet. On a save with a shared wallet the host asks for it on load, the way
+    /// the Mayor's ledger does, and the game splits the money evenly that night (changes the save).
+    /// </summary>
+    public bool SeparateWallets { get; set; } = false;
 
     /// <summary>Split-screen: build the cabins the farmhands need when the farm has too few (changes the save).</summary>
     public bool AutoBuildCabins { get; set; } = true;
@@ -73,6 +89,28 @@ public class ModConfig
 
     /// <summary>Built-in AI: once a seat has used this many tokens (input + output) in one day it stops until the next morning. 0 = no limit.</summary>
     public int DailyTokenBudget { get; set; } = 0;
+
+    /// <summary>
+    /// Built-in AI: "full" sends every tool with its whole description; "compact" sends the everyday tools in full and the
+    /// rest with one-line descriptions and bare argument names, for small local models with a short context (a 32k Qwen
+    /// spent most of its window on the tool list). Every tool still works either way.
+    /// </summary>
+    public string BrainTools { get; set; } = "full";
+
+    /// <summary>
+    /// Built-in AI, OpenAI-compatible servers: reasoning_effort sent with every request ("none", "low", "medium", "high").
+    /// "none" turns off Qwen3's hidden reasoning in Ollama (10x faster replies). Empty = the server's default.
+    /// </summary>
+    public string BrainReasoning { get; set; } = "";
+
+    /// <summary>Built-in AI: how many of the last lines of the lessons and notes files go into the system prompt.</summary>
+    public int BrainMemoryLines { get; set; } = 60;
+
+    /// <summary>Built-in AI: run morning_chores (gift boxes, mailbox, quest money) before the model's first turn each day.</summary>
+    public bool BrainMorningChores { get; set; } = true;
+
+    /// <summary>Built-in AI: take today's Help Wanted request in the morning when it is still free and doable with what the farmer has (walks to the board in Town).</summary>
+    public bool BrainAcceptBoardQuest { get; set; } = false;
 
     /// <summary>Port for the MCP endpoint (/mcp), overlay (/overlay) and replay (/replay).</summary>
     public int HttpPort { get; set; } = 8770;
@@ -91,6 +129,25 @@ public class ModConfig
 
     /// <summary>Language the AI is told to use for on-screen text: thoughts, action reasons and the diary (e.g. "English"). Empty = the game's language.</summary>
     public string ThoughtLanguage { get; set; } = "";
+
+    /// <summary>
+    /// Language of what the AI says out loud (say: chat and bubbles), e.g. "Thai" with English thoughts, which cost a small
+    /// model far fewer tokens. Empty = the same as ThoughtLanguage.
+    /// </summary>
+    public string SpeechLanguage { get; set; } = "";
+
+    /// <summary>The configured SpeechLanguage, or <see cref="LanguageName"/> when it is blank.</summary>
+    public string SpeechLanguageName() => string.IsNullOrWhiteSpace(SpeechLanguage) ? LanguageName() : SpeechLanguage.Trim();
+
+    /// <summary>
+    /// Language of the AI's working text: action reasons and the memory files it reads back every day (lessons, plan,
+    /// notes, self, people), e.g. "English" while thoughts and the diary stay in Thai. Those files go into every system
+    /// prompt, so English keeps a small model's context short. Empty = the same as ThoughtLanguage.
+    /// </summary>
+    public string WorkLanguage { get; set; } = "";
+
+    /// <summary>The configured WorkLanguage, or <see cref="LanguageName"/> when it is blank.</summary>
+    public string WorkLanguageName() => string.IsNullOrWhiteSpace(WorkLanguage) ? LanguageName() : WorkLanguage.Trim();
 
     /// <summary>The configured ThoughtLanguage, or the game's current language when it is blank.</summary>
     public string LanguageName()

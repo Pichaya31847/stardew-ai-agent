@@ -18,8 +18,8 @@ public static class ActionTiles
             case "BuyBackpack":
                 return Game1.player.MaxItems switch
                 {
-                    < 24 => "Backpack upgrade to 24 slots (2000g; interact, then respond)",
-                    < 36 => "Backpack upgrade to 36 slots (10000g; interact, then respond)",
+                    < 24 => "Backpack upgrade to 24 slots (2000g; upgrade_backpack)",
+                    < 36 => "Backpack upgrade to 36 slots (10000g; upgrade_backpack)",
                     _ => "Backpack (already 36 slots)"
                 };
             default:

@@ -114,7 +114,8 @@ public class AgentLog
                 _feed.RemoveRange(0, _feed.Count - 500);
             try
             {
-                File.AppendAllText(DayFile(e.Day), JsonSerializer.Serialize(e, Json) + "\n", Encoding.UTF8);
+                CompressedLogStore.Migrate(DayFile(e.Day));
+                CompressedLogStore.Append(DayFile(e.Day), JsonSerializer.Serialize(e, Json) + "\n");
             }
             catch (Exception ex)
             {
@@ -134,6 +135,11 @@ public class AgentLog
     }
 
     public string DayFile(int day) => Path.Combine(Dir, $"day_{day:000}.jsonl");
+
+    public string ReadDay(int day)
+    {
+        lock (_lock) return CompressedLogStore.Read(DayFile(day));
+    }
 
     /// <summary>Diary of one player; p1 (or a single-player run) keeps the original file name.</summary>
     public string DiaryFile(int day, string? player = null) =>
@@ -309,12 +315,7 @@ public class AgentLog
 
     public List<int> Days()
     {
-        return Directory.GetFiles(Dir, "day_*.jsonl")
-            .Select(f => Path.GetFileNameWithoutExtension(f).Substring(4))
-            .Select(s => int.TryParse(s, out var d) ? d : 0)
-            .Where(d => d > 0)
-            .OrderBy(d => d)
-            .ToList();
+        lock (_lock) return CompressedLogStore.Days(Dir).ToList();
     }
 }
 

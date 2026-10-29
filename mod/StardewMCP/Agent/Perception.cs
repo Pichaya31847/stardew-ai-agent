@@ -485,8 +485,14 @@ public static class Perception
     {
         var q = Queues[seat.Screen];
         if (!Interrupts || q.IsEmpty) return;
+        // A farmer just coming into view waits for the next result: on the shared farm it stopped 8 harvests and walks a day
+        // (days 55-56) and threw their results away. Someone who wants a word says it, and a mention still interrupts.
+        if (q.All(e => e.Kind == "arrived")) return;
         var call = rt.CurrentCall;
         if (call == null || call.Instant || call.Done.Task.IsCompleted) return;
+        // Speech/mentions and ambient events stay queued until morning. Never cancel a
+        // committed sleep check to deliver social mail: another screen may already be fading.
+        if (!DaySafety.CanInterruptForSocialEvent(call.Tool.Name)) return;
         // in bed waiting for the others: the sleep ready check is open and still cancelable (not once the night began)
         bool asleep = Asleep(call, rt);
         if (!SafeToStop(call, asleep)) return;

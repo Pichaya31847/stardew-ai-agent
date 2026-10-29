@@ -113,9 +113,12 @@ public static class SplitScreen
             return;
 
         int free = 0;
+        var online = Game1.getOnlineFarmers().Select(f => f.UniqueMultiplayerID).ToHashSet();
         Utility.ForEachLocation(l =>
         {
-            if (l is Cabin c && (!c.HasOwner || !c.IsOwnerActivated)) free++;
+            // An activated owner can rejoin after loading a save. Only cabins whose owner
+            // is already online are occupied; counting only new farmhands builds duplicates.
+            if (l is Cabin c && (!c.HasOwner || !online.Contains(c.owner.UniqueMultiplayerID))) free++;
             return true;
         });
         if (free == 0)

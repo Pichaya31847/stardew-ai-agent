@@ -10,6 +10,7 @@ using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
 using StardewValley.Quests;
+using StardewValley.BellsAndWhistles;
 
 namespace StardewMCP.Agent;
 
@@ -28,10 +29,15 @@ public static partial class AgentTools
             Name = "quests",
             Description = "Your quests and the shared goals. Journal: every open quest with its type (Help Wanted or Story), who asked, the story text, the objective and progress, days left and reward. " +
                           "Help Wanted board: today's request in Town and whether another player already took it (first come, first served, one request a day). " +
-                          "Also the team's Special Orders and the Community Center / Joja line.",
-            Schema = Obj(new { }),
-            Instant = true,
-            Run = (a, c) => Instant(c, QuestsText(a))
+                          "Also completed quests with unclaimed money, the team's Special Orders and the Community Center / Joja line. " +
+                          "action=claim_reward opens the quest journal and clicks the selected completed quest's reward. quest is its exact title; omit to claim the first available reward.",
+            Schema = Obj(new {
+                action = new { type = "string", @enum = new[] { "list", "claim_reward" } },
+                quest = Str("Completed quest title, as listed by quests"),
+                reason = Str(ReasonDesc)
+            }),
+            InstantFor = a => S(a, "action").Length == 0 || S(a, "action") == "list",
+            Run = QuestJournal
         },
         new()
         {
@@ -42,6 +48,49 @@ public static partial class AgentTools
             Run = AcceptQuest
         }
     };
+
+    private static IEnumerable<IQuest> JournalRewards() => P.questLog
+        .Where(q => q != null && !q.destroy.Value).Cast<IQuest>()
+        .Concat(P.team.specialOrders.Cast<IQuest>())
+        .Where(q => !q.IsHidden() && q.ShouldDisplayAsComplete() && q.HasMoneyReward());
+
+    private static IEnumerator QuestJournal(JsonElement a, CallContext c)
+    {
+        var action = S(a, "action");
+        if (action.Length == 0 || action == "list") { c.Result = QuestsText(a); yield break; }
+        if (action != "claim_reward") { c.Fail("Use list or claim_reward."); yield break; }
+        if (Game1.activeClickableMenu != null) { c.Fail("Close the current menu or dialogue first."); yield break; }
+        var title = S(a, "quest");
+        var candidates = JournalRewards().Where(q => title.Length == 0 || string.Equals(q.GetName(), title, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (candidates.Count == 0) { c.Fail("No matching completed quest has an unclaimed money reward. Read quests first."); yield break; }
+        if (title.Length > 0 && candidates.Count > 1) { c.Fail("More than one completed quest has that title. Claim without quest to take the first available reward."); yield break; }
+        var target = candidates[0];
+        var menu = new QuestLog();
+        Game1.activeClickableMenu = menu;
+        try
+        {
+            var pages = AccessTools.Field(typeof(QuestLog), "pages").GetValue(menu) as List<List<IQuest>>;
+            int page = pages?.FindIndex(p => p.Contains(target)) ?? -1;
+            if (page < 0) { c.Fail("The completed quest is not visible in the journal."); yield break; }
+            AccessTools.Field(typeof(QuestLog), "currentPage").SetValue(menu, page);
+            Click(menu, menu.questLogButtons[pages![page].IndexOf(target)]);
+            var shown = AccessTools.Field(typeof(QuestLog), "_shownQuest").GetValue(menu);
+            if (!ReferenceEquals(shown, target)) { c.Fail("The journal did not select the requested quest."); yield break; }
+            int reward = target.GetMoneyReward();
+            int offset = target.IsTimedQuest() && target.GetDaysLeft() > 0 && SpriteText.getWidthOfString(target.GetName()) > menu.width / 2 ? 48 : 0;
+            var center = menu.rewardBox.bounds.Center;
+            menu.receiveLeftClick(center.X, center.Y + offset);
+            c.Result = !target.HasMoneyReward()
+                ? $"Claimed {reward}g from journal quest: {target.GetName()}."
+                : "The journal reward was clicked but remains unclaimed. Read quests before retrying.";
+            if (target.HasMoneyReward()) c.Fail(c.Result);
+            else Rt.Stats.Count("quest_reward_claimed");
+        }
+        finally
+        {
+            if (ReferenceEquals(Game1.activeClickableMenu, menu)) menu.exitThisMenu();
+        }
+    }
 
     // ------------------------------------------------------------------ reading quests
 
@@ -124,7 +173,75 @@ public static partial class AgentTools
         if (task.Length > 0 && task != flavour) sb.Append($"\n     Task: {Peek.Clip(task, 160)}");
         var facts = QuestFacts(q, task);
         if (facts.Count > 0) sb.Append("\n     " + string.Join("; ", facts));
+        var how = QuestHow(q);
+        if (how.Length > 0) sb.Append("\n     How: " + how);
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The concrete steps for the common quest types, with what the farmer already carries: the local run accepted Willy's and
+    /// Pierre's deliveries and let them expire. Read through <see cref="Peek"/>, so a renamed field only drops the hint.
+    /// </summary>
+    private static string QuestHow(Quest q)
+    {
+        var target = Peek.Text(q, "target", "npcName");
+        var who = target.Length > 0 ? target : "the quest giver";
+        string Name(string id) => ItemRegistry.GetData(id)?.DisplayName ?? id;
+        int Have(string id) => P.Items.Where(i => i != null && (i.QualifiedItemId == id || i.ItemId == id)).Sum(i => i.Stack);
+        var id = Peek.Text(q, "ItemId", "item");
+        int n = Peek.Int(q, "number", "numberToFish", "numberToKill") ?? 1;
+        switch (q.GetType().Name)
+        {
+            case "ItemDeliveryQuest" when id.Length > 0:
+                return $"bring {n} {Name(id)} to {who} (you carry {Have(id)}): talk_to(name=\"{who}\", gift_item=\"{Name(id)}\"). item_info({Name(id)}) says where to get it. The money is then claimed automatically.";
+            case "ResourceCollectionQuest" when id.Length > 0:
+                return $"gather {n} {Name(id)} (you carry {Have(id)}), then talk_to(name=\"{who}\") to hand them over.";
+            case "FishingQuest":
+                return $"catch {n} {(id.Length > 0 ? Name(id) : "fish")} with fish, then talk_to(name=\"{who}\").";
+            case "SlayMonsterQuest":
+                var monster = Peek.Text(q, "monsterName");
+                return $"defeat {n} {(monster.Length > 0 ? monster : "monsters")} in the Mines (travel_to Mine, fight), then talk_to(name=\"{who}\").";
+            case "SocializeQuest":
+                return "talk_to every villager on the list once (villagers shows who you haven't talked to).";
+            case "LostItemQuest":
+                var where = Peek.Text(q, "locationOfItem");
+                var x = Peek.Int(q, "tileX");
+                var y = Peek.Int(q, "tileY");
+                return where.Length > 0 ? $"find the lost item in {where}{(x != null && y != null ? $" at ({x},{y})" : "")} (travel_to, then interact there), then talk_to(name=\"{who}\")." : "";
+            default:
+                return "";
+        }
+    }
+
+    /// <summary>
+    /// Whether today's request can be done with what the farmer already has: the item in the pack, a rod for a fishing
+    /// request, the Mines reached for monsters and ores. BrainAcceptBoardQuest takes only these, so the morning walk to the
+    /// board isn't spent on requests that expire (the local run let three deliveries expire).
+    /// </summary>
+    internal static (bool doable, string why) BoardDoable(Quest q)
+    {
+        var id = Peek.Text(q, "ItemId", "item");
+        int n = Peek.Int(q, "number", "numberToFish", "numberToKill") ?? 1;
+        int have = id.Length == 0 ? 0 : P.Items.Where(i => i != null && (i.QualifiedItemId == id || i.ItemId == id)).Sum(i => i.Stack);
+        string name = id.Length > 0 ? ItemRegistry.GetData(id)?.DisplayName ?? id : "the item";
+        bool mines = StardewValley.Locations.MineShaft.lowestLevelReached > 0;
+        switch (q.GetType().Name)
+        {
+            case "ItemDeliveryQuest":
+                return have >= n ? (true, $"you carry {have} {name}") : (false, $"you don't carry {name}; item_info says where to get it");
+            case "ResourceCollectionQuest":
+                return have >= n ? (true, $"you carry {have} {name}")
+                     : mines ? (true, $"{name} comes from the Mines or the farm; you carry {have} of {n}")
+                     : (false, $"you carry {have} of {n} {name} and haven't been into the Mines yet");
+            case "FishingQuest":
+                return P.Items.Any(i => i is StardewValley.Tools.FishingRod) ? (true, "you have a fishing rod") : (false, "you have no fishing rod (Willy, FishShop)");
+            case "SlayMonsterQuest":
+                return mines ? (true, "you have been into the Mines") : (false, "you haven't been into the Mines yet");
+            case "SocializeQuest":
+                return (true, "talking only");
+            default:
+                return (false, "an unusual request; read it before taking it");
+        }
     }
 
     private static string BoardText()
@@ -147,6 +264,13 @@ public static partial class AgentTools
         if (task.Length > 0 && task != flavour) sb.Append($"\n     Task: {Peek.Clip(task, 160)}");
         var facts = QuestFacts(board, task);
         if (facts.Count > 0) sb.Append("\n     " + string.Join("; ", facts));
+        var how = QuestHow(board);
+        if (how.Length > 0) sb.Append("\n     How: " + how);
+        if (state == "open")
+        {
+            var (doable, why) = BoardDoable(board);
+            sb.Append($"\n     Doable: {(doable ? "yes" : "not yet")} ({why})");
+        }
         return sb.ToString();
     }
 
@@ -203,7 +327,8 @@ public static partial class AgentTools
             if (mail.Contains("JojaMember")) return "  [Story] Joja: the farm joined Joja, so the Community Center bundles are closed.";
             if (mail.Contains("ccIsComplete")) return "  [Story] Community Center: restored.";
             var rooms = new[] { "ccPantry", "ccCraftsRoom", "ccFishTank", "ccBoilerRoom", "ccVault", "ccBulletin" };
-            return $"  [Story] Community Center: {rooms.Count(r => mail.Contains(r))}/{rooms.Length} rooms restored (the long goal of the main questline).";
+            return $"  [Story] Community Center: {rooms.Count(r => mail.Contains(r))}/{rooms.Length} rooms restored (the long goal of the main questline).\n" +
+                   $"     Next: {BundleReader.NextStep(P)}";
         }
         catch (Exception)
         {
@@ -219,6 +344,11 @@ public static partial class AgentTools
         if (mine.Count == 0) sb.AppendLine("  none");
         for (int i = 0; i < mine.Count && i < 12; i++) sb.AppendLine(QuestEntry(mine[i], i + 1));
         if (mine.Count > 12) sb.AppendLine($"  ... and {mine.Count - 12} more");
+        sb.AppendLine("Completed journal quests / Special Orders with unclaimed money:");
+        var rewards = JournalRewards().ToList();
+        if (rewards.Count == 0) sb.AppendLine("  none");
+        foreach (var reward in rewards)
+            sb.AppendLine($"  {reward.GetName()}: {reward.GetMoneyReward()}g — quests(action=claim_reward, quest=exact title, reason=...).");
         sb.AppendLine(BoardText());
         var orders = SpecialOrderLines();
         if (orders.Count > 0)
@@ -295,7 +425,8 @@ public static partial class AgentTools
         foreach (var t in ordered)
         {
             if (tried.Count >= 4) break;
-            if (tried.Any(p => Math.Abs(p.X - t.X) + Math.Abs(p.Y - t.Y) <= 1)) continue;
+            // Calendar and Help Wanted tiles can be adjacent. Deduplicate only the exact tile.
+            if (tried.Contains(t)) continue;
             tried.Add(t);
 
             var sub = new CallContext();

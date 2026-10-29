@@ -49,6 +49,52 @@ public static class Briefing
         Register(37, "skills", SkillsText);
         Register(40, "mail", MailText);
         Register(50, "farm", FarmText);
+        Register(55, "season", SeasonEndText);
+    }
+
+    /// <summary>From this day of the month the briefing plans the season change.</summary>
+    private const int SeasonEndFrom = 20;
+
+    /// <summary>
+    /// The last week of a season: which seeds in the pack can no longer ripen before the crops die on the night of day 28,
+    /// and which seeds the next season wants, so the money isn't spent on seeds that die and day 1 isn't wasted.
+    /// </summary>
+    private static string? SeasonEndText()
+    {
+        if (Game1.dayOfMonth < SeasonEndFrom) return null;
+        int left = 28 - Game1.dayOfMonth;
+        var now = Game1.season;
+        var next = (Season)(((int)now + 1) % 4);
+        var sb = new StringBuilder($"Season end: {left} day{(left == 1 ? "" : "s")} of {now} left; on the night of day 28 every outdoor {now} crop dies.");
+
+        var late = new List<string>();
+        foreach (var it in Game1.player.Items)
+        {
+            if (it == null || it.Category != StardewValley.Object.SeedsCategory || !Crop.TryGetData(it.ItemId, out var data) || data.Seasons == null) continue;
+            if (!data.Seasons.Contains(now)) continue;
+            int grow = data.DaysInPhase?.Sum() ?? 0;
+            if (grow > left && !data.Seasons.Contains(next))
+                late.Add($"{it.DisplayName} x{it.Stack} (needs {grow} days)");
+        }
+        if (late.Count > 0)
+            sb.Append($" Too late to plant now, they would die first: {string.Join(", ", late)}. Don't buy more of them; keep them for next year or sell them.");
+
+        try
+        {
+            var wanted = Game1.cropData
+                .Where(kv => kv.Value.Seasons != null && kv.Value.Seasons.Contains(next) && kv.Value.Seasons.Count < 4)
+                .Select(kv => ItemRegistry.GetData("(O)" + kv.Key)?.DisplayName)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .Take(8)
+                .ToList();
+            if (wanted.Count > 0)
+                sb.Append($" {next} seeds to buy on day 1 (Pierre's): {string.Join(", ", wanted)}; crops(season={next.ToString().ToLowerInvariant()}) ranks them by gold per tile per day.");
+        }
+        catch (Exception)
+        {
+            // the seed list is a convenience
+        }
+        return sb.ToString();
     }
 
     /// <summary>
@@ -418,6 +464,11 @@ public static class Briefing
         if (tomorrow != null)
             sb.Append($" Tomorrow: {tomorrow}.");
         sb.Append($" Luck: {LuckText(Game1.player.DailyLuck)}.");
+        // The 14B run walked to Pierre's on a Wednesday six times: say up front which shops are shut all day.
+        var weekday = CalendarData.DateAhead(0).Weekday;
+        var closed = CalendarData.Shops.Where(s => s.ClosedDays.Contains(weekday)).Select(s => $"{s.Name} ({s.Location})").ToList();
+        if (closed.Count > 0)
+            sb.Append($" CLOSED all day today ({CalendarData.DayNames[weekday]}): {string.Join(", ", closed)}.");
         return sb.ToString();
     }
 
@@ -511,6 +562,8 @@ public static class Briefing
         var building = Game1.getFarm().buildings.Where(b => b.isUnderConstruction()).Select(b => b.buildingType.Value).ToList();
         if (building.Count > 0)
             lines.Add($"Still under construction: {string.Join(", ", building)}.");
+        var plan = AgentTools.FarmPlanText();
+        if (plan.Length > 0) lines.Add(plan);
         return string.Join("\n", lines);
     }
 

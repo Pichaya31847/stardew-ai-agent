@@ -77,12 +77,16 @@ the other seats add `_p2`, `_p3`:
 
 | File | What |
 |---|---|
-| `day_NNN.jsonl` | Every tool call, result, thought, chat line and event of the day |
+| `day_NNN.jsonl.gz` | Every tool call, result, thought, chat line and event of the day, losslessly compressed as concatenated gzip members. Legacy `day_NNN.jsonl` remains readable and is migrated on the next write only after decompressed bytes match. `/api/day` and `/api/days` handle both formats; their response format is unchanged. Standard gzip tools can extract the original JSONL. Memory Markdown and saves retain their existing format. |
+
+Player state snapshots add `transitioning` and optional `nightEvent` (native overnight event class). The built-in brain waits until overnight events/fades/pass-out finish, even when `day` already advanced. Transition diagnostics refresh on unvalidated SMAPI ticks during saving without running gameplay coroutines.
 | `day_NNN_summary.json` | Failure reasons per tool and per player |
 | `diary_NNN.md` | The AI's diary for the day |
 | `lessons.md`, `plan.md`, `notes.md` | What `journal` keeps across days |
 | `self.md`, `people.md` | The AI's note on who it is, and its line on each other farmer |
-| `stats_NNN.json` | Daily stats, written at the day rollover |
+| `stats_NNN.json` | Daily stats, written at the day rollover. `progress` (added, same version) holds `backpackSlots`, `communityCenter` (`bundlesComplete`, `bundlesTotal`, `next`: the story's next step) and `events`: counts of `session_break` (built-in AI restarted its conversation), `rest`, `backpack_upgrade`, `quest_reward_claimed`, `festival_wait_gave_up` and the `quest_accepted` / `quest_completed` / `quest_failed` journal events |
+| `chests.jsonl` | Every change to a shared chest, one JSON line per item: `day`, `time`, `seat`, `farmer`, `action` (`put` / `took`), `item`, `count`, `location`, `x`, `y`. The same changes are in the day log as kind `chest` |
+| `progress_pN.json`, `progress_NNN_pN.json` | The achievement goal of each AI seat (always with the seat id, `p1` too). `progress_pN.json` is the latest reading (rewritten at every rollover and every `goals` call); `progress_NNN_pN.json` is the state at the end of farm day NNN. Fields: `achievements` (`name`, `have`, `need`, `done`, `earned`), `shipping` (`shipped` / `notShipped` item names), `cooking` (`cooked`, `knownNotCooked`, `notLearned` with `how`), `crafting` (the same), `fish` (`caught` / `notCaught`), `museum` (`onDisplay`, `total`, `missing`), `friends` (hearts and max per villager), `monsters` (Marlon's goals: `kills` / `need`), `mine.deepestFloor`, `house`, `children`, `spouse` |
 
 ## Building on top of the mod
 
@@ -93,3 +97,6 @@ with `/api/control` and `/api/release_freeze`, and test with `/api/debug/*`. [re
 [howto-record-day.md](howto-record-day.md) describe one recording setup as an example.
 
 The API only grows: endpoints and tool names are added, never renamed or removed.
+### POST /api/order (local customization)
+
+Body: `{"target":"all","text":"Water the crops"}`. Target may also be a configured AI name or seat id. Requires `OperatorDashboard=true` and a running built-in brain. Returns `{"queued":N,"target":"all"}`; HTTP 400 if no matching brain accepts it. Empty text and text over 1000 characters are refused. This queues a user instruction before the next model request; it does not interrupt a request or action already in progress. Console equivalent: `mcp_order all Water the crops`.

@@ -200,7 +200,7 @@ function setLang(name) {
   document.body.classList.add("i18n");
 }
 // seat orb colors and farmer names (from /api/feed), for days with more than one player
-const SEAT = { p1: "var(--saffron)", p2: "var(--aqua)", p3: "var(--grass)" };
+const SEAT = { p1: "var(--saffron)", p2: "var(--aqua)", p3: "var(--grass)", p4: "var(--pink)" };
 let names = {}, seatKey = "";
 const hiddenSeats = new Set();
 const seatName = p => names[p] || String(p).toUpperCase();
@@ -210,7 +210,7 @@ const seatDot = p => `<i class="dot" style="--c:${SEAT[p] || "var(--ink-meta)"}"
 async function initLang() {
   let name = null;
   try {
-    const feed = await (await fetch(`${API}/api/feed?after=9007199254740991`)).json();
+    const feed = await fetchJson("/api/feed?after=9007199254740991");
     name = feed.thoughtLanguage;
     for (const p of (feed.state || {}).players || []) if (p.state && p.state.name) names[p.id] = p.state.name;
     if (feed.meta && feed.meta.model) {
@@ -225,12 +225,23 @@ async function initLang() {
 
 // one counter for loadDays and show: the newest click wins, an older response never replaces what it asked for
 let request = 0;
+let knownDays = [], liveSave = null, liveSignature = "";
+async function fetchJson(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${API}${path}`, { cache: "no-store", signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } finally { clearTimeout(timer); }
+}
 async function loadDays() {
   const id = ++request;
   $("latest").disabled = true;  // one day-list load at a time; a failed one can be retried
   try {
-    const days = await (await fetch(`${API}/api/days`)).json();
+    const days = await fetchJson("/api/days");
     if (id !== request) return;
+    knownDays = days;
     $("days").innerHTML = days.map(d => `<button data-d="${d}">${t("dayButton", d)}</button>`).join("");
     $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d));
     if (days.length) show(days[days.length - 1]);
@@ -243,7 +254,7 @@ async function show(d) {
   $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === d));
   const nav = $("days"), on = nav.querySelector(".on");  // center the open day in the track (the page itself stays put)
   if (on) nav.scrollLeft = on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2;
-  const day = await (await fetch(`${API}/api/day?n=${d}`)).json();
+  const day = await fetchJson(`/api/day?n=${d}`);
   if (id !== request) return;
   data = day;
   render();
@@ -262,7 +273,7 @@ function render() {
   $("dayTitle").textContent = t("dayButton", data.day);
   $("diary").textContent = data.diary || t("noDiary");
   $("diaryCard").classList.toggle("empty", !data.diary);
-  const show = { think: $("fThink").checked, action: $("fAct").checked, result: $("fRes").checked, system: $("fSys").checked, diary: true };
+  const show = { think: $("fThink").checked, action: $("fAct").checked, result: $("fRes").checked, system: $("fSys").checked, diary: true, say: true, journal: true };
   const es = data.entries;
   const acts = es.filter(e => e.kind === "action").length;
   const fails = es.filter(e => e.kind === "result" && e.ok === false).length;
@@ -296,7 +307,53 @@ function render() {
 }
 ["fThink", "fAct", "fRes", "fSys"].forEach(id => $(id).onchange = render);
 $("latest").onclick = loadDays;
-initLang().then(loadDays);
+// Sequential polling: reconnect after errors, preserve filters and the reader's scroll position.
+async function livePoll() {
+  try {
+    const [days, feed] = await Promise.all([
+      fetchJson("/api/days"), fetchJson("/api/feed?after=9007199254740991")
+    ]);
+    const save = feed.state?.saveFolder || null;
+    if (liveSave && save && save !== liveSave) {
+      ++request; current = null; data = null; seatKey = ""; names = {};
+      knownDays = []; liveSignature = ""; hiddenSeats.clear();
+      $("rows").textContent = "";
+      $("diary").textContent = "";
+    }
+    if (save) liveSave = save;
+    for (const p of feed.state?.players || []) if (p.state?.name) names[p.id] = p.state.name;
+    setLang(feed.thoughtLanguage);
+    const previousLatest = knownDays[knownDays.length - 1];
+    const following = current == null || current === previousLatest;
+    knownDays = days;
+    $("days").innerHTML = days.map(d => `<button data-d="${d}" class="${d === current ? "on" : ""}">${t("dayButton", d)}</button>`).join("");
+    $("days").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.d).catch(() => {}));
+    if (!days.length) {
+      ++request; current = null; data = null; liveSignature = "";
+      $("rows").textContent = ""; $("diary").textContent = "";
+      $("chips").textContent = ""; $("why").textContent = "";
+      $("seats").textContent = ""; seatKey = "";
+      return;
+    }
+    const target = following || !days.includes(current) ? days[days.length - 1] : current;
+    const revision = request;
+    const day = await fetchJson(`/api/day?n=${target}`);
+    if (revision !== request) return;
+    const signature = JSON.stringify(day) + JSON.stringify(names);
+    if (signature !== liveSignature || current !== target) {
+      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 100;
+      const scroll = window.scrollY;
+      current = target; data = day; liveSignature = signature; seatKey = "";
+      $("days").querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.d === current));
+      render();
+      window.scrollTo(0, atBottom ? document.documentElement.scrollHeight : scroll);
+    }
+    document.title = `${save || "Stardew"} · LIVE`;
+  } catch (error) {
+    document.title = "Stardew · reconnecting";
+  } finally { setTimeout(livePoll, 1000); }
+}
+initLang().then(livePoll);
 </script>
 </body>
 </html>

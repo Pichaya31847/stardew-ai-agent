@@ -44,12 +44,21 @@ public class ToolArgsTests
     [Theory]
     [InlineData("{}")]
     [InlineData("{'radius':null}")]
-    [InlineData("{'radius':'12'}")]
+    [InlineData("{'radius':'twelve'}")]
     [InlineData("{'radius':true}")]
     [InlineData("[]")]
     public void I_falls_back_when_the_argument_is_missing_or_not_a_number(string args)
     {
         Assert.Equal(7, AgentTools.I(Json(args), "radius", 7));
+    }
+
+    [Theory]
+    [InlineData("{'radius':'12'}")]
+    [InlineData("{'radius':12.0}")]
+    [InlineData("{'radius':' 12 '}")]
+    public void I_accepts_numeric_strings_and_whole_decimals_as_small_models_send_them(string args)
+    {
+        Assert.Equal(12, AgentTools.I(Json(args), "radius", 7));
     }
 
     // ---------------------------------------------------------------- Has
@@ -85,18 +94,62 @@ public class ToolArgsTests
     public void TileList_skips_entries_that_are_not_pairs_and_ignores_extra_numbers()
     {
         var tiles = AgentTools.TileList(Json("{'tiles':[[1,2],[3],'5,6',7,[8,9,10],[]]}"), "tiles");
-        Assert.Equal(new List<Point> { new Point(1, 2), new Point(8, 9) }, tiles);
+        Assert.Equal(new List<Point> { new Point(1, 2), new Point(5, 6), new Point(8, 9) }, tiles);
+    }
+
+    [Theory]
+    [InlineData("{'tiles':'[(12, 29), (13, 29)]'}")]   // the whole list as one string (local Qwen run)
+    [InlineData("{'tiles':'12,29 13,29'}")]
+    [InlineData("{'tiles':[{'x':12,'y':29},{'x':'13','y':29.0}]}")]
+    [InlineData("{'tiles':['(12, 29)','13,29']}")]
+    [InlineData("{'tiles':[12,29,13,29]}")]             // flat numbers, paired up
+    [InlineData("{'tiles':[['12','29'],[13,29]]}")]
+    [InlineData("{'tiles':[['12,29'],['13,29']]}")]
+    public void TileList_reads_the_shapes_small_models_send(string args)
+    {
+        Assert.Equal(new List<Point> { new Point(12, 29), new Point(13, 29) }, AgentTools.TileList(Json(args), "tiles"));
+    }
+
+    [Theory]
+    [InlineData("{'tile':[4,5]}")]
+    [InlineData("{'tile':'4,5'}")]
+    [InlineData("{'x':4,'y':5}")]
+    public void TileList_of_tiles_also_takes_one_tile_or_x_and_y(string args)
+    {
+        Assert.Equal(new List<Point> { new Point(4, 5) }, AgentTools.TileList(Json(args), "tiles"));
     }
 
     [Theory]
     [InlineData("{}")]
     [InlineData("{'tiles':null}")]
-    [InlineData("{'tiles':'1,2'}")]
+    [InlineData("{'tiles':'no numbers here'}")]
     [InlineData("{'tiles':{'x':1}}")]
+    [InlineData("{'tiles':[7]}")]
     [InlineData("[]")]
     public void TileList_is_empty_when_the_argument_is_missing_or_not_a_list(string args)
     {
         Assert.Empty(AgentTools.TileList(Json(args), "tiles"));
+    }
+
+    // ---------------------------------------------------------------- TextArg
+
+    [Theory]
+    [InlineData("{'text':'plan the day'}")]
+    [InlineData("{'thought':'plan the day'}")]
+    [InlineData("{'reason':'plan the day'}")]
+    [InlineData("{'text':'  ','content':'plan the day','reason':'other'}")]
+    public void TextArg_falls_back_to_another_string_argument(string args)
+    {
+        Assert.Equal("plan the day", AgentTools.TextArg(Json(args), "text"));
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{'text':''}")]
+    [InlineData("{'n':3}")]
+    public void TextArg_is_empty_when_no_string_was_given(string args)
+    {
+        Assert.Equal("", AgentTools.TextArg(Json(args), "text"));
     }
 
     // ---------------------------------------------------------------- Reason and ArgsForLog

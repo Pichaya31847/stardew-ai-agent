@@ -234,8 +234,8 @@ public static class DaySummary
         try
         {
             var source = log.DayFile(day);
-            if (day <= 0 || !File.Exists(source)) return;
-            var summary = Build(day, ReadLines(source));
+            if (day <= 0 || !CompressedLogStore.Exists(source)) return;
+            var summary = Build(day, log.ReadDay(day).Split('\n'));
             File.WriteAllText(Path.Combine(log.Dir, FileName(day)), JsonSerializer.Serialize(summary, AgentLog.Json), Encoding.UTF8);
         }
         catch (Exception ex)

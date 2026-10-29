@@ -13,8 +13,9 @@ namespace StardewMCP.Agent;
 /// <summary>
 /// Whose thing is it? Chests and machines already carry the game's own <c>Object.owner</c> (the farmer who
 /// placed them); a crop is owned by the seat that planted it (kept in the soil's modData, so it is saved with
-/// the game). Taking from another seat's chest or harvesting its crop is allowed, as in the game, but writes a
-/// <c>theft</c> entry to the thief's log stream for perception (#40) and the story log (#42).
+/// the game). Harvesting another seat's crop is allowed, as in the game, but writes a <c>theft</c> entry to the
+/// thief's log stream for perception (#40) and the story log (#42). Chests are shared by everyone (decided 2026-10-29):
+/// taking from them is no theft, and <see cref="ChestLedger"/> writes down every change instead.
 /// </summary>
 public static class Ownership
 {
@@ -25,8 +26,6 @@ public static class Ownership
         var harmony = new Harmony(manifest.UniqueID + ".ownership");
         harmony.Patch(AccessTools.Method(typeof(Crop), nameof(Crop.harvest)),
             postfix: new HarmonyMethod(typeof(Ownership), nameof(Harvest_Postfix)));
-        harmony.Patch(AccessTools.Method(typeof(Chest), nameof(Chest.grabItemFromChest)),
-            prefix: new HarmonyMethod(typeof(Ownership), nameof(GrabFromChest_Prefix)));
     }
 
     /// <summary>The AI seat whose farmer is <paramref name="farmerId"/>, or null (nobody, or the camera).</summary>
@@ -86,11 +85,5 @@ public static class Ownership
     {
         if (!__result || junimoHarvester != null || soil == null || OwnerOf(soil) is not { } owner) return;
         LogTheft("crop", owner, WorldText.CropName(__instance), Game1.currentLocation?.NameOrUniqueName ?? "", xTile, yTile);
-    }
-
-    private static void GrabFromChest_Prefix(Chest __instance, Item item, Farmer who)
-    {
-        if (!who.IsLocalPlayer || OwnerOf(__instance) is not { } owner || !who.couldInventoryAcceptThisItem(item)) return;
-        LogTheft("chest", owner, $"{item.Stack} x {item.DisplayName}", __instance.Location?.NameOrUniqueName ?? "", (int)__instance.TileLocation.X, (int)__instance.TileLocation.Y);
     }
 }

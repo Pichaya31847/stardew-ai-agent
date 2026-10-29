@@ -56,7 +56,23 @@ public class ModEntry : Mod
             PassOut.OnReturnedToTitle();
             WorldProgress.Reset();
         };
+        // The game language changed in Options: rebuild the localized → English names.
+        helper.Events.Content.LocaleChanged += (_, _) => { if (Context.IsWorldReady) EnglishNames.Map = GameEnglish.Build(); };
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
+        helper.Events.Specialized.UnvalidatedUpdateTicked += (_, _) =>
+        {
+            // SMAPI deliberately skips normal UpdateTicked while a save is in progress.
+            // Release only our pause and refresh diagnostics; do not run gameplay coroutines or AI here.
+            if (!Context.IsWorldReady || (!Game1.newDay && !Game1.fadeToBlack && Game1.farmEvent == null && !Game1.game1.isLocalMultiplayerNewDayActive && Game1.activeClickableMenu is not SaveGameMenu and not ShippingMenu)) return;
+            var seat = Players.Current;
+            seat.OnTick();
+            seat.State = ScreenState.Capture();
+            if (seat.Screen == 0)
+            {
+                WorldClock.ReleaseForTransition();
+                _http.RefreshState();
+            }
+        };
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
             Briefing.OnDayStarted();
@@ -95,6 +111,8 @@ public class ModEntry : Mod
         Players.Resolve(_config, Monitor);
         SaveFolder.OnSaveLoaded();
         EconomyTools.CheckWallets(Monitor, _config);
+        EnglishNames.Map = GameEnglish.Build();
+        Monitor.Log($"English names for the AIs: {EnglishNames.Map.Count} localized names mapped", LogLevel.Trace);
         Players.Host.Runtime.Log.Add("system", text: $"Save loaded: {Game1.player.Name} / {Game1.player.farmName} Farm");
         Brains.StartAll();
     }
@@ -106,6 +124,7 @@ public class ModEntry : Mod
 
         if (seat.Screen == 0)
         {
+            NewGamePrefill.Tick(Helper, _config);
             TryAutoLoad(e.Ticks);
             DebugApi.Tick();
             SplitScreen.HostTick();
@@ -115,6 +134,7 @@ public class ModEntry : Mod
         SplitScreen.ScreenTick();
 
         seat.Runtime.Tick();
+        ChestLedger.Tick(seat);
         Briefing.Tick(seat, e.IsMultipleOf(300));
         if (e.IsMultipleOf(15))
             seat.State = ScreenState.Capture();

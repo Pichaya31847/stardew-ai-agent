@@ -24,16 +24,17 @@ public static partial class AgentTools
     {
         Name = "chest",
         Description = "Look into, fill or empty a storage chest or the fridge in one call: you walk next to it, open it, move the items and close it again. " +
-                      "action: list (default), store (your pack into the chest) or take (chest into your pack). " +
+                      "Chests are shared: anyone may put in or take out, and every change is written down. action: list (default), store (your pack into the chest), take (chest into your pack) " +
+                      "or all (every chest and fridge on the farm with what it holds and who put in or took out what lately; no walking). " +
                       "item: one item name, or \"everything\" (store: all except tools, seeds and cooked dishes, so tidying the pack is one call; take: all). " +
                       "items: several names at once. quality: normal, silver, gold or iridium to move only that quality (default every quality). " +
                       "quantity: how many of each named item (default all). The result says what moved, per quality, and what did not fit. " +
-                      "x, y is the chest tile; leave it out to use a chest menu you already opened with interact.",
+                      "x, y is the chest tile; leave it out to use a chest menu you already opened with interact, or else the nearest chest on this map (your own first).",
         Schema = Obj(new
         {
             x = Int("Chest tile x"),
             y = Int("Chest tile y"),
-            action = new { type = "string", @enum = new[] { "list", "store", "take" }, description = "list (default), store or take" },
+            action = new { type = "string", @enum = new[] { "list", "store", "take", "all" }, description = "list (default), store, take or all" },
             item = Str("Item name, or \"everything\""),
             items = new { type = "array", items = new { type = "string" }, description = "Several item names" },
             quality = new { type = "string", @enum = new[] { "normal", "silver", "gold", "iridium" }, description = "Only this quality (default: all)" },
@@ -129,9 +130,14 @@ public static partial class AgentTools
     {
         var action = S(a, "action", "list").Trim().ToLowerInvariant();
         if (action.Length == 0) action = "list";
+        if (action == "all")
+        {
+            c.Result = ChestLedger.Report();
+            yield break;
+        }
         if (action != "list" && action != "store" && action != "take")
         {
-            c.Fail($"Unknown action \"{action}\". Use list, store or take.");
+            c.Fail($"Unknown action \"{action}\". Use list, store, take or all.");
             yield break;
         }
 
@@ -157,14 +163,32 @@ public static partial class AgentTools
 
         bool opened = false;
         var spot = "";
-        if (Has(a, "x") && Has(a, "y"))
+        Point? at = Has(a, "x") && Has(a, "y") ? new Point(I(a, "x", -1), I(a, "y", -1)) : null;
+        // No tile and no chest open: your own nearest chest on this map (27 failures in the local Qwen run asked for "the chest").
+        if (at == null && Game1.activeClickableMenu is not ItemGrabMenu { context: Chest })
+        {
+            at = NearestOwnChest();
+            if (at == null)
+            {
+                c.Fail(Reasons.NotFound, $"There is no chest on {Loc.Name}. chest(action=all) lists every chest on the farm; or craft and place a Chest.");
+                yield break;
+            }
+        }
+        if (at is Point tile)
         {
             if (Game1.activeClickableMenu != null)
             {
-                c.Fail("A menu is open. close_menu first, or leave out x and y to use the chest menu that is open.");
+                c.Fail(Reasons.MenuOpen, "A menu is open. close_menu first, or leave out x and y to use the chest menu that is open.");
                 yield break;
             }
-            var tile = new Point(I(a, "x", -1), I(a, "y", -1));
+            // Days 51-53: craft named the chest "at FarmHouse (5,10)" and the AI asked for (5,10) from the Farm 34 times. A chest
+            // that isn't on this map but is at that tile in the farmer's house (or another farm map) is gone to first.
+            if (!(Loc.Objects.TryGetValue(tile.ToVector2(), out var here) && here is Chest) && ChestElsewhere(tile) is { } other)
+            {
+                var trip = new CallContext();
+                yield return TravelTo(other, trip);
+                if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"The chest at ({tile.X},{tile.Y}) is in {other}, and the way there failed: {trip.Result}"); yield break; }
+            }
             // interact walks next to the tile and presses the action button; it is the same path a player's hands take.
             var sub = new CallContext();
             yield return Interact(ArgsOf(new { x = tile.X, y = tile.Y, reason = Reason(a) }), sub);
@@ -182,19 +206,47 @@ public static partial class AgentTools
                 yield break;
             }
         }
-        else if (Game1.activeClickableMenu is not ItemGrabMenu { context: Chest })
-        {
-            c.Fail("Give the chest's tile (x, y), or open a chest with interact first.");
-            yield break;
-        }
 
         yield return ChestWork(action, names, everything, quality, quantity, spot, c);
+        if (at is Point used && c.Result.Length > 0)
+            c.Result += ChestLedger.OthersChanged(Loc.NameOrUniqueName, used.X, used.Y, Rt.Log.Player);
         if (opened && Game1.activeClickableMenu != null)
             yield return CloseMenu(default, new CallContext());
     }
 
+    /// <summary>The name of the farm map (your home first, then the farmhouse and the Farm) that has a chest at this tile, or null.</summary>
+    private static string? ChestElsewhere(Point tile)
+    {
+        foreach (var name in new[] { P.homeLocation.Value, "FarmHouse", "Farm" }.Where(n => !string.IsNullOrEmpty(n)).Distinct())
+        {
+            var loc = Game1.getLocationFromName(name);
+            if (loc != null && loc != Loc && loc.Objects.TryGetValue(tile.ToVector2(), out var o) && o is Chest { playerChest.Value: true })
+                return name;
+        }
+        return null;
+    }
+
+    private static Point? NearestOwnChest() => NearestOwnChest(Loc);
+
+    /// <summary>The nearest player chest on this map, your own first: chests are shared (<see cref="ChestLedger"/>).</summary>
+    private static Point? NearestOwnChest(GameLocation loc)
+    {
+        var me = Rt.Log.Player;
+        var here = loc == Loc ? P.TilePoint : Point.Zero;
+        return loc.objects.Pairs
+            .Where(kv => kv.Value is Chest { playerChest.Value: true, fridge.Value: false })
+            .Select(kv => (tile: new Point((int)kv.Key.X, (int)kv.Key.Y), owner: Ownership.OwnerOf(kv.Value)))
+            .OrderBy(x => IsMachineChest(loc, x.tile) ? 1 : 0) // a chest that feeds a machine is not for storage
+            .ThenBy(x => x.owner == me ? 0 : 1)
+            .ThenBy(x => Math.Abs(x.tile.X - here.X) + Math.Abs(x.tile.Y - here.Y))
+            .Select(x => (Point?)x.tile)
+            .FirstOrDefault();
+    }
+
     /// <summary>The work with the chest menu open. Sets <paramref name="c"/>; the caller closes the menu.</summary>
-    private static IEnumerator ChestWork(string action, List<string> names, bool everything, int? quality, int? quantity, string spot, CallContext c)
+    /// <param name="keepInPack">For store: move every stack except these, produce included (mine's stash before going down).</param>
+    private static IEnumerator ChestWork(string action, List<string> names, bool everything, int? quality, int? quantity, string spot, CallContext c,
+        Func<Item, bool>? keepInPack = null)
     {
         var menu = (ItemGrabMenu)Game1.activeClickableMenu!;
         var label = ChestLabel(menu);
@@ -222,7 +274,18 @@ public static partial class AgentTools
             source = P.Items;
             allowed = it => menu.inventory.highlightMethod(it);
         }
-        var jobs = PlanMoves(source, names, everything, quality, quantity, allowed, store, problems);
+        var jobs = keepInPack != null && store
+            ? source.Where(i => i != null && !keepInPack(i) && allowed!(i)).Select(i => (item: i, count: i.Stack)).ToList()
+            : PlanMoves(source, names, everything, quality, quantity, allowed, store, problems);
+        if (store && keepInPack == null) jobs = KeepProduceForSale(jobs, menu.ItemsToGrabMenu.actualInventory, problems);
+        // A chest that feeds machines through Automate takes only what they use (their inputs and fuel).
+        if (store && menu.context is Chest fed && MachineChestRefuses(fed.Location ?? Loc, fed.TileLocation.ToPoint()) is { } refuses)
+        {
+            var kept = jobs.Where(j => refuses(j.item)).Select(j => j.item.Name).Distinct().ToList();
+            jobs = jobs.Where(j => !refuses(j.item)).ToList();
+            if (kept.Count > 0)
+                problems.Add($"Not stored here: {string.Join(", ", kept)}. {ChestFeedsNote(fed.Location ?? Loc, fed.TileLocation.ToPoint())}");
+        }
 
         var moved = new List<(string label, int count)>();
         var left = new List<(string label, int count)>();
@@ -277,6 +340,85 @@ public static partial class AgentTools
 
         if (moved.Count == 0) c.Fail(("Nothing " + (store ? "stored." : "taken.") + " " + sb).Trim());
         else c.Result = sb.ToString().Trim();
+    }
+
+    // ------------------------------------------------------------------ produce is for selling
+
+    /// <summary>Crops, fruit, flowers, forage, fish and animal or artisan goods: what the shipping bin pays for.</summary>
+    internal static bool IsSaleProduce(Item it) =>
+        it is StardewValley.Object { bigCraftable.Value: false } && it.Category is -75 or -79 or -80 or -81 or -4 or -5 or -6 or -14 or -18 or -26;
+
+    /// <summary>How many of this item the unfinished bundles still take (any room), counting only stacks of a fitting quality.</summary>
+    internal static int BundleWants(Item it)
+    {
+        if (BundleReader.IsJoja(P)) return 0;
+        return BundleReader.Read().Where(b => !b.Complete).SelectMany(b => b.Needs.Where(n => !n.Done && BundleReader.Fits(it, n))).Sum(n => n.Count);
+    }
+
+    /// <summary>An active quest names this item (deliveries, gifts asked for).</summary>
+    internal static bool QuestWants(Item it)
+    {
+        foreach (var q in P.questLog)
+        {
+            string text;
+            try { text = q.GetDescription() + " " + string.Join(" ", q.GetObjectiveDescriptions()); }
+            catch { continue; }
+            if (text.Contains(it.DisplayName, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Sale produce goes to the shipping bin, not a chest: only what a bundle still needs (minus what this chest holds) or a quest asks for
+    /// is stored (day 24: 54 parsnips went into chests and stayed there while both farmers were short of seed money).
+    /// </summary>
+    private static List<(Item item, int count)> KeepProduceForSale(List<(Item item, int count)> jobs, IList<Item> inside, List<string> problems)
+    {
+        var kept = new List<(Item item, int count)>();
+        var refused = new List<(string label, int count)>();
+        foreach (var (item, count) in jobs)
+        {
+            if (!IsSaleProduce(item) || QuestWants(item)) { kept.Add((item, count)); continue; }
+            int stored = inside.Where(i => i != null && i.QualifiedItemId == item.QualifiedItemId && i.Quality >= item.Quality).Sum(i => i.Stack);
+            int room = Math.Max(0, BundleWants(item) - stored);
+            if (room >= count) { kept.Add((item, count)); continue; }
+            if (room > 0) kept.Add((item, room));
+            refused.Add((StackLabel(item), count - room));
+        }
+        if (refused.Count > 0)
+            problems.Add($"Kept in your pack to sell: {Tally(refused)}. Produce is money: ship it at the Farm's shipping bin (paid overnight) or sell it at a shop; " +
+                         "a chest only keeps what a Community Center bundle or a quest still needs.");
+        return kept;
+    }
+
+    /// <summary>"33x Parsnip, 7x Daffodil (about 1,400g)" for the sale produce in your own (or unowned) chests that no bundle or quest needs, or "".</summary>
+    internal static string ChestProduceForSale()
+    {
+        var me = Rt.Log.Player;
+        var counts = new Dictionary<string, (int n, int g)>();
+        foreach (var loc in new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation })
+        {
+            if (loc == null) continue;
+            foreach (var obj in loc.objects.Values)
+            {
+                if (obj is not Chest { playerChest.Value: true, fridge.Value: false } chest) continue;
+                var owner = Ownership.OwnerOf(chest);
+                if (owner != null && owner != me) continue;
+                foreach (var it in chest.Items)
+                {
+                    if (it == null || !IsSaleProduce(it) || QuestWants(it)) continue;
+                    int spare = it.Stack - BundleWants(it);
+                    if (spare <= 0) continue;
+                    int each = it is StardewValley.Object o ? o.sellToStorePrice() : 0;
+                    counts.TryGetValue(it.DisplayName, out var cur);
+                    counts[it.DisplayName] = (cur.n + spare, cur.g + spare * each);
+                }
+            }
+        }
+        if (counts.Count == 0) return "";
+        int total = counts.Values.Sum(v => v.g);
+        var list = string.Join(", ", counts.OrderByDescending(kv => kv.Value.g).Take(6).Select(kv => $"{kv.Value.n}x {kv.Key}"));
+        return $"{list} (about {total:N0}g)";
     }
 
     // ------------------------------------------------------------------ planning

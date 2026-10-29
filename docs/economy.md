@@ -10,8 +10,10 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
   personal bin) are all per farmer, so `status`, `buy`, `shop_list` and `ship` already use each seat's own money.
 - It is a host/world choice made when the co-op farm is created ("Separate wallets" on the character screen).
   It can also be changed later by the host in the Mayor's manor (ledger book, takes effect overnight).
-  The mod cannot make it per run: **create the filming farm with separate wallets**, with 3 starting cabins.
-- At load, with `SplitScreen` on and a shared wallet, the mod logs a warning (SMAPI console and the `system` log).
+  **Create the filming farm with separate wallets**, with 3 starting cabins.
+- At load, with `SplitScreen` on and a shared wallet, the mod logs a warning (SMAPI console and the `system` log). With
+  `SeparateWallets: true` it instead sets `changeWalletTypeTonight`, the flag the ledger's "yes" sets, and the game splits
+  the money evenly overnight (`ManorHouse.SeparateWallets`).
 - Smoke: the debug op `separate_wallets` runs the game's own `ManorHouse.SeparateWallets()` on the smoke copy.
 - The game already has a money transfer, but only at the ledger book in the manor. `pay` is the same three
   steps (payer `Money`, `team.AddIndividualMoney`, `stats.onMoneyGifted`) at any distance.
@@ -22,12 +24,15 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
   `Chest (3 items, owner p2)`, machines show `(owner p2)`, and `/api/state` has an `owned` list.
 - Crops: the planter is written to the soil's `modData` when `plant` succeeds (saved with the game). `look`
   shows `Parsnip READY (owner p1)`. Soil that was planted some other way has no owner.
-- `theft` log entry (kind `theft`, player = thief, args `{victim, what: crop|chest, item, location, tile}`) when a
-  seat harvests a crop planted by another seat (`Crop.harvest`) or takes an item out of a chest another seat
-  placed (`Chest.grabItemFromChest`, the callback the chest menu uses). The hooks are Harmony patches, so every
-  path counts: `harvest`, `interact`, a scythe swing, and the chest menu (`menu take`).
-- Not recorded: opening someone's chest without taking anything, putting items into it, the starting plot as a
-  fixed tile area. A plot is "whatever the seat planted"; a fixed area per seat would be a config of rectangles.
+- `theft` log entry (kind `theft`, player = thief, args `{victim, what: crop, item, location, tile}`) when a
+  seat harvests a crop planted by another seat (`Crop.harvest`). The hook is a Harmony patch, so every path
+  counts: `harvest`, `interact` and a scythe swing.
+- Chests are shared (decided 2026-10-29): anyone may put in or take out, and that is no theft. Every change is
+  written down instead: when a chest menu closes, its contents are compared with what it held when it opened, and
+  each item put in or taken out goes to the day log (kind `chest`) and `chests.jsonl`. `chest(action=all)` and the
+  built-in AI's morning briefing list every chest with its contents and the recent changes; a `chest` call adds
+  what the others did to that chest since the farmer last used it.
+- Not recorded: the starting plot as a fixed tile area. A plot is "whatever the seat planted"; a fixed area per seat would be a config of rectangles.
 
 ## Payments
 

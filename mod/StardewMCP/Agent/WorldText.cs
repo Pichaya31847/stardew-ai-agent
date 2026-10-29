@@ -40,6 +40,8 @@ public static partial class WorldText
         sb.AppendLine($"Holding: {(held == null ? "nothing" : $"{held.DisplayName} x{held.Stack}")} (slot {p.CurrentToolIndex})");
         var fishing = AgentTools.FishingLine();
         if (fishing.Length > 0) sb.AppendLine(fishing);
+        var finds = AgentTools.MuseumHint();
+        if (finds.Length > 0) sb.AppendLine(finds);
         var gear = AgentTools.StatusExtras(p);
         if (gear.Length > 0) sb.AppendLine(gear);
         if (p.questLog.Count > 0)
@@ -74,13 +76,13 @@ public static partial class WorldText
             case null:
                 break;
             case DialogueBox box:
-                var text = box.getCurrentString() ?? "";
-                var speaker = box.characterDialogue?.speaker?.displayName;
+                var text = GameEnglish.Said(box);
+                var speaker = box.characterDialogue?.speaker?.Name;
                 sb.AppendLine($"Dialogue open{(speaker != null ? $" ({speaker})" : "")}: \"{text.Replace("\n", " ").Replace("^", " ")}\"");
                 if (box.isQuestion && box.responses != null)
                 {
                     for (int i = 0; i < box.responses.Length; i++)
-                        sb.AppendLine($"  option {i}: {box.responses[i].responseText}");
+                        sb.AppendLine($"  option {i}: {GameEnglish.Option(box.responses[i])}");
                     sb.AppendLine("Use respond(option) to answer.");
                 }
                 else
@@ -90,11 +92,14 @@ public static partial class WorldText
                 sb.AppendLine($"Shop menu open ({shop.ShopId}). Use shop_list / buy / sell, then close_menu.");
                 break;
             case LetterViewerMenu letter:
-                var letterText = letter.mailMessage != null ? string.Join(" ", letter.mailMessage).Replace("\n", " ").Replace("^", " ") : "";
+                var letterText = GameEnglish.Letter(letter).Replace("\n", " ").Replace("^", " ");
                 sb.AppendLine($"Letter open: \"{letterText}\". Use close_menu (attached items and quests will be claimed automatically).");
                 break;
             case NamingMenu nm:
                 sb.AppendLine(Naming.StatusLine(nm));
+                break;
+            case ReadyCheckDialog check:
+                sb.AppendLine(AgentTools.ReadyCheckLine(check));
                 break;
             default:
                 // A Yes/No or proposal box (#53) has its own tool; any other menu is read with menu().
@@ -118,7 +123,7 @@ public static partial class WorldText
             var quality = it is not Tool && it.Quality > 0 ? $", {AgentTools.QualityName(it.Quality)}" : "";
             sb.AppendLine($"  slot {i}: {it.DisplayName} x{it.Stack} [{(it is Tool ? "tool" : it.getCategoryName())}{quality}{extra}{AgentTools.RodNote(it)}]");
         }
-        return (sb.ToString().TrimEnd() + "\n" + AgentTools.InventoryExtras(p)).TrimEnd();
+        return (sb.ToString().TrimEnd() + "\n" + AgentTools.InventoryExtras(p) + "\n" + AgentTools.MuseumHint() + "\n" + AgentTools.StorageHint()).TrimEnd();
     }
 
     /// <summary>One-character symbol and optional label for a tile.</summary>
@@ -135,7 +140,7 @@ public static partial class WorldText
         {
             if (npc.TilePoint != pt) continue;
             if (npc is StardewValley.Monsters.Monster mon) return ('M', $"{mon.Name} (HP {mon.Health})");
-            if (npc.IsVillager) return ('N', npc.displayName);
+            if (npc.IsVillager) return ('N', npc.Name);
         }
 
         if (RanchText.AnimalAt(loc, pt) is { } animal) return (animal.sym, animal.label);
