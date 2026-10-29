@@ -40,7 +40,7 @@ Every tool the AI can call, grouped by job. Each farmer's MCP endpoint (`/mcp`, 
 | `forage` | *`places`*, *`max_places`*, *`list`* | Travel to the maps around the farm that have forage today, nearest first, and pick it all up; `list=true` only counts it |
 | `clear_area` | `x`, `y`, `w`, `h` | Clear a rectangle with the right tool, row by row from the end nearest you; the Scythe also cuts dead crops. Large stumps and boulders are skipped and reported. Over 100 tiles it does the first rows and says the call for the rest |
 | `till_area` | `x`, `y`, `w`, `h` | Clear, then till a rectangle row by row, but only as many tiles as you have this season's seeds for (minus the empty tilled soil already there); with no seeds it refuses |
-| `place` | `item`, `tiles` | Put items, machines, chests, sprinklers, fences or furniture on the ground |
+| `place` | `item`, `tiles` | Put items, machines, chests, sprinklers, fences or furniture on the ground. With Automate installed, a placed machine says what it makes from what and asks for a Chest touching it; a placed chest touching machines says it only takes their inputs |
 
 The batch tools (`water_all`, `harvest_all`, `clear_area`, `till_area`, `plant` area mode) stop with a reason (low
 energy, a menu, a late hour, a full pack) and say what is left. `use_tool`, `plant` and `harvest` always report
@@ -69,7 +69,7 @@ Read from the game's own data, costs no game time.
 | `machine` | *`action`*, *`item`*, *`quantity`* | The machines where you stand (Furnace, Keg, Preserves Jar, Cheese Press, Mayonnaise Machine, Loom, Oil Maker...): `list` shows what each makes and when it is ready (and ready machines elsewhere on the farm), `load` walks to every idle machine that takes the item and puts it in (fuel such as Coal comes from the pack), `collect` takes every ready product |
 | `goals` ⚡ | *`area`* | The run's goal: every achievement except Joja, with this farmer's progress read from the game. `area`: summary (default), shipping (never shipped), cooking (not cooked yet, how to learn each recipe), crafting, fish, museum, friends, monsters (Marlon's goals), upgrades, family |
 | `upgrade_tool` | *`tool`* | Walks to Clint and orders a tool upgrade (Axe, Pickaxe, Hoe, Watering Can, Trash Can) through his upgrade shop; empty lists his offers or picks up a finished upgrade |
-| `chest` | *`x`*, *`y`*, *`action`*, *`item`*, *`items`*, *`quality`*, *`quantity`* | Store or take items in a chest or the fridge in one call: by name and quality, several items, or "everything". Without `x`/`y` it uses the open chest menu, or else your own nearest chest on the map; an `x`/`y` with no chest here but one at that tile in your house (or on the Farm) goes there first. Sale produce (crops, flowers, forage, fish, animal and artisan goods) is only stored as far as a bundle or quest still needs it; the rest stays in the pack to ship |
+| `chest` | *`x`*, *`y`*, *`action`*, *`item`*, *`items`*, *`quality`*, *`quantity`* | Store or take items in a chest or the fridge in one call: by name and quality, several items, or "everything". Chests are shared: anyone may use any chest, and every put and take is logged. `action=all` lists every chest and fridge on the farm with its contents and the recent changes by everyone, without walking. Without `x`/`y` it uses the open chest menu, or else the nearest chest on the map (your own first); the result adds what the others put in or took out since you last used that chest; an `x`/`y` with no chest here but one at that tile in your house (or on the Farm) goes there first. Sale produce (crops, flowers, forage, fish, animal and artisan goods) is only stored as far as a bundle or quest still needs it; the rest stays in the pack to ship |
 | `equip` | `item`, *`slot`*, *`count`* | Put on a ring, boots or a hat (the old one goes back), or attach bait and tackle to the fishing rod |
 | `wear` | `item` | Put on a hat, shirt or pants from the pack |
 | `wardrobe` ⚡ | | What you wear and the clothes you carry |
@@ -82,10 +82,10 @@ Read from the game's own data, costs no game time.
 | Tool | Arguments | What it does |
 |---|---|---|
 | `shop_list` | | What the shop sells, with prices; inside a shop building it opens the counter first |
-| `buy` | `item`, `quantity` | Buy from the shop (also tool upgrades that trade items). Inside a shop with no menu open it walks to the counter and opens it first |
+| `buy` | `item`, `quantity` | Buy from the shop (also tool upgrades that trade items). Inside a shop with no menu open it walks to the counter and opens it first. Refuses this season's seeds that would die before harvest and don't grow next season |
 | `sell` | `item`, *`quantity`*, *`allow_reserved`* | Sell to the shop for gold at once; inside a shop it opens the counter first, elsewhere it names the shops that buy the item. Seeds, fertilizer and minimum crafting supplies are protected; reports safe surplus. `allow_reserved=true` permits a deliberate sale with an explanation in reason. |
 | `upgrade_backpack` | | Buy the next backpack size at Pierre's (24 slots for 2,000g, then 36 for 10,000g): walks to the shop and its backpack display |
-| `ship` | `item`, *`quantity`*, *`allow_reserved`* | Put surplus items in the shipping bin; paid overnight. Same reserve protection and intentional override as `sell`. The bin is not storage. |
+| `ship` | `item`, *`quantity`*, *`allow_reserved`* | Put surplus items in the shipping bin (travels to the Farm from anywhere); paid overnight. Same reserve protection and intentional override as `sell`. The bin is not storage. |
 | `pay` ⚡ | `to`, `amount` | Send money to another player at any distance: a loan, a debt, a payment for work |
 
 ## Animals and buildings
@@ -133,7 +133,7 @@ During overnight farm events, fades or pass-out transitions, new gameplay/social
 |---|---|---|
 | `fish` | *`tries`* | Walk to the best shore, cast, play the BobberBar minigame and pick up treasure; one line per cast. Aims into a legendary fish's spot when one it can catch today is in reach. Needs a rod |
 | `fight` | `seconds`, *`eat_below`* | Fight nearby monsters: equips the best weapon, walks to the nearest one and swings; stops when all clear, at 30% health or when a menu opens. `eat_below` (HP %) eats healing food on the way |
-| `mine` | *`floors`* | Go down the Mines floor by floor: walks to the Mine, takes the elevator to the deepest floor reached, breaks rocks until the ladder shows, takes ladders and shafts, fights monsters that come close (eating below 40% health) and opens treasure chests. Stops at 22:00, low energy or health, a full pack or floor 120 |
+| `mine` | *`floors`* | Go down the Mines floor by floor: walks to the Mine, takes the elevator to the deepest floor reached, breaks rocks until the ladder shows, takes ladders and shafts, fights monsters that come close (eating below 40% health) and opens treasure chests. First stores everything but tools, weapons, bombs, staircases and food in your own chest at home, picks up quartz, crystals and forage lying on the floors, and keeps going down once the pack is full. Stops at 22:00, low energy or health, or floor 120 |
 | `leave_mine` | | Get out of the Mines from any floor: climbs the up ladders, or warps out when health is low, it is 11 PM or the ladder can't be reached |
 | `search_trash` | *`x`*, *`y`* | Dig through a trash can; a villager who sees it likes you less |
 | `watch_tv` | *`channel`* | Watch a channel: weather, fortune, Queen of Sauce (learns the recipe), tips |

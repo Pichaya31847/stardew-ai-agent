@@ -116,6 +116,10 @@ every system prompt, and English costs a small local model far fewer tokens than
 diary, chat) in Thai while the reasons, lessons, plan and notes are in English. The overlay's labels follow
 `ThoughtLanguage`; `?lang=` overrides them.
 
+None of these settings changes the names the AI reads: tool results, the briefing and the system prompt always name
+villagers, items, professions, monsters, achievements, places and quests by their English keys, and villager lines,
+letters and menu options come from the game's English text when the game runs in another language.
+
 If the game's font can't draw a script, its characters show as `·` on the in-game HUD unless a font mod adds them.
 
 ### Small local models

@@ -59,10 +59,12 @@ public static partial class AgentTools
     private static ToolDef MineTool() => new()
     {
         Name = "mine",
-        Description = "Go down the Mines (or the Skull Cavern) floor by floor. From anywhere you walk to the Mine and take the elevator to the deepest floor you reached (a multiple of 5). " +
-                      "On each floor you break rocks with the Pickaxe until a ladder shows up, take it, fight monsters that come close (fight, eating below 40% health), " +
-                      "and open treasure chests. Ores, gems, geodes and coal land in your pack. floors: how many floors to go down this call (default 5). " +
-                      "Stops early at 22:00, when energy or health runs low, when the pack is full or on floor 120 (the bottom). Then carry on with mine, or leave_mine.",
+        Description = "Go down the Mines (or the Skull Cavern) floor by floor. Before going down you first store everything in your own chest at home except tools, weapons, " +
+                      "bombs, staircases and food, so the pack has room. Then you walk to the Mine and take the elevator to the deepest floor you reached (a multiple of 5). " +
+                      "On each floor you pick up quartz, crystals and forage lying on the floor, break rocks with the Pickaxe until a ladder shows up, take it, " +
+                      "fight monsters that come close (fight, eating below 40% health), and open treasure chests. Ores, gems, geodes and coal land in your pack; " +
+                      "once it is full you keep going down and new drops stay on the floor. floors: how many floors to go down this call (default 5). " +
+                      "Stops early at 22:00, when energy or health runs low or on floor 120 (the bottom). Then carry on with mine, or leave_mine.",
         Schema = Obj(new { floors = Int("How many floors to go down, 1-20 (default 5)"), reason = Str(ReasonDesc) }, "reason"),
         Run = Mine
     };
@@ -83,6 +85,15 @@ public static partial class AgentTools
 
         if (Loc is not MineShaft)
         {
+            // Days 59-119: the pack filled with crops and seeds and stopped the mine on the first floor 15 times. Everything but
+            // the mine kit goes into your own chest first (not from the Mine entrance when the pack still has room: the walk home costs hours).
+            if (MineStashCount() > 0 && (Loc.Name != "Mine" || FreeSlots() < MineStashFreeSlots))
+            {
+                var stash = new CallContext();
+                yield return StashForMine(stash);
+                lines.Add(stash.Result);
+                before = Snapshot(); // the stored stacks are not losses of the trip
+            }
             if (Loc.Name != "Mine")
             {
                 var trip = new CallContext();
@@ -100,8 +111,9 @@ public static partial class AgentTools
             lines.Add($"took the {(start > 1 ? "elevator" : "ladder")} to floor {start}");
         }
 
-        int floors = 0, rocks = 0, chests = 0;
+        int floors = 0, rocks = 0, chests = 0, picked = 0;
         string stop = "";
+        bool fullNoted = false;
         var skip = new HashSet<Point>();
         int floorRocks = 0, fights = 0, lastLevel = (Loc as MineShaft)!.mineLevel;
         while (floors < want)
@@ -113,7 +125,12 @@ public static partial class AgentTools
             if (Game1.timeOfDay >= MineStopTime) { stop = $"it is {WorldText.FormatTime(Game1.timeOfDay)}"; break; }
             if (P.Stamina <= MineMinEnergy) { stop = $"energy is low ({(int)P.Stamina})"; break; }
             if (IsHealthLow(P)) { stop = $"health is low ({P.health}/{P.maxHealth})"; break; }
-            if (FreeSlots() == 0) { stop = "your pack is full"; break; }
+            // A full pack no longer ends the trip: ladders still need rocks broken, the drops just stay on the floor.
+            if (FreeSlots() == 0 && !fullNoted)
+            {
+                fullNoted = true;
+                lines.Add($"your pack filled up on floor {shaft.mineLevel}: going on down, new drops stay on the floor");
+            }
 
             // Monsters next to you first: fight eats when health drops.
             if (NearestMonster(shaft, P.TilePoint, 4f) != null && fights < 6)
@@ -132,6 +149,22 @@ public static partial class AgentTools
                 var walk = new CallContext();
                 yield return WalkAdjacent(at, walk);
                 if (walk.Ok) { PressAction(at); yield return Ticks(60); yield return FinishMessages(new CallContext()); chests++; }
+                continue;
+            }
+
+            // Quartz, crystals, cave carrots and mushrooms lying on the floor: pick them up like a player (action button).
+            var loose = FreeSlots() > 0 ? NearestLooseItem(shaft, skip) : null;
+            if (loose is { } item)
+            {
+                skip.Add(item);
+                var walk = new CallContext();
+                yield return WalkAdjacent(item, walk);
+                if (walk.Ok)
+                {
+                    PressAction(item);
+                    yield return Ticks(20);
+                    if (!shaft.Objects.ContainsKey(item.ToVector2())) picked++;
+                }
                 continue;
             }
 
@@ -185,7 +218,7 @@ public static partial class AgentTools
         var here = Loc is MineShaft s2 ? WorldText.MineFloorName(s2.mineLevel) : Loc.Name;
         var sb = new StringBuilder($"Went down {floors} floor(s); you are on {here}. Deepest ever: floor {P.deepestMineLevel}{(P.deepestMineLevel > deepestBefore ? " (new record)" : "")}.");
         if (lines.Count > 0) sb.Append(" ").Append(string.Join("; ", lines)).Append('.');
-        sb.Append($" Broke {rocks} rock(s){(chests > 0 ? $", opened {chests} chest(s)" : "")}, monsters killed {P.stats.MonstersKilled - killsBefore}.");
+        sb.Append($" Broke {rocks} rock(s){(chests > 0 ? $", opened {chests} chest(s)" : "")}{(picked > 0 ? $", picked up {picked} item(s) from the floor" : "")}, monsters killed {P.stats.MonstersKilled - killsBefore}.");
         var diff = Diff(before);
         if (diff.Length > 0) sb.Append('\n').Append(diff);
         sb.Append($"\nHP {P.health}/{P.maxHealth}, energy {(int)P.Stamina}, {WorldText.FormatTime(Game1.timeOfDay)}.");
@@ -212,6 +245,88 @@ public static partial class AgentTools
             if (dist < bestDist) { bestDist = dist; best = (p, index == MineShaftDownTile); }
         }
         return best;
+    }
+
+    /// <summary>The nearest item lying on the floor to pick up (quartz, crystals, cave forage: the game's spawned objects) not in <paramref name="skip"/>.</summary>
+    private static Point? NearestLooseItem(MineShaft loc, HashSet<Point> skip)
+    {
+        var me = P.TilePoint;
+        return loc.Objects.Pairs
+            .Where(kv => kv.Value.IsSpawnedObject && !kv.Value.IsBreakableStone() && !skip.Contains(kv.Key.ToPoint()))
+            .Select(kv => kv.Key.ToPoint())
+            .OrderBy(p => Math.Abs(p.X - me.X) + Math.Abs(p.Y - me.Y))
+            .Select(p => (Point?)p)
+            .FirstOrDefault();
+    }
+
+    // ------------------------------------------------------------------ the stash before going down
+
+    /// <summary>At the Mine entrance the stash trip home is only made when fewer slots than this are free.</summary>
+    private const int MineStashFreeSlots = 10;
+
+    /// <summary>Bombs and the Staircase: they make the mines faster, so they stay in the pack.</summary>
+    private static readonly HashSet<string> MineKitIds = new() { "(O)286", "(O)287", "(O)288", "(O)71" };
+
+    /// <summary>
+    /// What stays in the pack for the mines: tools and weapons, bombs and staircases, cooked dishes and the two best other
+    /// foods (fight eats them when health drops). Everything else goes into the chest.
+    /// </summary>
+    private static HashSet<Item> MineKeeps()
+    {
+        var items = P.Items.Where(i => i != null).ToList();
+        var keep = new HashSet<Item>(items.Where(i => i is Tool || MineKitIds.Contains(i.QualifiedItemId) || i.Category == -7));
+        foreach (var food in items.OfType<StardewValley.Object>()
+                     .Where(o => !keep.Contains(o) && o.Edibility > 0 && !o.bigCraftable.Value && o.Category != -74)
+                     .OrderByDescending(o => o.Edibility).Take(2))
+            keep.Add(food);
+        return keep;
+    }
+
+    private static int MineStashCount()
+    {
+        var keep = MineKeeps();
+        return P.Items.Count(i => i != null && !keep.Contains(i));
+    }
+
+    /// <summary>
+    /// Walks to your own chest (your house, then the Farm) and stores everything but <see cref="MineKeeps"/>. The result
+    /// line says what happened; with no chest of yours it says so and the mine trip goes on.
+    /// </summary>
+    private static IEnumerator StashForMine(CallContext c)
+    {
+        string? where = null;
+        Point? tile = null;
+        foreach (var name in new[] { Loc.NameOrUniqueName, P.homeLocation.Value, "FarmHouse", "Farm" }.Where(n => !string.IsNullOrEmpty(n)).Distinct())
+        {
+            var loc = name == Loc.NameOrUniqueName ? Loc : Game1.getLocationFromName(name);
+            if (loc == null || loc is MineShaft || NearestOwnChest(loc) is not { } t) continue;
+            where = name;
+            tile = t;
+            break;
+        }
+        if (tile == null) { c.Fail("no chest of yours to leave things in before the mines (craft and place a Chest at home)"); yield break; }
+
+        if (Loc.NameOrUniqueName != where)
+        {
+            var trip = new CallContext();
+            yield return TravelTo(where!, trip);
+            if (!trip.Ok) { c.Fail($"couldn't get to your chest in {where} before the mines: {trip.Result}"); yield break; }
+        }
+        var open = new CallContext();
+        yield return Interact(ArgsOf(new { x = tile.Value.X, y = tile.Value.Y, reason = "store everything but the mine kit" }), open);
+        for (int i = 0; i < 120 && Game1.activeClickableMenu == null; i++) yield return null;
+        if (Game1.activeClickableMenu is not ItemGrabMenu { context: StardewValley.Objects.Chest })
+        {
+            if (Game1.activeClickableMenu != null) yield return CloseMenu(default, new CallContext());
+            c.Fail($"your chest at {where} ({tile.Value.X},{tile.Value.Y}) did not open: {open.Result}");
+            yield break;
+        }
+        var keep = MineKeeps();
+        var work = new CallContext();
+        yield return ChestWork("store", new List<string>(), true, null, null, $" at {where} ({tile.Value.X},{tile.Value.Y})", work, i => keep.Contains(i));
+        if (Game1.activeClickableMenu != null) yield return CloseMenu(default, new CallContext());
+        if (work.Ok) c.Result = "before the mines: " + work.Result.TrimEnd('.');
+        else c.Fail("before the mines: " + work.Result.TrimEnd('.'));
     }
 
     /// <summary>The nearest breakable rock (ore nodes and gem rocks included) not in <paramref name="skip"/>.</summary>

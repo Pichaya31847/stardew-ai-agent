@@ -384,6 +384,7 @@ public class AgentRuntime
             if (call.Tool.AppendStatus && Context.IsWorldReady)
                 text = text.TrimEnd() + "\n" + Observation.OneLine(AgentTools.Footer()); // one line, however many menus are open
             text = SessionBreaks.Annotate(_rt.Log, call, text); // planned session break notice (#30)
+            text = EnglishNames.Apply(text); // the AI reads English keys, never the game's localized names
 
             _rt.Stats.OnCallEnd(call.Tool.Name, ctx.Ok, ctx.Result, CallStartDay);
             var outcome = ToolOutcome.From(ctx);

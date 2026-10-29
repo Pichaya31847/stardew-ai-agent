@@ -481,13 +481,13 @@ public static partial class AgentTools
             yield break;
         }
 
-        var said = (box.getCurrentString() ?? "").Replace("\n", " ").Replace("^", " ").Trim();
+        var said = GameEnglish.Said(box).Replace("\n", " ").Replace("^", " ").Trim();
         bool fromMorris = box.characterDialogue?.speaker?.Name == "Morris";
         int yes = JojaRoute.YesOption(box);
         bool aboutMembership = fromMorris || said.Contains("member", StringComparison.OrdinalIgnoreCase) || said.Contains("Joja", StringComparison.OrdinalIgnoreCase);
         if (yes < 0 || !aboutMembership)
         {
-            var options = string.Join("; ", box.responses.Select((r, i) => $"option {i}: {r.responseText}"));
+            var options = string.Join("; ", box.responses.Select((r, i) => $"option {i}: {GameEnglish.Option(r)}"));
             c.Fail($"Morris asked: \"{said}\" ({options}). I could not tell which option buys the membership, so I answered nothing. The dialogue is still open: answer it yourself with respond(option).");
             yield break;
         }

@@ -36,6 +36,7 @@
     <Compile Include="..\StardewMCP\Agent\FishGuideText.cs" Link="Mod\FishGuideText.cs" />
     <Compile Include="..\StardewMCP\Agent\GeodeGuide.cs" Link="Mod\GeodeGuide.cs" />
     <Compile Include="..\StardewMCP\Agent\GoalText.cs" Link="Mod\GoalText.cs" />
+    <Compile Include="..\StardewMCP\Agent\EnglishNames.cs" Link="Mod\EnglishNames.cs" />
     <Compile Include="..\StardewMCP\Agent\Brain\DailySocialProgress.cs" Link="Mod\Brain\DailySocialProgress.cs" />
     <Compile Include="..\StardewMCP\PathSearch.cs" Link="Mod\PathSearch.cs" />
     <Compile Include="..\StardewMCP\Agent\ToolDef.cs" Link="Mod\ToolDef.cs" />

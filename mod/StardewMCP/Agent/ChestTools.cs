@@ -24,16 +24,17 @@ public static partial class AgentTools
     {
         Name = "chest",
         Description = "Look into, fill or empty a storage chest or the fridge in one call: you walk next to it, open it, move the items and close it again. " +
-                      "action: list (default), store (your pack into the chest) or take (chest into your pack). " +
+                      "Chests are shared: anyone may put in or take out, and every change is written down. action: list (default), store (your pack into the chest), take (chest into your pack) " +
+                      "or all (every chest and fridge on the farm with what it holds and who put in or took out what lately; no walking). " +
                       "item: one item name, or \"everything\" (store: all except tools, seeds and cooked dishes, so tidying the pack is one call; take: all). " +
                       "items: several names at once. quality: normal, silver, gold or iridium to move only that quality (default every quality). " +
                       "quantity: how many of each named item (default all). The result says what moved, per quality, and what did not fit. " +
-                      "x, y is the chest tile; leave it out to use a chest menu you already opened with interact, or else your own nearest chest on this map.",
+                      "x, y is the chest tile; leave it out to use a chest menu you already opened with interact, or else the nearest chest on this map (your own first).",
         Schema = Obj(new
         {
             x = Int("Chest tile x"),
             y = Int("Chest tile y"),
-            action = new { type = "string", @enum = new[] { "list", "store", "take" }, description = "list (default), store or take" },
+            action = new { type = "string", @enum = new[] { "list", "store", "take", "all" }, description = "list (default), store, take or all" },
             item = Str("Item name, or \"everything\""),
             items = new { type = "array", items = new { type = "string" }, description = "Several item names" },
             quality = new { type = "string", @enum = new[] { "normal", "silver", "gold", "iridium" }, description = "Only this quality (default: all)" },
@@ -129,9 +130,14 @@ public static partial class AgentTools
     {
         var action = S(a, "action", "list").Trim().ToLowerInvariant();
         if (action.Length == 0) action = "list";
+        if (action == "all")
+        {
+            c.Result = ChestLedger.Report();
+            yield break;
+        }
         if (action != "list" && action != "store" && action != "take")
         {
-            c.Fail($"Unknown action \"{action}\". Use list, store or take.");
+            c.Fail($"Unknown action \"{action}\". Use list, store, take or all.");
             yield break;
         }
 
@@ -164,7 +170,7 @@ public static partial class AgentTools
             at = NearestOwnChest();
             if (at == null)
             {
-                c.Fail(Reasons.NotFound, $"There is no chest of yours on {Loc.Name}. Give the chest's tile (x, y) from look, or craft and place a Chest.");
+                c.Fail(Reasons.NotFound, $"There is no chest on {Loc.Name}. chest(action=all) lists every chest on the farm; or craft and place a Chest.");
                 yield break;
             }
         }
@@ -202,11 +208,12 @@ public static partial class AgentTools
         }
 
         yield return ChestWork(action, names, everything, quality, quantity, spot, c);
+        if (at is Point used && c.Result.Length > 0)
+            c.Result += ChestLedger.OthersChanged(Loc.NameOrUniqueName, used.X, used.Y, Rt.Log.Player);
         if (opened && Game1.activeClickableMenu != null)
             yield return CloseMenu(default, new CallContext());
     }
 
-    /// <summary>The nearest player chest on this map that this seat placed, else one nobody owns; never another player's (that would be theft).</summary>
     /// <summary>The name of the farm map (your home first, then the farmhouse and the Farm) that has a chest at this tile, or null.</summary>
     private static string? ChestElsewhere(Point tile)
     {
@@ -219,22 +226,27 @@ public static partial class AgentTools
         return null;
     }
 
-    private static Point? NearestOwnChest()
+    private static Point? NearestOwnChest() => NearestOwnChest(Loc);
+
+    /// <summary>The nearest player chest on this map, your own first: chests are shared (<see cref="ChestLedger"/>).</summary>
+    private static Point? NearestOwnChest(GameLocation loc)
     {
         var me = Rt.Log.Player;
-        var here = P.TilePoint;
-        return Loc.objects.Pairs
+        var here = loc == Loc ? P.TilePoint : Point.Zero;
+        return loc.objects.Pairs
             .Where(kv => kv.Value is Chest { playerChest.Value: true, fridge.Value: false })
             .Select(kv => (tile: new Point((int)kv.Key.X, (int)kv.Key.Y), owner: Ownership.OwnerOf(kv.Value)))
-            .Where(x => x.owner == null || x.owner == me)
-            .OrderBy(x => x.owner == me ? 0 : 1)
+            .OrderBy(x => IsMachineChest(loc, x.tile) ? 1 : 0) // a chest that feeds a machine is not for storage
+            .ThenBy(x => x.owner == me ? 0 : 1)
             .ThenBy(x => Math.Abs(x.tile.X - here.X) + Math.Abs(x.tile.Y - here.Y))
             .Select(x => (Point?)x.tile)
             .FirstOrDefault();
     }
 
     /// <summary>The work with the chest menu open. Sets <paramref name="c"/>; the caller closes the menu.</summary>
-    private static IEnumerator ChestWork(string action, List<string> names, bool everything, int? quality, int? quantity, string spot, CallContext c)
+    /// <param name="keepInPack">For store: move every stack except these, produce included (mine's stash before going down).</param>
+    private static IEnumerator ChestWork(string action, List<string> names, bool everything, int? quality, int? quantity, string spot, CallContext c,
+        Func<Item, bool>? keepInPack = null)
     {
         var menu = (ItemGrabMenu)Game1.activeClickableMenu!;
         var label = ChestLabel(menu);
@@ -262,8 +274,18 @@ public static partial class AgentTools
             source = P.Items;
             allowed = it => menu.inventory.highlightMethod(it);
         }
-        var jobs = PlanMoves(source, names, everything, quality, quantity, allowed, store, problems);
-        if (store) jobs = KeepProduceForSale(jobs, menu.ItemsToGrabMenu.actualInventory, problems);
+        var jobs = keepInPack != null && store
+            ? source.Where(i => i != null && !keepInPack(i) && allowed!(i)).Select(i => (item: i, count: i.Stack)).ToList()
+            : PlanMoves(source, names, everything, quality, quantity, allowed, store, problems);
+        if (store && keepInPack == null) jobs = KeepProduceForSale(jobs, menu.ItemsToGrabMenu.actualInventory, problems);
+        // A chest that feeds machines through Automate takes only what they use (their inputs and fuel).
+        if (store && menu.context is Chest fed && MachineChestRefuses(fed.Location ?? Loc, fed.TileLocation.ToPoint()) is { } refuses)
+        {
+            var kept = jobs.Where(j => refuses(j.item)).Select(j => j.item.Name).Distinct().ToList();
+            jobs = jobs.Where(j => !refuses(j.item)).ToList();
+            if (kept.Count > 0)
+                problems.Add($"Not stored here: {string.Join(", ", kept)}. {ChestFeedsNote(fed.Location ?? Loc, fed.TileLocation.ToPoint())}");
+        }
 
         var moved = new List<(string label, int count)>();
         var left = new List<(string label, int count)>();

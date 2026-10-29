@@ -1224,7 +1224,7 @@ public static partial class AgentTools
         var box = Game1.activeClickableMenu as DialogueBox;
         if (box == null || !box.isQuestion || box.responses == null)
         {
-            var said = box != null ? box.getCurrentString() : "nothing opened";
+            var said = box != null ? GameEnglish.Said(box) : "nothing opened";
             c.Fail($"Gunther did not offer a choice ({said}). Stand next to his desk and use interact on it, then menu/respond.");
             yield break;
         }

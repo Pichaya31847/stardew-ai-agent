@@ -300,7 +300,7 @@ public static partial class AgentTools
         var all = RanchText.AllFarmAnimals();
         var mine = all.Where(t => RanchText.IsMine(t.animal)).ToList();
         if (all.Count == 0)
-            return "No farm animals yet. Robin builds a Coop or Barn (build), then Marnie sells animals (buy_animal).";
+            return "No farm animals yet. Robin builds a Coop or Barn (build), then Marnie sells animals (buy_animal). " + FarmPlanText();
 
         var sb = new StringBuilder($"Your farm animals: {mine.Count}");
         if (all.Count > mine.Count) sb.Append($" (and {all.Count - mine.Count} that belong to other players)");
@@ -323,7 +323,9 @@ public static partial class AgentTools
     }
 
     private static string NoAnimalsHere() =>
-        $"There are no farm animals in {Loc.Name}. Animals live outside on the Farm or inside a coop or barn: animals lists where (travel_to the building's name).";
+        !RanchText.AllFarmAnimals().Any(t => RanchText.IsMine(t.animal))
+            ? "You have no farm animals yet, so there is nothing to pet or collect: stop calling animals until you have some. " + FarmPlanText()
+            : $"There are no farm animals in {Loc.Name}. Animals live outside on the Farm or inside a coop or barn: animals lists where (travel_to the building's name).";
 
     /// <summary>The animals to work on: those called <paramref name="name"/> (by name, else by type; any owner), else your own that pass the filter.</summary>
     private static List<FarmAnimal> SelectAnimals(List<FarmAnimal> here, string name, Func<FarmAnimal, bool> filter)

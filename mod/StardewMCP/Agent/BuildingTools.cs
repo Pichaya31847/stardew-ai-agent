@@ -366,7 +366,7 @@ public static partial class AgentTools
         var said = "";
         if (Game1.activeClickableMenu is DialogueBox box)
         {
-            said = (box.getCurrentString() ?? "").Replace("\n", " ").Replace("^", " ").Trim();
+            said = GameEnglish.Said(box).Replace("\n", " ").Replace("^", " ").Trim();
             box.closeDialogue();
             yield return Ticks(10);
             if (Game1.activeClickableMenu is DialogueBox) Game1.exitActiveMenu();

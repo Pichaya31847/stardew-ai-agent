@@ -306,8 +306,11 @@ public static partial class AgentTools
             if (!category)
             {
                 var stored = StoredInOwnChests(id);
-                if (stored.Count > 0)
-                    line += $" (your chest{(stored.Count > 1 ? "s" : "")} hold {stored.Sum(s => s.n)} more, but not enough)";
+                int inChests = stored.Sum(s => s.n);
+                if (inChests > 0)
+                    line += have + inChests >= need
+                        ? $" (the chest{(stored.Count > 1 ? "s" : "")} hold {inChests} more: craft takes them out for you)"
+                        : $" (the chest{(stored.Count > 1 ? "s" : "")} hold {inChests} more, but not enough)";
                 if (IngredientSources.TryGetValue(ItemRegistry.QualifyItemId(id), out var src))
                     line += $" — {src}";
             }
@@ -316,10 +319,9 @@ public static partial class AgentTools
         return parts.Count == 0 ? Ingredients(cr) : string.Join("; ", parts) + ". Get what is short first, or craft something else from craft()";
     }
 
-    /// <summary>How many of item <paramref name="id"/> the farm and house chests of this seat (or nobody's) hold, per chest.</summary>
+    /// <summary>How many of item <paramref name="id"/> the farm and house chests hold, per chest (chests are shared: <see cref="ChestLedger"/>).</summary>
     private static List<(int n, string place, string map, Point tile)> StoredInOwnChests(string id)
     {
-        var me = Rt.Log.Player;
         var qid = ItemRegistry.QualifyItemId(id);
         var found = new List<(int n, string place, string map, Point tile)>();
         foreach (var loc in new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation })
@@ -328,8 +330,6 @@ public static partial class AgentTools
             foreach (var (tile, obj) in loc.objects.Pairs)
             {
                 if (obj is not Chest { playerChest.Value: true, fridge.Value: false } chest) continue;
-                var owner = Ownership.OwnerOf(chest);
-                if (owner != null && owner != me) continue;
                 int n = chest.Items.Where(i => i != null && i.QualifiedItemId == qid).Sum(i => i!.Stack);
                 var at = new Point((int)tile.X, (int)tile.Y);
                 if (n > 0) found.Add((n, $"{loc.Name} ({at.X},{at.Y})", loc.Name, at));
@@ -461,6 +461,7 @@ public static partial class AgentTools
         bool IsIt(Item it) => it is SObject && it.QualifiedItemId == qid;
         var loc = Loc;
         var lines = new List<string>();
+        var placedAt = new List<Point>();
         int placed = 0;
 
         foreach (var t in tiles)
@@ -483,12 +484,19 @@ public static partial class AgentTools
             int had = CountOfId(P.Items, qid);
             Utility.tryToPlaceItem(loc, (SObject)P.Items[slot], t.X * 64 + 32, t.Y * 64 + 32);
             yield return Ticks(8);
-            if (CountOfId(P.Items, qid) < had) placed++;
+            if (CountOfId(P.Items, qid) < had) { placed++; placedAt.Add(t); }
             else lines.Add($"({t.X},{t.Y}) could not place {label} (blocked, not placeable here, or not allowed on this map)");
         }
 
         var text = $"Placed {placed}/{tiles.Count} {label}." + (lines.Count > 0 ? "\n" + string.Join("\n", lines) : "");
         if (placed > 0 && first is Chest) text += "\nUse the chest tool with its (x, y) to fill or empty it.";
+        // With Automate: a machine wants a chest beside it, and a chest beside machines takes only their inputs.
+        foreach (var t in placedAt.Take(3))
+        {
+            if (!loc.Objects.TryGetValue(t.ToVector2(), out var put)) continue;
+            var note = IsMachine(put) ? MachineChestNote(loc, t, put) : put is Chest ? ChestFeedsNote(loc, t) : "";
+            if (note.Length > 0) text += "\n" + note;
+        }
         if (placed == 0) c.Fail(text);
         else c.Result = text;
     }

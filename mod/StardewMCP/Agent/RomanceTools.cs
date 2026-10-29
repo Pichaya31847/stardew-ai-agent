@@ -67,7 +67,7 @@ internal static class Romance
     {
         var parts = who.friendshipData.Pairs
             .Where(kv => kv.Value.Status.ToString() is "Dating" or "Engaged" or "Married" or "Roommate")
-            .Select(kv => $"{kv.Value.Status.ToString().ToLowerInvariant()} {NpcInfo.ByName(kv.Key)?.displayName ?? kv.Key}")
+            .Select(kv => $"{kv.Value.Status.ToString().ToLowerInvariant()} {kv.Key}")
             .ToList();
         parts.AddRange(PlayerPartners(Players.Current.Id));
         return parts.Count == 0 ? "" : "Your relationships: " + string.Join(", ", parts) + ".";
@@ -76,22 +76,22 @@ internal static class Romance
     /// <summary>What dating or marrying this villager still needs.</summary>
     internal static string Requirements(Farmer who, NPC npc, VillagerInfo v)
     {
-        if (!v.Datable) return $"Romance: {v.DisplayName} can't be dated or married.";
+        if (!v.Datable) return $"Romance: {v.Name} can't be dated or married.";
         if (!v.Met)
-            return $"Romance: talk_to {v.DisplayName} first. Dating needs {Hearts(DatingPoints)} hearts and a Bouquet; marriage needs {Hearts(MarriagePoints)} hearts and a Mermaid's Pendant.";
+            return $"Romance: talk_to {v.Name} first. Dating needs {Hearts(DatingPoints)} hearts and a Bouquet; marriage needs {Hearts(MarriagePoints)} hearts and a Mermaid's Pendant.";
         switch (v.Status)
         {
             case "married":
-                return $"Romance: you are married to {v.DisplayName}.";
+                return $"Romance: you are married to {v.Name}.";
             case "engaged":
-                return $"Romance: you are engaged to {v.DisplayName}. The wedding is held about 3 days after the proposal; the game plays it by itself.";
+                return $"Romance: you are engaged to {v.Name}. The wedding is held about 3 days after the proposal; the game plays it by itself.";
             case "dating":
-                return $"Romance: you are dating {v.DisplayName}. To propose, mermaid_pendant(\"{v.Name}\") needs: " +
+                return $"Romance: you are dating {v.Name}. To propose, mermaid_pendant(\"{v.Name}\") needs: " +
                        $"{Mark(v.Points >= MarriagePoints, $"{v.Hearts} of {Hearts(MarriagePoints)} hearts")}, " +
                        $"{Mark(Carrying(who, Pendant), Carrying(who, Pendant) ? "you carry a Mermaid's Pendant" : "you have no Mermaid's Pendant")}, {House(who)}. " +
                        "If they accept you are engaged.";
             default:
-                return $"Romance: you can ask {v.DisplayName} to date. bouquet(\"{v.Name}\") needs: " +
+                return $"Romance: you can ask {v.Name} to date. bouquet(\"{v.Name}\") needs: " +
                        $"{Mark(v.Points >= DatingPoints, $"{v.Hearts} of {Hearts(DatingPoints)} hearts")}, " +
                        $"{Mark(Carrying(who, Bouquet), Carrying(who, Bouquet) ? "you carry a Bouquet" : "you have no Bouquet, check Pierre's shop")}. " +
                        "Marriage comes later: 10 hearts, a Mermaid's Pendant and an upgraded house.";
@@ -101,7 +101,7 @@ internal static class Romance
     // ------------------------------------------------------------------ refusals (only what the game would refuse for sure)
 
     private static string? NotDatable(NPC npc) =>
-        npc.datable.Value ? null : $"{npc.displayName} can't be dated or married: only the villagers marked \"can date\" in villagers() can.";
+        npc.datable.Value ? null : $"{npc.Name} can't be dated or married: only the villagers marked \"can date\" in villagers() can.";
 
     internal static string? BouquetRefusal(Farmer who, NPC npc)
     {
@@ -109,14 +109,14 @@ internal static class Romance
         if (no != null) return no;
         switch (StatusOf(who, npc.Name))
         {
-            case "": return $"You haven't met {npc.displayName} yet: talk_to introduces you.";
-            case "dating": return $"You are already dating {npc.displayName}. The next step is mermaid_pendant at 10 hearts.";
-            case "engaged": return $"You are already engaged to {npc.displayName}.";
-            case "married": return $"You are married to {npc.displayName}.";
+            case "": return $"You haven't met {npc.Name} yet: talk_to introduces you.";
+            case "dating": return $"You are already dating {npc.Name}. The next step is mermaid_pendant at 10 hearts.";
+            case "engaged": return $"You are already engaged to {npc.Name}.";
+            case "married": return $"You are married to {npc.Name}.";
         }
         int points = PointsWith(who, npc.Name);
         if (points < DatingPoints)
-            return $"{npc.displayName} has {Hearts(points)} hearts with you ({points} points); dating needs {Hearts(DatingPoints)} hearts ({DatingPoints} points). " +
+            return $"{npc.Name} has {Hearts(points)} hearts with you ({points} points); dating needs {Hearts(DatingPoints)} hearts ({DatingPoints} points). " +
                    "Talk to them and give gifts (talk_to) first.";
         if (!Carrying(who, Bouquet))
             return "You have no Bouquet in your inventory. Pierre's shop (shop_list, buy) is the place to look.";
@@ -129,15 +129,15 @@ internal static class Romance
         if (no != null) return no;
         switch (StatusOf(who, npc.Name))
         {
-            case "": return $"You haven't met {npc.displayName} yet: talk_to introduces you.";
-            case "engaged": return $"You are already engaged to {npc.displayName}. The wedding is held by itself a few days after the proposal.";
-            case "married": return $"You are married to {npc.displayName}.";
+            case "": return $"You haven't met {npc.Name} yet: talk_to introduces you.";
+            case "engaged": return $"You are already engaged to {npc.Name}. The wedding is held by itself a few days after the proposal.";
+            case "married": return $"You are married to {npc.Name}.";
             case "dating": break;
-            default: return $"You are not dating {npc.displayName} yet. Start with bouquet(\"{npc.Name}\") (8 hearts and a Bouquet).";
+            default: return $"You are not dating {npc.Name} yet. Start with bouquet(\"{npc.Name}\") (8 hearts and a Bouquet).";
         }
         int points = PointsWith(who, npc.Name);
         if (points < MarriagePoints)
-            return $"{npc.displayName} has {Hearts(points)} hearts with you ({points} points); a proposal needs {Hearts(MarriagePoints)} hearts ({MarriagePoints} points).";
+            return $"{npc.Name} has {Hearts(points)} hearts with you ({points} points); a proposal needs {Hearts(MarriagePoints)} hearts ({MarriagePoints} points).";
         if (!Carrying(who, Pendant))
             return "You have no Mermaid's Pendant in your inventory.";
         return null;
@@ -150,16 +150,16 @@ internal static class Romance
         {
             return after switch
             {
-                "dating" => $" You are now dating {npc.displayName}!",
-                "engaged" => $" You are now engaged to {npc.displayName}! The wedding is held about 3 days from now; the game plays it by itself.",
-                "married" => $" You are now married to {npc.displayName}!",
-                _ => $" Your status with {npc.displayName} is now {after}."
+                "dating" => $" You are now dating {npc.Name}!",
+                "engaged" => $" You are now engaged to {npc.Name}! The wedding is held about 3 days from now; the game plays it by itself.",
+                "married" => $" You are now married to {npc.Name}!",
+                _ => $" Your status with {npc.Name} is now {after}."
             };
         }
         var hint = after == "dating" && HouseLevel(who) == 0
             ? " Your house has no kitchen yet (house level 0): upgrade it first (Robin), then try again."
             : "";
-        return $" Your status with {npc.displayName} is still {(after.Length == 0 ? "unchanged" : after)}: read their reaction above, villagers(\"{npc.Name}\") shows what is missing.{hint}";
+        return $" Your status with {npc.Name} is still {(after.Length == 0 ? "unchanged" : after)}: read their reaction above, villagers(\"{npc.Name}\") shows what is missing.{hint}";
     }
 
     // ------------------------------------------------------------------ proposals between players
@@ -370,7 +370,7 @@ internal static class Romance
         }
         if (tick % 90 == 0 && !box.transitioning)
         {
-            var line = (box.getCurrentString() ?? "").Replace("\n", " ").Replace("^", " ").Trim();
+            var line = GameEnglish.Said(box).Replace("\n", " ").Replace("^", " ").Trim();
             if (line.Length > 0) rt.Log.Add("system", text: $"Night text: {line}");
             box.receiveLeftClick(0, 0);
         }

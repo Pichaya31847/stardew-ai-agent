@@ -436,7 +436,7 @@ public static partial class AgentTools
             if (Loc?.Name == target) yield break;
             if (Game1.activeClickableMenu is DialogueBox box && !box.isQuestion && !box.transitioning)
             {
-                var text = (box.getCurrentString() ?? "").Replace("\n", " ").Replace("^", " ").Trim();
+                var text = GameEnglish.Said(box).Replace("\n", " ").Replace("^", " ").Trim();
                 box.closeDialogue();
                 c.Fail(Reasons.ShopClosed, text.Length > 0 ? text : $"The trip to {target} did not start.");
                 yield break;

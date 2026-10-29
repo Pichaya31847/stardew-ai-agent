@@ -141,7 +141,7 @@ internal static class NpcInfo
             .FirstOrDefault();
         if (best.npc == null) return null;
         var where = best.rank == 0 ? $"{best.tiles} tiles away here on {here!.Name}" : $"in {WhereIs(best.npc)}";
-        return (best.npc.displayName, where);
+        return (best.npc.Name, where);
     }
 
     // ------------------------------------------------------------------ friendship state
@@ -219,7 +219,7 @@ internal static class NpcInfo
     {
         try
         {
-            return ItemRegistry.GetData(id)?.DisplayName ?? id;
+            return ItemRegistry.GetData(id)?.InternalName ?? id;
         }
         catch (Exception)
         {
@@ -234,13 +234,13 @@ internal static class NpcInfo
     public static string Line(VillagerInfo v)
     {
         var status = v.Status.Length > 0 && v.Status != "friendly" ? $" | {v.Status}" : "";
-        return $"{v.DisplayName}: {v.Location} ({v.X},{v.Y}) | {v.Hearts} hearts ({v.Points} pts) | talked today: {(v.TalkedToToday ? "yes" : "no")}" +
+        return $"{v.Name}: {v.Location} ({v.X},{v.Y}) | {v.Hearts} hearts ({v.Points} pts) | talked today: {(v.TalkedToToday ? "yes" : "no")}" +
                $" | gifts {v.GiftsToday} today, {v.GiftsThisWeek} this week | {BirthdayText(v)}{status}{Romance.Brief(v)}";
     }
 
     public static string Roster(Farmer who)
     {
-        var infos = Social().Select(n => Of(who, n)).OrderBy(v => v.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        var infos = Social().Select(n => Of(who, n)).OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase).ToList();
         var sb = new StringBuilder();
         sb.AppendLine($"Villagers on farm day {AgentLog.FarmDay} ({Game1.currentSeason} {Game1.dayOfMonth}, {Game1.shortDayNameFromDayOfSeason(Game1.dayOfMonth)}). " +
                       "250 points = 1 heart. Talking: +20 points, once a day. Gifts: at most 1 per day and 2 per week per villager; a birthday gift counts 8x.");
@@ -250,7 +250,7 @@ internal static class NpcInfo
             sb.AppendLine(Line(met));
         var unmet = infos.Where(i => !i.Met).ToList();
         if (unmet.Count > 0)
-            sb.AppendLine("Not met yet (talk_to introduces you): " + string.Join(", ", unmet.Select(i => $"{i.DisplayName} ({i.Location} {i.X},{i.Y})")));
+            sb.AppendLine("Not met yet (talk_to introduces you): " + string.Join(", ", unmet.Select(i => $"{i.Name} ({i.Location} {i.X},{i.Y})")));
         sb.AppendLine("Romance: villagers marked \"can date\" can be dated and married. bouquet(name) at 8+ hearts starts dating, mermaid_pendant(name) at 10+ hearts proposes " +
                       "(it needs an upgraded house). propose(to) asks another player to marry you.");
         sb.Append("villagers(name) shows one villager's gift tastes and what dating or marriage still needs; talk_to(name) finds them and talks.");
@@ -324,7 +324,7 @@ internal static class NpcInfo
 
         var npc = ByName(key);
         if (npc?.currentLocation != null)
-            return (npc.currentLocation.Name, $"{npc.displayName} was in {WhereIs(npc)} when you set off; they may have moved.");
+            return (npc.currentLocation.Name, $"{npc.Name} was in {WhereIs(npc)} when you set off; they may have moved.");
         return (null, "");
     }
 
@@ -451,18 +451,18 @@ public static partial class AgentTools
         if (gift == null)
         {
             return f.TalkedToToday
-                ? $"You already talked to {npc.displayName} today: talking gives friendship once a day. Give a gift (gift_item) or come back tomorrow."
+                ? $"You already talked to {npc.Name} today: talking gives friendship once a day. Give a gift (gift_item) or come back tomorrow."
                 : null;
         }
         // A bouquet or Mermaid's Pendant is not an ordinary gift (#53): the game decides whether it is accepted today.
         if (gift is SObject special && NpcInfo.SpecialGifts.Contains(special.Name)) return null;
         if (f.GiftsToday >= 1)
-            return $"You already gave {npc.displayName} a gift today (limit 1 per day). Try again tomorrow.";
+            return $"You already gave {npc.Name} a gift today (limit 1 per day). Try again tomorrow.";
         // Birthdays and spouses are exempt from the weekly limit in the vanilla game, so the game decides those.
         bool spouse = f.Status.ToString().Equals("Married", StringComparison.OrdinalIgnoreCase);
         bool birthday = NpcInfo.Of(P, npc).DaysToBirthday == 0;
         if (f.GiftsThisWeek >= 2 && !spouse && !birthday)
-            return $"You already gave {npc.displayName} 2 gifts this week (the limit; it starts over on Monday). Talk to them instead, or wait.";
+            return $"You already gave {npc.Name} 2 gifts this week (the limit; it starts over on Monday). Talk to them instead, or wait.";
         return null;
     }
 
@@ -592,7 +592,7 @@ public static partial class AgentTools
                 if (npc.currentLocation == null) { failure = "they can't be found right now"; break; }
                 if (!go)
                 {
-                    c.Fail($"{npc.displayName} is not on this map ({Loc.Name}). {npc.displayName} is in {NpcInfo.WhereIs(npc)}. " +
+                    c.Fail($"{npc.Name} is not on this map ({Loc.Name}). {npc.Name} is in {NpcInfo.WhereIs(npc)}. " +
                            $"travel_to {npc.currentLocation.Name}, or call talk_to with go=true to be taken there.");
                     yield break;
                 }
@@ -602,8 +602,8 @@ public static partial class AgentTools
                 npc = NpcInfo.ByName(name) ?? npc;
                 if (!NpcInfo.OnMap(npc, Loc))
                 {
-                    if (!trip.Ok) { failure = $"couldn't reach {npc.displayName} in {NpcInfo.WhereIs(npc)}: {trip.Result}"; break; }
-                    failure = $"{npc.displayName} moved on to {NpcInfo.WhereIs(npc)}";
+                    if (!trip.Ok) { failure = $"couldn't reach {npc.Name} in {NpcInfo.WhereIs(npc)}: {trip.Result}"; break; }
+                    failure = $"{npc.Name} moved on to {NpcInfo.WhereIs(npc)}";
                     continue;
                 }
             }
@@ -621,8 +621,8 @@ public static partial class AgentTools
                     // Behind a bedroom door the farmer may not open yet: stop here instead of bumping into it until the timeout.
                     if (walk.Result.Contains(LockedDoorNote))
                     {
-                        c.Fail(Reasons.NoPath, $"{npc.displayName} is behind a door you may not open yet (their bedroom needs more friendship). " +
-                                               $"Talk to someone else now, or to {npc.displayName} later when they come out. {walk.Result}");
+                        c.Fail(Reasons.NoPath, $"{npc.Name} is behind a door you may not open yet (their bedroom needs more friendship). " +
+                                               $"Talk to someone else now, or to {npc.Name} later when they come out. {walk.Result}");
                         yield break;
                     }
                     continue;
@@ -651,14 +651,14 @@ public static partial class AgentTools
         if (!opened)
         {
             npc = NpcInfo.ByName(name) ?? npc;
-            var why = failure.Length > 0 ? failure : $"they may be busy, asleep or moving; {npc.displayName} is in {NpcInfo.WhereIs(npc)} now";
-            c.Fail($"Couldn't start a conversation with {npc.displayName} ({why}).{spentText}");
+            var why = failure.Length > 0 ? failure : $"they may be busy, asleep or moving; {npc.Name} is in {NpcInfo.WhereIs(npc)} now";
+            c.Fail($"Couldn't start a conversation with {npc.Name} ({why}).{spentText}");
             yield break;
         }
 
         var after = NpcFriendship(npc.Name);
         int delta = after.Points - before.Points;
-        var sb = new StringBuilder($"Talking to {npc.displayName} (friendship {P.getFriendshipHeartLevelForNPC(npc.Name)} hearts).");
+        var sb = new StringBuilder($"Talking to {npc.Name} (friendship {P.getFriendshipHeartLevelForNPC(npc.Name)} hearts).");
         if (traveled) sb.Append($" You went to {Loc.Name}.");
         sb.Append($" Points {before.Points} -> {after.Points} ({NpcInfo.Signed(delta)}).");
 
@@ -675,17 +675,17 @@ public static partial class AgentTools
             {
                 sb.Append($" You gave {itemName}.");
                 if (giftItem.Name.Equals("Bouquet", StringComparison.OrdinalIgnoreCase))
-                    NpcStory.Emit(Rt.Log, "bouquet_given", $"{P.Name} gave {npc.displayName} a bouquet", new { villager = npc.Name });
+                    NpcStory.Emit(Rt.Log, "bouquet_given", $"{P.Name} gave {npc.Name} a bouquet", new { villager = npc.Name });
             }
             else
             {
                 bool firstTime = !NpcKnowledge.TryTaste(NpcKnowledge.Book(P), npc.Name, giftItem.QualifiedItemId, out _);
-                sb.Append($" Gift: {npc.displayName} {NpcInfo.TasteVerb(tasteCode)} {itemName}{(firstTime ? " (now you know this taste)" : "")}.");
+                sb.Append($" Gift: {npc.Name} {NpcInfo.TasteVerb(tasteCode)} {itemName}{(firstTime ? " (now you know this taste)" : "")}.");
                 NpcKnowledge.Learn(P, npc.Name, giftItem.QualifiedItemId, tasteCode, AgentLog.FarmDay, delta);
-                NpcStory.Emit(Rt.Log, "gift", $"{P.Name} gave {npc.displayName} {itemName}: {NpcInfo.TasteWord(tasteCode)}",
+                NpcStory.Emit(Rt.Log, "gift", $"{P.Name} gave {npc.Name} {itemName}: {NpcInfo.TasteWord(tasteCode)}",
                     new { villager = npc.Name, item = itemName, taste = NpcInfo.TasteWord(tasteCode), points = delta, birthday = birthdayToday });
                 if (birthdayToday)
-                    NpcStory.Emit(Rt.Log, "birthday", $"{P.Name} gave {npc.displayName} a birthday gift ({itemName})", new { villager = npc.Name, item = itemName, points = delta });
+                    NpcStory.Emit(Rt.Log, "birthday", $"{P.Name} gave {npc.Name} a birthday gift ({itemName})", new { villager = npc.Name, item = itemName, points = delta });
             }
         }
 
@@ -695,8 +695,8 @@ public static partial class AgentTools
 
         if (Game1.activeClickableMenu is DialogueBox box)
         {
-            var line = (box.getCurrentString() ?? "").Replace("\n", " ").Replace("^", " ").Trim();
-            if (line.Length > 0) sb.Append($" {npc.displayName} says: \"{line}\"");
+            var line = GameEnglish.Said(box).Replace("\n", " ").Replace("^", " ").Trim();
+            if (line.Length > 0) sb.Append($" {npc.Name} says: \"{line}\"");
         }
         sb.Append(spentText);
         var finished = new CallContext();

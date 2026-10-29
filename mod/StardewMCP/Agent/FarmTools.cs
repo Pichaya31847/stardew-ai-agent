@@ -266,7 +266,7 @@ public static partial class AgentTools
         return "forage() — wild food to pick up and sell";
     }
 
-    /// <summary>Ripe, dry (and not dying tonight), empty (of yours, not on day 28) and dead tiles on the farm.</summary>
+    /// <summary>Ripe (of yours), dry (and not dying tonight), empty (of yours, not on day 28) and dead tiles on the farm.</summary>
     private static (int ripe, int dry, int empty, int dead) FarmWorkCounts(Farm farm)
     {
         int ripe = 0, dry = 0, empty = 0, dead = 0;
@@ -277,7 +277,8 @@ public static partial class AgentTools
                 if (FarmDirt(farm, x, y) is not { } d) continue;
                 if (d.crop == null) { if (!farm.Objects.ContainsKey(new Vector2(x, y)) && Ownership.OwnerOf(d) is var o && (o == null || o == Rt.Log.Player)) empty++; }
                 else if (d.crop.dead.Value) dead++;
-                else if (FarmRipeCrop(farm, x, y)) ripe++;
+                // harvest_all leaves the other farmer's crops alone; counting them sent AI1 back to bed 15 times on day 77.
+                else if (FarmRipeCrop(farm, x, y)) { if (Ownership.OwnerOf(d) is var owner && (owner == null || owner == Rt.Log.Player)) ripe++; }
                 else if (!Game1.IsRainingHere(farm) && FarmCropNeedsWater(farm, x, y) && !FarmCropDiesTonight(farm, d.crop)) dry++;
             }
         // Pierre sells only this season's seeds, and they would die tonight: the empty soil waits for tomorrow.

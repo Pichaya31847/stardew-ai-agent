@@ -226,7 +226,7 @@ public static partial class AgentTools
             new()
             {
                 Name = "ship",
-                Description = "Put surplus items into the farm shipping bin (walks to the bin). Shipped items are sold overnight. Seeds, fertilizer and minimum crafting supplies are protected by default. Use a chest for storage, not the bin.",
+                Description = "Put surplus items into the farm shipping bin (travels to the Farm from anywhere and walks to the bin). Shipped items are sold overnight. Seeds, fertilizer and minimum crafting supplies are protected by default. Use a chest for storage, not the bin.",
                 Schema = Obj(new { item = Str("Item name"), quantity = Int("How many (default: all)"), allow_reserved = new { type = "boolean", description = "Default false. Only true for a deliberate sale of reserved supplies; explain why in reason, never just to bypass an error." }, reason = Str(ReasonDesc) }, "item", "reason"),
                 Run = Ship
             },
@@ -486,7 +486,7 @@ public static partial class AgentTools
             // Day 56: talk_to Caroline pushed AI2 into Pierre's bedroom door for 6 real minutes while AI1 waited in bed.
             if (Game1.activeClickableMenu is DialogueBox { isQuestion: false } bump && !ReferenceEquals(bump, menuAtStart))
             {
-                var said = (bump.getCurrentString() ?? "").Replace("\n", " ").Trim();
+                var said = GameEnglish.Said(bump).Replace("\n", " ").Trim();
                 bump.closeDialogue();
                 Game1.dialogueUp = false;
                 P.controller = null;
@@ -1387,6 +1387,7 @@ public static partial class AgentTools
                   ?? shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant().Contains(name));
         if (sal == null || !shop.itemPriceAndStock.TryGetValue(sal, out var st)) { c.Fail(Reasons.NotFound, $"\"{name}\" is not sold here. Use shop_list."); yield break; }
         if (shop.canPurchaseCheck != null && !shop.canPurchaseCheck(shop.forSale.IndexOf(sal))) { c.Fail($"{sal.DisplayName} can't be bought right now."); yield break; }
+        if (SeedWouldDie(sal) is { } die) { c.Fail(die); yield break; }
 
         // Friendly pre-checks; the game's purchase would only play a "cancel" sound.
         if (sal.IsRecipe) qty = 1;
@@ -1458,9 +1459,33 @@ public static partial class AgentTools
         c.Result = $"Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note} {left}";
     }
 
+    /// <summary>
+    /// Why seeds that grow this season but can't ripen before it ends (and don't grow next season) are not bought, or null.
+    /// Fall 28, day 84: AI1 paid 8000g for 200 Wheat and 100 Yam seeds that could only die. Next season's seeds stay buyable.
+    /// </summary>
+    private static string? SeedWouldDie(ISalable sal)
+    {
+        if (sal.GetSalableInstance() is not Item seed || seed.Category != SObject.SeedsCategory || !Crop.TryGetData(seed.ItemId, out var data)) return null;
+        if (!IsSeasonCropSeed(seed)) return null;
+        var next = (Season)(((int)Game1.season + 1) % 4);
+        if (data.Seasons?.Contains(next) == true) return null;
+        var late = Game1.dayOfMonth >= CropMath.DaysPerSeason ? "it is the last day of the season" : SeedTooLate(seed);
+        return late == null ? null
+            : $"Not bought: {sal.DisplayName} planted now would die before harvest ({late}), and it does not grow in {next.ToString().ToLowerInvariant()} either. " +
+              "Buy a faster crop, or wait and buy next season's seeds.";
+    }
+
     private static IEnumerator Ship(JsonElement a, CallContext c)
     {
-        if (Loc is not Farm farm) { c.Fail(Reasons.NotHere, "The shipping bin is on the Farm. travel_to Farm first."); yield break; }
+        // Days 59-119: 37 ship calls failed off the Farm; walk there like sell walks to a shop.
+        if (Loc is not Farm)
+        {
+            if (FindItem(S(a, "item")) < 0) { c.Fail(Reasons.NoItem, $"No \"{S(a, "item")}\" in inventory."); yield break; }
+            var trip = new CallContext();
+            yield return TravelTo("Farm", trip);
+            if (!trip.Ok || Loc is not Farm) { c.Fail(trip.Reason ?? Reasons.NoPath, $"The shipping bin is on the Farm, and the way there failed: {trip.Result}"); yield break; }
+        }
+        if (Loc is not Farm farm) yield break;
         var bin = farm.buildings.FirstOrDefault(b => b.buildingType.Value == "Shipping Bin");
         if (bin == null) { c.Fail(Reasons.NotFound, "No shipping bin found."); yield break; }
         var name = S(a, "item");

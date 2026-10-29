@@ -56,7 +56,9 @@ public static partial class AgentTools
         var r = new GoalRead();
         try
         {
-            foreach (var (id, raw) in DataLoader.Achievements(Game1.content))
+            // English names, so they match GoalText whatever language the game runs in.
+            var achievements = Game1.content.Load<Dictionary<int, string>>("Data\\Achievements", LocalizedContentManager.LanguageCode.en);
+            foreach (var (id, raw) in achievements)
                 if (p.achievements.Contains(id)) r.Earned.Add(GoalText.Key(raw.Split('^')[0]));
         }
         catch (Exception) { /* earned flags are a bonus; the counts decide */ }
@@ -241,7 +243,7 @@ public static partial class AgentTools
 
     private static string NpcShownName(string name)
     {
-        try { return Game1.getCharacterFromName(name)?.displayName ?? name; }
+        try { return Game1.getCharacterFromName(name)?.Name ?? name; }
         catch (Exception) { return name; }
     }
 
@@ -250,15 +252,13 @@ public static partial class AgentTools
         int done = 0, all = 0;
         try
         {
-            foreach (var (_, q) in DataLoader.MonsterSlayerQuests(Game1.content))
+            foreach (var (key, q) in DataLoader.MonsterSlayerQuests(Game1.content))
             {
                 if (q?.Targets == null) continue;
                 all++;
                 int kills = q.Targets.Sum(t => p.stats.getMonstersKilled(t));
                 if (kills >= q.Count) done++;
-                var shown = q.DisplayName;
-                try { shown = StardewValley.TokenizableStrings.TokenParser.ParseText(q.DisplayName) ?? q.DisplayName; } catch (Exception) { }
-                r.Monsters.Add((shown, kills, q.Count, string.Join(", ", q.Targets)));
+                r.Monsters.Add((key, kills, q.Count, string.Join(", ", q.Targets)));
             }
         }
         catch (Exception) { }
@@ -306,6 +306,8 @@ public static partial class AgentTools
         var next = rows.Where(x => x.g.Kind != GoalKind.Arcade && !x.earned && !(x.c.need > 0 && x.c.have >= x.c.need))
             .OrderByDescending(x => GoalText.Fraction(x.g, x.c.have, x.c.need)).Take(4).Select(x => x.g.Name);
         sb.Append($"\nClosest: {string.Join(", ", next)}. Details: goals(area=shipping|cooking|crafting|fish|museum|friends|monsters|upgrades|family).");
+        var plan = FarmPlanText();
+        if (plan.Length > 0) sb.Append('\n').Append(plan);
         sb.Append("\nEvery day: farm chores first, then one long goal (mine floors, a new dish, new items to ship, gifts and talks), and bed before 01:00.");
         return sb.ToString();
     }

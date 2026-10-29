@@ -21,7 +21,8 @@ public static class ToolProfile
         "water_all", "clear_area", "till_area", "farm_summary", "interact", "respond", "close_menu", "menu", "shop_list",
         "buy", "sell", "ship", "eat", "chest", "craft", "place", "rest", "wait", "go_to_bed", "journal", "say", "give",
         "talk_to", "villagers", "quests", "accept_quest", "festival", "calendar", "crops", "fish", "fish_guide", "fight", "leave_mine",
-        "morning_chores", "forage", "upgrade_backpack", "bundles", "community_center", "donate_bundle", "crack_geode", "museum", "goals", "mine", "machine", "cook", "animals", "upgrade_tool"
+        "morning_chores", "forage", "upgrade_backpack", "bundles", "community_center", "donate_bundle", "crack_geode", "museum", "goals", "mine", "machine", "cook", "animals", "upgrade_tool",
+        "build", "buy_animal", "upgrade_house"
     };
 
     private const int BriefMax = 160;

@@ -23,6 +23,7 @@ makes every choice.
 - A whole-farm report: what is dry, ready, dead or won't make it this season (`farm_summary`)
 - Plan the season from the game's own data: growth days, last day to plant, gold per tile per day (`crops`)
 - Place machines, chests, sprinklers, fences and furniture (`place`); load every idle machine that takes an item and collect what is ready, with fuel such as Coal taken from the pack (`machine`)
+- With the [Automate](https://www.nexusmods.com/stardewvalley/mods/1063) mod installed (optional), machines run by themselves from a chest that touches them: a placed machine says what it makes from what (the game's machine rules) and asks for a Chest beside it, `machine` shows each machine's chest, and such a chest only takes that machine's inputs and fuel (`chest` refuses the rest; storage goes to chests that touch no machine). Set Automate's `ShippingBin` override to disabled, or a chest beside the bin gets shipped
 
 ## 🎣 Fishing
 
@@ -33,7 +34,7 @@ makes every choice.
 
 ## ⛏️ Mines and combat
 
-- Go down the Mines floor by floor: the elevator to the deepest floor, rocks broken until the ladder shows, monsters fought, treasure chests opened (`mine`)
+- Go down the Mines floor by floor: the elevator to the deepest floor, rocks broken until the ladder shows, monsters fought, treasure chests opened, quartz and cave forage on the floors picked up; everything but the mine kit (tools, weapons, bombs, food) is left in your own chest first, and a full pack no longer ends the trip (`mine`)
 - Fight nearby monsters with the best weapon, eating when health drops (`fight`)
 - Get out of the Mines from any floor, or warp out when it gets dangerous (`leave_mine`)
 - Take the elevator, crack geodes at Clint's: walks there itself, knows every kind of geode and where it comes from, and points out finds the Museum still needs (`menu`, `crack_geode`)
@@ -58,6 +59,7 @@ makes every choice.
 ## 🐔 Animals and buildings
 
 - Buy animals from Marnie, pet them, collect eggs, milk and wool, fill the hay troughs (`buy_animal`, `animals`)
+- The next farm buildings to save up for, in order (a Coop and chickens, the house upgrade for the kitchen, a Barn), with the money, Wood and Stone still missing (counting the shared chests): in `goals`, the morning briefing, and `animals` while the farmer has no animals yet
 - Order a Coop, Barn, Silo, Well or Shed from Robin and upgrade the house (`build`, `upgrade_house`)
 - Name pets, animals, the horse and children (`name`), ride the horse (`mount`)
 - When the spouse asks for a baby at night, an AI farmer says yes (children are part of the Full House goal)
@@ -94,6 +96,7 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - Quest journal, Help Wanted board, Special Orders (`quests`, `accept_quest`, `special_orders`); each quest says how to finish it, deliveries are handed over with `talk_to` and their money is claimed straight away
 - Every morning the built-in AI opens the gift boxes, reads the mail, claims quest money, plants the season's seeds it carries on its own empty tilled soil (only seeds that ripen before their seasons end, never on day 28) and points out produce left in its chests before it starts thinking (`morning_chores`); it can also take the Help Wanted request by itself (`BrainAcceptBoardQuest`)
 - Thoughts, speech and the diary stay in the configured language: text with Chinese characters (a local model drifting mid-sentence) is sent back to be written again (`think`, `say`, `journal`)
+- Whatever language the game runs in, the AIs read names by their English keys: villagers, items, recipes, professions, monsters, achievements, places, quests and festivals. Villager lines, letters and menu options come from the game's English text by their keys; a few generated lines without a key (Help Wanted texts) stay in the game's language. Names the AI types in the game's language are still understood
 - The Community Center story step by step: Lewis's scene (enter Town from the Bus Stop, no rain, spring 5+, 8:00-13:00; `quests` says when that works TODAY), the Junimo note, the Wizard, then the bundles. Once the door is open, `quests` and `bundles` say so plainly, so a farmer stops planning the Bus Stop trip from older notes. Each farmer learns the Junimo script from the Wizard himself: a farmhand can't donate on the host's knowledge, and `community_center` sends them to the tower. A `community_center` call that donated nothing reports a failure
 - Shops open at the counter by themselves once inside, `sell` names the shops that buy an item, and the backpack upgrade is one call (`upgrade_backpack`)
 - Completed journal quests and Special Orders expose unclaimed money; `quests(action="claim_reward")` clicks the native journal reward button. The daily guidance covers objectives, delivery, reward collection, crafting shortages and reserving bundle items. These choices still depend on the model.
@@ -117,7 +120,7 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - Chat that only reaches farmers whose screen shows the speaker; emotes; handing over items (`say`, `emote`, `give`)
 - Each farmer sees what the others are *actually* doing next to what they last said, so lies can be caught
 - Interrupts: an @mention, a gift, someone entering your house, a theft, rain or crows stop a long action; someone just coming into view is reported with the next result instead
-- Ownership: who planted a crop, who placed a chest, and a `theft` record when someone takes what isn't theirs
+- Ownership: who planted a crop, and a `theft` record when someone harvests another farmer's crop. Chests are shared: anyone may put in or take out, every change is logged (`chests.jsonl`), `chest(action="all")` and the morning briefing show what each chest holds and who moved what lately, and `chest` says what the others changed since you last used that chest
 - Marriage between players (`propose`, `answer_proposal`), a bedtime warning when the others wait for you
 
 ## 🧠 Memory and character

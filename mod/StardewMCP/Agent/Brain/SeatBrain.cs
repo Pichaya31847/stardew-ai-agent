@@ -153,10 +153,13 @@ public sealed class SeatBrain
             (questsOk, questReport) = await RunTool(new LlmToolCall("morning_quests", "quests", "{}"), ct);
         }
         if (questsOk) briefing += "\nToday's actual journal and board report:\n" + questReport;
+        // The chests are shared: what is in them and what the others put in or took out lately.
+        var (chestsOk, chestReport) = await RunTool(new LlmToolCall("morning_chests", "chest", "{\"action\":\"all\",\"reason\":\"shared chests\"}"), ct);
+        if (chestsOk) briefing += "\n" + chestReport;
         var pass = PassOut.View(Id);
         var messages = new List<ChatMessage>
         {
-            ChatMessage.User(Prompts.Morning(day, briefing, pass.PendingDay, others.Select(o => o.Name), Time))
+            ChatMessage.User(EnglishNames.Apply(Prompts.Morning(day, briefing, pass.PendingDay, others.Select(o => o.Name), Time)))
         };
         int idle = 0;
         bool dayDone = false;
@@ -219,8 +222,8 @@ public sealed class SeatBrain
                     _slot.MarkContact();
                     messages = new List<ChatMessage>
                     {
-                        ChatMessage.User(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) +
-                            "\nYour last replies contained no tool calls. The day is not finished. Call status now, then use a real tool to continue. End the day only with journal and go_to_bed.\n" + _social.Pending)
+                        ChatMessage.User(EnglishNames.Apply(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) +
+                            "\nYour last replies contained no tool calls. The day is not finished. Call status now, then use a real tool to continue. End the day only with journal and go_to_bed.\n" + _social.Pending))
                     };
                     NewSession();
                     idle = 0;
@@ -268,7 +271,7 @@ public sealed class SeatBrain
 
             if (breakNow || messages.Sum(m => m.Chars) > hardCap)
             {
-                messages = new List<ChatMessage> { ChatMessage.User(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) + "\n" + _social.Brief) };
+                messages = new List<ChatMessage> { ChatMessage.User(EnglishNames.Apply(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) + "\n" + _social.Brief)) };
                 NewSession();
                 _slot.Runtime.Stats.Count("session_break");
                 Log.Add("system", text: $"{Id}: conversation restarted with a handoff ({(breakNow ? "session break" : "context too large")})");
@@ -276,7 +279,7 @@ public sealed class SeatBrain
             var reminder = _social.Reminder();
             if (reminder.Length > 0)
             {
-                messages.Add(ChatMessage.User(reminder));
+                messages.Add(ChatMessage.User(EnglishNames.Apply(reminder)));
                 Log.Add("system", text: "Daily social reminder: " + reminder);
             }
         }
@@ -304,7 +307,7 @@ public sealed class SeatBrain
             Speech: _cfg.SpeechLanguageName(),
             MemoryLines: _cfg.BrainMemoryLines,
             Work: _cfg.WorkLanguageName());
-        return Prompts.System(Prompts.Template(_assetDir), inputs);
+        return EnglishNames.Apply(Prompts.System(Prompts.Template(_assetDir), inputs));
     }
 
     /// <summary>A fresh MCP-style session for <see cref="SessionBreaks"/>: counters restart and breaks are armed.</summary>

@@ -113,7 +113,7 @@ public static partial class AgentTools
             {
                 var use = MachineUses.TryGetValue(g.Key, out var u) ? $" ({u})" : "";
                 sb.Append($"\n- {g.First().obj.DisplayName} x{g.Count()}{use}: ");
-                sb.Append(string.Join("; ", g.Select(m => $"({m.tile.X},{m.tile.Y}) {MachineState(m.obj)}")));
+                sb.Append(string.Join("; ", g.Select(m => $"({m.tile.X},{m.tile.Y}) {MachineState(m.obj)}{AutomateChestText(m.tile)}")));
             }
         }
         // Ready machines elsewhere on the farm, so the next stop is clear.
@@ -127,7 +127,18 @@ public static partial class AgentTools
         if (elsewhere.Count > 0) sb.Append($"\nReady elsewhere: {string.Join(", ", elsewhere)} (travel_to there, then machine(action=collect)).");
         var packed = P.Items.Where(i => i is SObject o && o.bigCraftable.Value && MachineUses.ContainsKey(o.Name)).Select(i => i.DisplayName).Distinct().ToList();
         if (packed.Count > 0) sb.Append($"\nIn your pack: {string.Join(", ", packed)}: put them down with place (in a shed, a barn or on the farm).");
+        if (AutomateLoaded && here.Count > 0)
+            sb.Append("\nAutomate is installed: a Chest touching a machine (any side or corner) feeds it and gets its products; put only that machine's inputs and fuel into it " +
+                      "(machine lists them per machine as \"chest\", the chest tool refuses anything else).");
         return sb.ToString();
+    }
+
+    /// <summary>" · chest (x,y)" or " · no chest: place one touching it" with Automate installed, else "".</summary>
+    private static string AutomateChestText(Point tile)
+    {
+        if (!AutomateLoaded) return "";
+        var chests = ChestsAround(Loc, tile);
+        return chests.Count > 0 ? $" · chest ({chests[0].X},{chests[0].Y})" : " · no chest: place one touching it so Automate runs it";
     }
 
     /// <summary>The farm and the insides of its buildings (sheds, coops, barns, the greenhouse, cabins).</summary>

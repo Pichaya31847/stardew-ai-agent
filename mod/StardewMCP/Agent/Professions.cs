@@ -30,13 +30,9 @@ public static class Professions
         return null;
     }
 
-    public static string Title(int id) => LevelUpMenu.getProfessionTitleFromNumber(id);
+    public static string Title(int id) => GameEnglish.ProfessionName(id);
 
-    private static string Text(int id)
-    {
-        var d = LevelUpMenu.getProfessionDescription(id);
-        return $"{d[0]}: {string.Join(" ", d.Skip(1).Select(s => s.Trim()).Where(s => s.Length > 0))}";
-    }
+    private static string Text(int id) => GameEnglish.Profession(id);
 
     /// <summary>Status lines for the seat's open choices, or "" when there are none.</summary>
     public static string PendingText(AgentRuntime rt, Farmer p)

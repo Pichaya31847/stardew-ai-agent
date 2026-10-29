@@ -76,13 +76,13 @@ public static partial class WorldText
             case null:
                 break;
             case DialogueBox box:
-                var text = box.getCurrentString() ?? "";
-                var speaker = box.characterDialogue?.speaker?.displayName;
+                var text = GameEnglish.Said(box);
+                var speaker = box.characterDialogue?.speaker?.Name;
                 sb.AppendLine($"Dialogue open{(speaker != null ? $" ({speaker})" : "")}: \"{text.Replace("\n", " ").Replace("^", " ")}\"");
                 if (box.isQuestion && box.responses != null)
                 {
                     for (int i = 0; i < box.responses.Length; i++)
-                        sb.AppendLine($"  option {i}: {box.responses[i].responseText}");
+                        sb.AppendLine($"  option {i}: {GameEnglish.Option(box.responses[i])}");
                     sb.AppendLine("Use respond(option) to answer.");
                 }
                 else
@@ -92,7 +92,7 @@ public static partial class WorldText
                 sb.AppendLine($"Shop menu open ({shop.ShopId}). Use shop_list / buy / sell, then close_menu.");
                 break;
             case LetterViewerMenu letter:
-                var letterText = letter.mailMessage != null ? string.Join(" ", letter.mailMessage).Replace("\n", " ").Replace("^", " ") : "";
+                var letterText = GameEnglish.Letter(letter).Replace("\n", " ").Replace("^", " ");
                 sb.AppendLine($"Letter open: \"{letterText}\". Use close_menu (attached items and quests will be claimed automatically).");
                 break;
             case NamingMenu nm:
@@ -140,7 +140,7 @@ public static partial class WorldText
         {
             if (npc.TilePoint != pt) continue;
             if (npc is StardewValley.Monsters.Monster mon) return ('M', $"{mon.Name} (HP {mon.Health})");
-            if (npc.IsVillager) return ('N', npc.displayName);
+            if (npc.IsVillager) return ('N', npc.Name);
         }
 
         if (RanchText.AnimalAt(loc, pt) is { } animal) return (animal.sym, animal.label);

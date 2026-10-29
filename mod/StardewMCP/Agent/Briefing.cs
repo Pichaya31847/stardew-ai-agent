@@ -562,6 +562,8 @@ public static class Briefing
         var building = Game1.getFarm().buildings.Where(b => b.isUnderConstruction()).Select(b => b.buildingType.Value).ToList();
         if (building.Count > 0)
             lines.Add($"Still under construction: {string.Join(", ", building)}.");
+        var plan = AgentTools.FarmPlanText();
+        if (plan.Length > 0) lines.Add(plan);
         return string.Join("\n", lines);
     }
 

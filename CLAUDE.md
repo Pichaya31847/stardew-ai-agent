@@ -53,10 +53,14 @@ mod/StardewMCP/
     CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound shared with Joja
     JojaTools.cs       joja: membership (confirm guard) / projects / buy_project
     GoalTools.cs       goals: every achievement (no Joja) measured from the game; progress_pN.json each night
+    AutomateTools.cs   Optional Automate mod: machine chests (inputs from Data/Machines), notes for place / machine, chest refuses other items
+    FarmPlan.cs        Next farm buildings to save up for (Coop + chickens, house upgrade, Barn) and what is missing
+    ChestLedger.cs     Shared chests: every put / take logged (kind chest, chests.jsonl), chest(action=all) and the morning report
     MachineTools.cs    machine: list / load / collect placed machines through the game's own drop-in and click
     UpgradeTools.cs    upgrade_tool: Clint's ClintUpgrade shop and the pickup at his counter
     MineTools.cs       mine (down floor by floor), leave_mine, the damage interrupt
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
+    GameEnglish.cs     English for the AIs in a localized game: builds the EnglishNames map, English dialogue / letters / options / professions by key
     AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
     JournalTools.cs    journal(diary, lessons, plan, notes, day); go_to_bed needs today's
     ToolResult.cs      Reason codes, partial flag and counts; MCP reply tag + structuredContent; day_XXX_summary.json
@@ -152,6 +156,7 @@ mod/StardewMCP/Agent/DaySafety.cs  morning readiness, early sleep (and its refus
 mod/StardewMCP/Agent/GoalText.cs     the achievement goal list (no Joja), its targets and wording, recipe unlocks in words
 mod/StardewMCP/Agent/GeodeGuide.cs   crack_geode's guide per geode kind (where it comes from, what it holds) and loose name matching
 mod/StardewMCP/Agent/FishGuideText.cs  fish_guide's time/weather/condition wording, code-placed and legendary fish ids
+mod/StardewMCP/Agent/EnglishNames.cs  NameMap: localized names → English keys in every text an AI reads (AgentRuntime, SeatBrain)
 mod/StardewMCP/Agent/LanguageGuard.cs  Chinese characters in think / say / diary text that must be in another language
 mod/StardewMCP/Agent/Brain/DailySocialProgress.cs  per-day social progress and bounded reminders across context resets
 mod/StardewMCP/Agent/Brain/Llm.cs, *Provider.cs, Prompts.cs   Built-in AI wire formats and prompt texts
