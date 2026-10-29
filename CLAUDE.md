@@ -83,6 +83,8 @@ mod/StardewMCP/
       Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source, the overlay pages and the docs (see Tests)
+local/                 Local-model kit (Windows): setup.ps1 (game, SMAPI, mod, Ollama, stardew-local), start.cmd/.ps1,
+                       Modelfile, config.example.json, automate-config.json (docs/local-ai.md)
 README.md, README.en.md   Landing page (Thai = the front page / English): the EP.1 video, install, quick start, links into docs/
 CONTEXT.md             Glossary: the project's words
 docs/
@@ -90,6 +92,7 @@ docs/
   tools.md, tools.th.md         Every MCP tool with its arguments, grouped by job
   api.md               HTTP endpoints, run control, tool results and reason codes, log files
   configuration.md     Every config.json setting, seats and roles, overlay language
+  local-ai.md, local-ai.th.md   Playing on a local model: local/setup.ps1, the stardew-local model, publishing it
   coverage.md          Which game features the tools cover, and how to add one
   economy.md           Shared farm economy: wallets, ownership, theft, payments
   recording.md, howto-record-day.md   One recording setup, as an example of building on the API

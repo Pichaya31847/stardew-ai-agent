@@ -124,6 +124,8 @@ If the game's font can't draw a script, its characters show as `·` on the in-ga
 
 ### Small local models
 
+The ready-made setup (Ollama, the tuned `stardew-local` model, `setup.ps1` and `start.cmd`) is in [local-ai.md](local-ai.md).
+
 A 9B model with a 32k context (Ollama) spent about 20k tokens on the system prompt and the tool list alone, so its
 session restarted every few thousand tokens of results. For such a model: `"BrainTools": "compact"`,
 `"BrainMemoryLines": 20`, English `WorkLanguage` (or `ThoughtLanguage`), and a larger `num_ctx` in the Modelfile if the GPU has room.

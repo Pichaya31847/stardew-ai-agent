@@ -20,6 +20,9 @@ runs-*/
 logs/
 *.log
 mod/StardewMCP/config.json
+local/Mods/
+local/downloads/
+local/settings.json
 .env
 
 # Claude Code local state
