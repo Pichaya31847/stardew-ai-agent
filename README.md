@@ -7,7 +7,7 @@
 **ให้ AI สองตัวเล่น Stardew Valley เองแบบยาว ๆ บนการ์ดจอในบ้าน ตั้งเป้า achievement ทุกอัน**
 
 Mod สำหรับ [SMAPI](https://smapi.io) ที่เปิด [MCP](https://modelcontextprotocol.io) server *อยู่ในเกม*
-พัฒนาต่อจาก [duckxy166/stardew-ai-agent](https://github.com/duckxy166/stardew-ai-agent) (ได้รับอนุญาตจากเจ้าของแล้ว)
+พัฒนาต่อจาก [duckxy166/stardew-ai-agent](https://github.com/duckxy166/stardew-ai-agent)
 เวอร์ชันนี้เน้นให้ **โมเดลเล็กในเครื่อง** (Qwen3.5 9B ผ่าน Ollama) เล่นได้หลายสิบวันในเกมโดยไม่ต้องมีคนเฝ้า
 
 [![Latest release](https://img.shields.io/github/v/release/Pichaya31847/stardew-ai-agent?style=flat-square&label=release&color=4caf50)](https://github.com/Pichaya31847/stardew-ai-agent/releases/latest)
@@ -23,7 +23,7 @@ Mod สำหรับ [SMAPI](https://smapi.io) ที่เปิด [MCP](htt
 
 โปรเจกต์นี้ต่อยอดจาก **Stardew MCP** ของ [duckxy166](https://github.com/duckxy166/stardew-ai-agent) ซึ่งทำ mod ที่ให้
 Claude, GPT, Gemini หรือโมเดลในเครื่อง เดิน ทำฟาร์ม ตกปลา คุยกับชาวเมือง และต่อรองกันเองในฟาร์มเดียวกัน
-(ดูได้ในคลิป [EP.1 บน YouTube](https://youtu.be/Drd5lWh3kFI) ที่ AI สามตัวแย่งผักกันเอง) เราได้รับอนุญาตจากเจ้าของให้พัฒนาต่อ
+(ดูได้ในคลิป [EP.1 บน YouTube](https://youtu.be/Drd5lWh3kFI) ที่ AI สามตัวแย่งผักกันเอง)
 โค้ดต้นฉบับอยู่ที่ branch [`main`](https://github.com/Pichaya31847/stardew-ai-agent/tree/main)
 ส่วนงานของเวอร์ชันนี้อยู่ที่ branch `feature/new-AI`
 
