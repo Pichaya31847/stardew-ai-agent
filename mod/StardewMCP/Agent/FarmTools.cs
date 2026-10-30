@@ -448,8 +448,10 @@ public static partial class AgentTools
     private static IEnumerator WaterAll(JsonElement a, CallContext c)
     {
         var loc = Loc;
+        var fetched = new List<string>();
+        yield return FetchMainTools(loc, fetched, CanKind);
         int slot = FindItem("Watering Can", it => it is WateringCan);
-        if (slot < 0) { c.Fail("You don't have a Watering Can. Check inventory."); yield break; }
+        if (slot < 0) { c.Fail("You don't have a Watering Can. " + string.Join(" ", fetched)); yield break; }
         var can = (WateringCan)P.Items[slot];
 
         // the farmers share one farm: "mine" keeps to the crops this seat planted (2026-10-20: plots split by agreement, but
@@ -573,6 +575,7 @@ public static partial class AgentTools
         var before = Snapshot();
         string? stop = null;
         int tried = 0;
+        var fetched = new List<string>();
 
         // Hand harvest through the existing harvest tool, ten tiles at a time.
         for (int i = 0; i < route.Count; i += FarmChunk)
@@ -591,7 +594,16 @@ public static partial class AgentTools
         if (stop == null)
         {
             var ripe = route.Where(t => FarmRipeCrop(loc, t.X, t.Y)).ToList();
-            int scythe = ripe.Count > 0 ? FindItem("Scythe", it => it is Tool) : -1;
+            if (ripe.Count > 0 && !HasMainTool(ScytheKind))
+            {
+                yield return EnsureMainTool(ScytheKind, fetched);
+                if (Loc != loc)
+                {
+                    var back = new CallContext();
+                    yield return TravelTo(loc.NameOrUniqueName, back);
+                }
+            }
+            int scythe = ripe.Count > 0 && Loc == loc ? P.Items.ToList().FindIndex(i => MainToolKind(i) == ScytheKind) : -1;
             if (scythe >= 0)
             {
                 foreach (var t in RouteOrder(ripe, P.TilePoint))
@@ -614,6 +626,7 @@ public static partial class AgentTools
         var left = route.Where(t => FarmPickable(loc, t.X, t.Y)).ToList();
         var diff = Diff(before);
         var sb = new StringBuilder();
+        foreach (var f in fetched) sb.Append(f).Append('\n');
         sb.Append($"Harvested {route.Count - left.Count} of {route.Count} ready tiles on {loc.Name}. {(diff.Length > 0 ? diff : "Nothing was collected.")}");
         if (stop != null) sb.Append($"\nStopped: {stop}.");
         if (left.Count > 0)
@@ -936,13 +949,15 @@ public static partial class AgentTools
         var tiles = FarmAreaTiles(loc, x, y, w, h);
         if (tiles.Count == 0) { c.Fail(Reasons.InvalidArgs, $"The area ({x},{y}) {w}x{h} is outside {loc.Name}."); yield break; }
 
+        var fetched = new List<string>();
+        yield return FetchMainTools(loc, fetched, ScytheKind, AxeKind, PickaxeKind);
         var before = Snapshot();
         var rep = new FarmReport();
         FarmNoteLeftovers(loc, tiles, rep);
         yield return FarmClear(loc, tiles, rep);
         yield return Ticks(45); // let dropped items fly into the inventory
 
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(string.Concat(fetched.Select(f => f + "\n")));
         sb.Append(rep.ClearedCount == 0
             ? $"Nothing was cleared in ({x},{y}) {w}x{h} on {loc.Name}."
             : $"Cleared {rep.ClearedCount} tile{(rep.ClearedCount == 1 ? "" : "s")} in ({x},{y}) {w}x{h}: {FarmCounts(rep.Cleared)}.");
@@ -970,6 +985,8 @@ public static partial class AgentTools
             yield break;
         }
 
+        var fetched = new List<string>();
+        yield return FetchMainTools(loc, fetched, HoeKind, ScytheKind, AxeKind, PickaxeKind);
         var before = Snapshot();
         var rep = new FarmReport();
         yield return FarmClear(loc, tiles, rep);
@@ -977,7 +994,7 @@ public static partial class AgentTools
         yield return Ticks(45);
 
         int blocked = rep.Untillable.Values.Sum(l => l.Count);
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(string.Concat(fetched.Select(f => f + "\n")));
         sb.Append($"Tilled {rep.Tilled + rep.AlreadyTilled} of {tiles.Count} tiles in ({x},{y}) {w}x{h} on {loc.Name} ({rep.Tilled} new, {rep.AlreadyTilled} already tilled).");
         if (blocked > 0) sb.Append($" {blocked} could not be tilled.");
         if (rep.ClearedCount > 0) sb.Append($"\nCleared first: {FarmCounts(rep.Cleared)}.");

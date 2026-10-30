@@ -40,6 +40,11 @@ public static partial class AgentTools
                 : null;
 
         var steps = new List<PlanStep?>();
+        // The 12-slot pack came first in the third run: tools went into chests to make room and the Wheat stood ripe for days.
+        if (P.MaxItems < 24)
+            steps.Add(new PlanStep("the 24-slot backpack", "upgrade_backpack at Pierre's (SeedShop)", 2000, new(), "Twelve slots are full of tools and supplies; every other plan waits on room in the pack."));
+        else if (P.MaxItems < 36)
+            steps.Add(new PlanStep("the 36-slot backpack", "upgrade_backpack at Pierre's (SeedShop)", 10000, new(), "More room for the mines and the harvest."));
         if (!Has("Coop"))
             steps.Add(Robin("Coop", "Chickens lay an egg a day; eggs, mayonnaise and the animal achievements need it."));
         else if (!RanchText.AllFarmAnimals().Any(t => RanchText.IsMine(t.animal)) && !building)

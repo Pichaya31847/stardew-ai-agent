@@ -13,6 +13,10 @@ public static partial class AgentTools
         bool allow = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("allow_reserved", out var value) && value.ValueKind == JsonValueKind.True;
         int count = P.Items.Where(i => i != null && i.QualifiedItemId == item.QualifiedItemId).Sum(i => i.Stack);
         bool planting = item.Category == StardewValley.Object.SeedsCategory || item.Category == StardewValley.Object.fertilizerCategory;
+        if (SaleReserve.IsBasicResource(item.QualifiedItemId))
+            return $"Not sold: {item.DisplayName} is a basic resource (Wood, Stone, Fiber, Coal, Clay, Hardwood, Sap, ores, bars). Buildings, " +
+                   "upgrades, machines and crafting use them by the hundred, so they are never sold: store them with chest(action=\"store\") " +
+                   "or chest(action=\"tidy\"), and sell crops, forage, fish or artisan goods instead.";
         int available = SaleReserve.Available(item.QualifiedItemId, count, planting, allow);
         if (Math.Min(quantity, count) <= available) return null;
         return $"Sale prevented: {item.DisplayName} is reserved for planting/crafting. You carry {count}; safe surplus to sell is {available}. " +

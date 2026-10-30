@@ -25,7 +25,9 @@ public static partial class AgentTools
         Name = "chest",
         Description = "Look into, fill or empty a storage chest or the fridge in one call: you walk next to it, open it, move the items and close it again. " +
                       "Chests are shared: anyone may put in or take out, and every change is written down. action: list (default), store (your pack into the chest), take (chest into your pack) " +
-                      "or all (every chest and fridge on the farm with what it holds and who put in or took out what lately; no walking). " +
+                      "or all (every chest and fridge on the farm with what it holds and who put in or took out what lately; no walking), " +
+                      "or tidy (one main storage chest: your resources go in and what the other storage chests keep is carried over; with Automate, each chest beside a machine gets that machine's inputs and its products come back to the main chest). " +
+                      "Basic resources (Wood, Stone, Fiber, Coal, Clay, ores, bars) are never sold: keep them in the main chest. " +
                       "item: one item name, or \"everything\" (store: all except tools, seeds and cooked dishes, so tidying the pack is one call; take: all). " +
                       "items: several names at once. quality: normal, silver, gold or iridium to move only that quality (default every quality). " +
                       "quantity: how many of each named item (default all). The result says what moved, per quality, and what did not fit. " +
@@ -34,7 +36,7 @@ public static partial class AgentTools
         {
             x = Int("Chest tile x"),
             y = Int("Chest tile y"),
-            action = new { type = "string", @enum = new[] { "list", "store", "take", "all" }, description = "list (default), store, take or all" },
+            action = new { type = "string", @enum = new[] { "list", "store", "take", "all", "tidy" }, description = "list (default), store, take, all or tidy" },
             item = Str("Item name, or \"everything\""),
             items = new { type = "array", items = new { type = "string" }, description = "Several item names" },
             quality = new { type = "string", @enum = new[] { "normal", "silver", "gold", "iridium" }, description = "Only this quality (default: all)" },
@@ -130,6 +132,11 @@ public static partial class AgentTools
     {
         var action = S(a, "action", "list").Trim().ToLowerInvariant();
         if (action.Length == 0) action = "list";
+        if (action == "tidy")
+        {
+            yield return ChestTidy(c);
+            yield break;
+        }
         if (action == "all")
         {
             c.Result = ChestLedger.Report();
@@ -137,7 +144,7 @@ public static partial class AgentTools
         }
         if (action != "list" && action != "store" && action != "take")
         {
-            c.Fail($"Unknown action \"{action}\". Use list, store, take or all.");
+            c.Fail($"Unknown action \"{action}\". Use list, store, take, all or tidy.");
             yield break;
         }
 
@@ -194,6 +201,14 @@ public static partial class AgentTools
             yield return Interact(ArgsOf(new { x = tile.X, y = tile.Y, reason = Reason(a) }), sub);
             if (!sub.Ok) { c.Fail(sub.Result); yield break; }
             for (int i = 0; i < 120 && Game1.activeClickableMenu == null; i++) yield return null;
+            // The chests are shared and the game lets one farmer at a time open one: wait for the other to close it, then try again
+            // (days 1-34: 19 "Nothing opened" while the other AI stood at the same chest).
+            if (Game1.activeClickableMenu == null && Loc.Objects.TryGetValue(tile.ToVector2(), out var busy) && busy is Chest shared)
+            {
+                for (int i = 0; i < 600 && shared.GetMutex().IsLocked(); i++) yield return null;
+                yield return Interact(ArgsOf(new { x = tile.X, y = tile.Y, reason = Reason(a) }), new CallContext());
+                for (int i = 0; i < 120 && Game1.activeClickableMenu == null; i++) yield return null;
+            }
             opened = true;
             spot = $" at ({tile.X},{tile.Y})";
             if (Game1.activeClickableMenu is not ItemGrabMenu { context: Chest })
@@ -278,6 +293,17 @@ public static partial class AgentTools
             ? source.Where(i => i != null && !keepInPack(i) && allowed!(i)).Select(i => (item: i, count: i.Stack)).ToList()
             : PlanMoves(source, names, everything, quality, quantity, allowed, store, problems);
         if (store && keepInPack == null) jobs = KeepProduceForSale(jobs, menu.ItemsToGrabMenu.actualInventory, problems);
+        // A chest that feeds a machine through Automate keeps the machine's inputs: taking them out would stop the machine.
+        if (!store && menu.context is Chest feeder && (feeder.Location ?? Loc) is { } feederLoc && MachinesAround(feederLoc, feeder.TileLocation.ToPoint()) is { Count: > 0 } fed2 && AutomateLoaded)
+        {
+            var inputs = jobs.Where(j => fed2.Any(m => MachineTakes(m.machine, j.item))).Select(j => j.item.Name).Distinct().ToList();
+            if (inputs.Count > 0)
+            {
+                jobs = jobs.Where(j => !fed2.Any(m => MachineTakes(m.machine, j.item))).ToList();
+                problems.Add($"Left in place: {string.Join(", ", inputs)}. This chest feeds {string.Join(", ", fed2.Select(m => m.machine.Name).Distinct())} through Automate; its products may be taken, its inputs stay.");
+            }
+        }
+        if (store) jobs = KeepMainTools(jobs, problems);
         // A chest that feeds machines through Automate takes only what they use (their inputs and fuel).
         if (store && menu.context is Chest fed && MachineChestRefuses(fed.Location ?? Loc, fed.TileLocation.ToPoint()) is { } refuses)
         {
@@ -378,7 +404,8 @@ public static partial class AgentTools
         var refused = new List<(string label, int count)>();
         foreach (var (item, count) in jobs)
         {
-            if (!IsSaleProduce(item) || QuestWants(item)) { kept.Add((item, count)); continue; }
+            // Crafting supplies (Sap for fertilizer, Fiber...) may be stored: 24 times the chest sent Sap back to the pack to be sold.
+            if (!IsSaleProduce(item) || QuestWants(item) || SaleReserve.IsBasicResource(item.QualifiedItemId)) { kept.Add((item, count)); continue; }
             int stored = inside.Where(i => i != null && i.QualifiedItemId == item.QualifiedItemId && i.Quality >= item.Quality).Sum(i => i.Stack);
             int room = Math.Max(0, BundleWants(item) - stored);
             if (room >= count) { kept.Add((item, count)); continue; }

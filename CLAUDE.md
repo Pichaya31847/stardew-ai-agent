@@ -54,6 +54,8 @@ mod/StardewMCP/
     JojaTools.cs       joja: membership (confirm guard) / projects / buy_project
     GoalTools.cs       goals: every achievement (no Joja) measured from the game; progress_pN.json each night
     AutomateTools.cs   Optional Automate mod: machine chests (inputs from Data/Machines), notes for place / machine, chest refuses other items
+    ChestTidy.cs       chest(action=tidy): one main storage chest, Automate machine chests left alone
+    ToolFetch.cs       The five main tools stay in the pack: chest refuses them, farm tools fetch a missing one from a chest
     FarmPlan.cs        Next farm buildings to save up for (Coop + chickens, house upgrade, Barn) and what is missing
     ChestLedger.cs     Shared chests: every put / take logged (kind chest, chests.jsonl), chest(action=all) and the morning report
     MachineTools.cs    machine: list / load / collect placed machines through the game's own drop-in and click
@@ -155,7 +157,7 @@ mod/StardewMCP/Agent/WorldText.Format.cs  FormatTime, DirName, part of WorldText
 mod/StardewMCP/Agent/BubbleText.cs   Line breaking for the speech bubbles (Thai-aware)
 mod/StardewMCP/Agent/SpeechQueue.cs  say lines shown one at a time per place, timed only while the world runs
 mod/StardewMCP/Agent/CompressedLogStore.cs  lossless appendable gzip logs, legacy migration and day discovery
-mod/StardewMCP/Agent/SaleReserve.cs  minimum crafting reserves and protected planting inputs for sales
+mod/StardewMCP/Agent/SaleReserve.cs  basic resources that are never sold, protected planting inputs
 mod/StardewMCP/Agent/DaySafety.cs  morning readiness, early sleep (and its refusal text), committed-sleep social interruption, stale message boxes at bedtime
 mod/StardewMCP/Agent/GoalText.cs     the achievement goal list (no Joja), its targets and wording, recipe unlocks in words
 mod/StardewMCP/Agent/GeodeGuide.cs   crack_geode's guide per geode kind (where it comes from, what it holds) and loose name matching

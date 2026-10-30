@@ -15,14 +15,17 @@ public class SaleReserveTests
     }
 
     [Theory]
-    [InlineData("(O)388", 70, 20)]
-    [InlineData("(O)390", 25, 0)]
-    [InlineData("(O)382", 5, 0)]
-    [InlineData("(O)378", 50, 40)]
-    [InlineData("(O)334", 8, 3)]
-    public void OnlySurplusAboveCraftingReserveIsAvailable(string id, int inventory, int surplus)
+    [InlineData("(O)388")] // Wood
+    [InlineData("(O)390")] // Stone
+    [InlineData("(O)771")] // Fiber
+    [InlineData("(O)382")] // Coal
+    [InlineData("(O)378")] // Copper Ore
+    [InlineData("(O)334")] // Copper Bar
+    [InlineData("(O)92")]  // Sap
+    public void BasicResourcesAreNeverSold(string id)
     {
-        Assert.Equal(surplus, SaleReserve.Available(id, inventory, false, false));
-        Assert.Equal(inventory, SaleReserve.Available(id, inventory, false, true));
+        Assert.True(SaleReserve.IsBasicResource(id));
+        Assert.Equal(0, SaleReserve.Available(id, 500, false, false));
+        Assert.Equal(0, SaleReserve.Available(id, 500, false, true));
     }
 }

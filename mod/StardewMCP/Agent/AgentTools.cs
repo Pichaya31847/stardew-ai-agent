@@ -729,7 +729,13 @@ public static partial class AgentTools
         if (tiles.Count == 0) { c.Fail(Reasons.InvalidArgs, "No tiles given."); yield break; }
 
         int slot = FindItem(toolName, it => it is Tool);
-        if (slot < 0) { c.Fail(Reasons.NoItem, $"You don't have a tool called \"{toolName}\". Check inventory."); yield break; }
+        var fetched = new List<string>();
+        if (slot < 0 && MainToolNamed(toolName) is { } mainKind)
+        {
+            yield return FetchMainTools(Loc, fetched, mainKind);
+            slot = P.Items.ToList().FindIndex(i => MainToolKind(i) == mainKind);
+        }
+        if (slot < 0) { c.Fail(Reasons.NoItem, $"You don't have a tool called \"{toolName}\". {string.Join(" ", fetched)}".TrimEnd()); yield break; }
         P.CurrentToolIndex = slot;
         var tool = (Tool)P.Items[slot];
         bool repeatTool = tool is Axe || tool is Pickaxe;
@@ -920,6 +926,9 @@ public static partial class AgentTools
         }
         yield return Ticks(30);
         var diff = Diff(before);
+        // Wheat, Amaranth and the like don't come off by hand (days 32-34: 20 hand harvests of ripe Wheat did nothing).
+        if (tiles.Any(t => loc.terrainFeatures.TryGetValue(t.ToVector2(), out var tf) && tf is HoeDirt { crop: { } cr } && cr.GetHarvestMethod() == StardewValley.GameData.Crops.HarvestMethod.Scythe))
+            lines.Add("Some of these crops are cut with the Scythe, not picked by hand: harvest_all cuts them (and takes the Scythe from a chest if it is there).");
         c.Result = string.Join("\n", lines) + "\n" + (diff.Length > 0 ? diff : "Nothing was collected.");
         batch.Apply(c, tiles.Count);
     }

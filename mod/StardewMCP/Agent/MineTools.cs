@@ -72,8 +72,10 @@ public static partial class AgentTools
     private static IEnumerator Mine(JsonElement a, CallContext c)
     {
         int want = Math.Clamp(I(a, "floors", 5), 1, 20);
+        var fetched = new List<string>();
+        if (Loc is not MineShaft && !HasMainTool(PickaxeKind)) yield return EnsureMainTool(PickaxeKind, fetched);
         int pick = FindItem("Pickaxe", it => it is StardewValley.Tools.Pickaxe);
-        if (pick < 0) { c.Fail(Reasons.NoItem, "You have no Pickaxe; rocks and ladders need one."); yield break; }
+        if (pick < 0) { c.Fail(Reasons.NoItem, "You have no Pickaxe; rocks and ladders need one. " + string.Join(" ", fetched)); yield break; }
         if (Game1.timeOfDay >= MineStopTime) { c.Fail($"It is {WorldText.FormatTime(Game1.timeOfDay)}: too late to start down the mines (stop at {WorldText.FormatTime(MineStopTime)})."); yield break; }
         if (IsHealthLow(P)) { c.Fail($"Health {P.health}/{P.maxHealth} is too low for the mines. Eat first."); yield break; }
         if (P.Stamina <= MineMinEnergy) { c.Fail(Reasons.LowEnergy, $"Energy {(int)P.Stamina} is too low for the mines. Eat or rest first."); yield break; }
@@ -81,7 +83,7 @@ public static partial class AgentTools
         var before = Snapshot();
         int deepestBefore = P.deepestMineLevel;
         uint killsBefore = P.stats.MonstersKilled;
-        var lines = new List<string>();
+        var lines = new List<string>(fetched);
 
         if (Loc is not MineShaft)
         {

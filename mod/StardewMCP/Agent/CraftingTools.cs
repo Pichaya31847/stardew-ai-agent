@@ -116,7 +116,7 @@ public static partial class AgentTools
             if (!P.couldInventoryAcceptThisItem(created))
             {
                 // Said 17 times in a row in the 14B run without a way out: a full pack is why the farmer wanted a chest.
-                why = "your inventory is full: free one slot first (ship surplus Stone, Fiber or Sap from the Farm's shipping bin, eat something, or trash a stack you don't need), then craft again";
+                why = "your inventory is full: free one slot first (chest(action=\"tidy\") stores Stone, Wood, Fiber and the other resources, or ship produce, or eat something), then craft again";
                 break;
             }
             cr.consumeIngredients(null);
@@ -330,6 +330,7 @@ public static partial class AgentTools
             foreach (var (tile, obj) in loc.objects.Pairs)
             {
                 if (obj is not Chest { playerChest.Value: true, fridge.Value: false } chest) continue;
+                if (IsMachineChest(loc, new Point((int)tile.X, (int)tile.Y))) continue; // a machine's ore and coal stay with the machine
                 int n = chest.Items.Where(i => i != null && i.QualifiedItemId == qid).Sum(i => i!.Stack);
                 var at = new Point((int)tile.X, (int)tile.Y);
                 if (n > 0) found.Add((n, $"{loc.Name} ({at.X},{at.Y})", loc.Name, at));
