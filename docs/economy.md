@@ -32,7 +32,7 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
   each item put in or taken out goes to the day log (kind `chest`) and `chests.jsonl`. `chest(action=all)` and the
   built-in AI's morning briefing list every chest with its contents and the recent changes; a `chest` call adds
   what the others did to that chest since the farmer last used it.
-- Basic resources (Wood, Stone, Fiber, Coal, Clay, Hardwood, Sap, ores, bars, Refined Quartz) are never sold by `ship` or `sell` (`SaleReserve.BasicResources`): they are kept in the main chest (`chest(action="tidy")`). Chests beside an Automate machine are not storage: their inputs stay for the machine.
+- Basic resources (Wood, Stone, Fiber, Coal, Clay, Hardwood, Sap, ores, bars, Refined Quartz) are never sold by `ship` or `sell` (`SaleReserve.BasicResources`), except a single one of a kind never shipped before (Full Shipment): they are kept in the main chest (`chest(action="tidy")`). Chests beside an Automate machine are not storage: their inputs stay for the machine.
 - Not recorded: the starting plot as a fixed tile area. A plot is "whatever the seat planted"; a fixed area per seat would be a config of rectangles.
 
 ## Payments

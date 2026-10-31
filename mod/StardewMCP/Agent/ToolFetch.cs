@@ -18,7 +18,7 @@ namespace StardewMCP.Agent;
 /// </summary>
 public static partial class AgentTools
 {
-    internal const string ScytheKind = "Scythe", AxeKind = "Axe", HoeKind = "Hoe", CanKind = "Watering Can", PickaxeKind = "Pickaxe";
+    internal const string ScytheKind = "Scythe", AxeKind = "Axe", HoeKind = "Hoe", CanKind = "Watering Can", PickaxeKind = "Pickaxe", RodKind = "Fishing Rod";
 
     /// <summary>Which of the five main tools this item is, or null.</summary>
     internal static string? MainToolKind(Item? it) => it switch
@@ -28,6 +28,7 @@ public static partial class AgentTools
         WateringCan => CanKind,
         Pickaxe => PickaxeKind,
         MeleeWeapon w when w.isScythe() => ScytheKind,
+        FishingRod => RodKind, // days 38-49: the rods sat in a chest and every fish call failed
         _ => null
     };
 
@@ -111,7 +112,8 @@ public static partial class AgentTools
     {
         var n = name.Trim().ToLowerInvariant();
         return n.EndsWith("pickaxe") ? PickaxeKind : n.EndsWith("axe") ? AxeKind : n.EndsWith("hoe") ? HoeKind
-            : n.Contains("watering") || n.EndsWith("can") ? CanKind : n.EndsWith("scythe") ? ScytheKind : null;
+            : n.Contains("watering") || n.EndsWith("can") ? CanKind : n.EndsWith("scythe") ? ScytheKind
+            : n.Contains("rod") || n.Contains("pole") ? RodKind : null;
     }
 
     /// <summary>For store: your main tools are not put into a chest. Returns the jobs without them and says so in <paramref name="problems"/>.</summary>
@@ -119,8 +121,8 @@ public static partial class AgentTools
     {
         var tools = jobs.Where(j => MainToolKind(j.item) != null).Select(j => j.item.Name).ToList();
         if (tools.Count == 0) return jobs;
-        problems.Add($"Not stored: {string.Join(", ", tools)}. Your Axe, Hoe, Watering Can, Pickaxe and Scythe stay in the pack: harvesting Wheat, " +
-                     "clearing, mining and watering need them. To free slots, ship or store other things, or upgrade_backpack (2,000g for 24 slots).");
+        problems.Add($"Not stored: {string.Join(", ", tools)}. Your Axe, Hoe, Watering Can, Pickaxe, Scythe and fishing rod stay in the pack: harvesting Wheat, " +
+                     "clearing, mining, watering and fishing need them. To free slots, ship or store other things, or upgrade_backpack (2,000g for 24 slots).");
         return jobs.Where(j => MainToolKind(j.item) == null).ToList();
     }
 }

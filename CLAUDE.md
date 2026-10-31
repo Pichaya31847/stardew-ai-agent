@@ -55,7 +55,7 @@ mod/StardewMCP/
     GoalTools.cs       goals: every achievement (no Joja) measured from the game; progress_pN.json each night
     AutomateTools.cs   Optional Automate mod: machine chests (inputs from Data/Machines), notes for place / machine, chest refuses other items
     ChestTidy.cs       chest(action=tidy): one main storage chest, Automate machine chests left alone
-    ToolFetch.cs       The five main tools stay in the pack: chest refuses them, farm tools fetch a missing one from a chest
+    ToolFetch.cs       The six main tools stay in the pack: chest refuses them, farm tools fetch a missing one from a chest
     FarmPlan.cs        Next farm buildings to save up for (Coop + chickens, house upgrade, Barn) and what is missing
     ChestLedger.cs     Shared chests: every put / take logged (kind chest, chests.jsonl), chest(action=all) and the morning report
     MachineTools.cs    machine: list / load / collect placed machines through the game's own drop-in and click

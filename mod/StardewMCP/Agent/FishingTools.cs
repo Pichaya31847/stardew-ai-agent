@@ -262,6 +262,13 @@ public static partial class AgentTools
         int slot = RodSlot();
         if (slot < 0)
         {
+            // Days 38-49: the rods were in a chest since day 25 and seven fish calls failed.
+            var fetched = new List<string>();
+            yield return FetchMainTools(Loc, fetched, RodKind);
+            slot = RodSlot();
+        }
+        if (slot < 0)
+        {
             c.Fail("[no_rod] You have no fishing rod. Willy at the Beach (fish shop, 9:00-17:00) gives or sells one; check inventory.");
             yield break;
         }

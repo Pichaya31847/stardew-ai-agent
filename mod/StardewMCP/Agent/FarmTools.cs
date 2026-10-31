@@ -1013,7 +1013,16 @@ public static partial class AgentTools
     /// </summary>
     private static IEnumerator PlantTool(JsonElement a, CallContext c)
     {
-        if (TileList(a, "tiles").Count > 0) { yield return Plant(a, c); yield break; }
+        // Days 44-47: go_to_bed said plant(item) and the model added guessed tiles that weren't tilled, failing over and over.
+        // When none of the given tiles is tilled soil, the seeds go into the farmer's empty tilled soil instead.
+        var given = TileList(a, "tiles");
+        string redirected = "";
+        if (given.Count > 0)
+        {
+            bool anyTilled = given.Any(t => Loc.terrainFeatures.TryGetValue(t.ToVector2(), out var tf) && tf is HoeDirt);
+            if (anyTilled || EmptyTilled(Loc) == 0) { yield return Plant(a, c); yield break; }
+            redirected = "None of the tiles you gave is tilled soil, so the seeds went into your empty tilled soil instead (plant(item) without tiles does this).\n";
+        }
 
         var name = S(a, "item");
         int slot = FindItem(name, it => it is SObject);
@@ -1078,6 +1087,6 @@ public static partial class AgentTools
         if (stop != null) sb.Append($"\nStopped: {stop}.");
         foreach (var f in failures.Take(5)) sb.Append('\n').Append(f);
         if (failures.Count > 5) sb.Append($"\n(+{failures.Count - 5} more)");
-        c.Result = sb.ToString();
+        c.Result = redirected + sb.ToString();
     }
 }

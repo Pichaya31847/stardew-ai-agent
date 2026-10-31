@@ -13,6 +13,11 @@ public static partial class AgentTools
         bool allow = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("allow_reserved", out var value) && value.ValueKind == JsonValueKind.True;
         int count = P.Items.Where(i => i != null && i.QualifiedItemId == item.QualifiedItemId).Sum(i => i.Stack);
         bool planting = item.Category == StardewValley.Object.SeedsCategory || item.Category == StardewValley.Object.fertilizerCategory;
+        // One of each for Full Shipment: the Finds line asked for a never-shipped Sap and the sale was refused 29 times (days 35-55).
+        bool firstShipment = !P.basicShipped.ContainsKey(item.ItemId);
+        if (SaleReserve.IsBasicResource(item.QualifiedItemId) && firstShipment && quantity <= 1) return null;
+        if (SaleReserve.IsBasicResource(item.QualifiedItemId) && firstShipment)
+            return $"Not sold: {item.DisplayName} is a basic resource and is never sold, except ONE for Full Shipment (never shipped yet): call again with quantity=1.";
         if (SaleReserve.IsBasicResource(item.QualifiedItemId))
             return $"Not sold: {item.DisplayName} is a basic resource (Wood, Stone, Fiber, Coal, Clay, Hardwood, Sap, ores, bars). Buildings, " +
                    "upgrades, machines and crafting use them by the hundred, so they are never sold: store them with chest(action=\"store\") " +
