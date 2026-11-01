@@ -82,7 +82,7 @@ Read from the game's own data, costs no game time.
 | Tool | Arguments | What it does |
 |---|---|---|
 | `shop_list` | | What the shop sells, with prices; inside a shop building it opens the counter first |
-| `buy` | `item`, `quantity` | Buy from the shop (also tool upgrades that trade items). Inside a shop with no menu open it walks to the counter and opens it first. Refuses this season's seeds that would die before harvest and don't grow next season |
+| `buy` | `item`, `quantity` | Buy from the shop (also tool upgrades that trade items). Inside a shop with no menu open it walks to the counter and opens it first. Refuses this season's seeds that would die before harvest and don't grow next season, and basic resources (Wood, Stone, ores, Coal, bars...): those are gathered |
 | `sell` | `item`, *`quantity`*, *`allow_reserved`* | Sell to the shop for gold at once; inside a shop it opens the counter first, elsewhere it names the shops that buy the item. Seeds, fertilizer and minimum crafting supplies are protected; reports safe surplus. `allow_reserved=true` permits a deliberate sale with an explanation in reason. |
 | `upgrade_backpack` | | Buy the next backpack size at Pierre's (24 slots for 2,000g, then 36 for 10,000g): walks to the shop and its backpack display |
 | `ship` | `item`, *`quantity`*, *`allow_reserved`* | Put surplus items in the shipping bin (travels to the Farm from anywhere); paid overnight. Same reserve protection and intentional override as `sell`. The bin is not storage. |
@@ -132,7 +132,7 @@ During overnight farm events, fades or pass-out transitions, new gameplay/social
 | Tool | Arguments | What it does |
 |---|---|---|
 | `fish` | *`tries`* | Walk to the best shore, cast, play the BobberBar minigame and pick up treasure; one line per cast. Aims into a legendary fish's spot when one it can catch today is in reach. Needs a rod |
-| `fight` | `seconds`, *`eat_below`* | Fight nearby monsters: equips the best weapon, walks to the nearest one and swings; stops when all clear, at 30% health or when a menu opens. `eat_below` (HP %) eats healing food on the way |
+| `fight` | `seconds`, *`eat_below`* | Fight nearby monsters: equips the strongest weapon, walks to the nearest one and swings, cracks rock crab shells with the Pickaxe first, and leaves alone what it can't hurt (Armored Bugs, downed Mummies, anything unmoved after 8 swings); `mine` first fetches a weapon from a chest or buys the strongest affordable one from Marlon if you own none; stops when all clear, at 30% health or when a menu opens. `eat_below` (HP %) eats healing food on the way |
 | `mine` | *`floors`* | Go down the Mines floor by floor: walks to the Mine, takes the elevator to the deepest floor reached, breaks rocks until the ladder shows, takes ladders and shafts, fights monsters that come close (eating below 40% health) and opens treasure chests. First stores everything but tools, weapons, bombs, staircases and food in your own chest at home, picks up quartz, crystals and forage lying on the floors, and keeps going down once the pack is full. Stops at 22:00, low energy or health, or floor 120 |
 | `leave_mine` | | Get out of the Mines from any floor: climbs the up ladders, or warps out when health is low, it is 11 PM or the ladder can't be reached |
 | `search_trash` | *`x`*, *`y`* | Dig through a trash can; a villager who sees it likes you less |

@@ -28,4 +28,24 @@ public class SaleReserveTests
         Assert.Equal(0, SaleReserve.Available(id, 500, false, false));
         Assert.Equal(0, SaleReserve.Available(id, 500, false, true));
     }
+
+    [Theory]
+    [InlineData("(O)388", "chop")]  // Wood
+    [InlineData("(O)390", "mine")]  // Stone
+    [InlineData("(O)380", "mine")]  // Iron Ore
+    [InlineData("(O)382", "mine")]  // Coal
+    [InlineData("(O)335", "mine")]  // Iron Bar
+    public void BasicResourcesAreNeverBought(string id, string how)
+    {
+        var refusal = SaleReserve.BuyRefusal(id, "it");
+        Assert.NotNull(refusal);
+        Assert.Contains(how, refusal, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SeedsAndToolsCanBeBought()
+    {
+        Assert.Null(SaleReserve.BuyRefusal("(O)472", "Parsnip Seeds"));
+        Assert.Null(SaleReserve.BuyRefusal("(T)Pickaxe", "Pickaxe"));
+    }
 }

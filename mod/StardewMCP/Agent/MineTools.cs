@@ -76,6 +76,14 @@ public static partial class AgentTools
         if (Loc is not MineShaft && !HasMainTool(PickaxeKind)) yield return EnsureMainTool(PickaxeKind, fetched);
         int pick = FindItem("Pickaxe", it => it is StardewValley.Tools.Pickaxe);
         if (pick < 0) { c.Fail(Reasons.NoItem, "You have no Pickaxe; rocks and ladders need one. " + string.Join(" ", fetched)); yield break; }
+        if (Loc is not MineShaft && !HasMainTool(WeaponKind))
+        {
+            var noted = new List<string>();
+            yield return EnsureMainTool(WeaponKind, noted);
+            if (HasMainTool(WeaponKind)) fetched.AddRange(noted);
+            else yield return BuyFirstWeapon(fetched);
+            pick = FindItem("Pickaxe", it => it is StardewValley.Tools.Pickaxe);
+        }
         if (Game1.timeOfDay >= MineStopTime) { c.Fail($"It is {WorldText.FormatTime(Game1.timeOfDay)}: too late to start down the mines (stop at {WorldText.FormatTime(MineStopTime)})."); yield break; }
         if (IsHealthLow(P)) { c.Fail($"Health {P.health}/{P.maxHealth} is too low for the mines. Eat first."); yield break; }
         if (P.Stamina <= MineMinEnergy) { c.Fail(Reasons.LowEnergy, $"Energy {(int)P.Stamina} is too low for the mines. Eat or rest first."); yield break; }

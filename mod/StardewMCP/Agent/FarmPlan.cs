@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Objects;
+using StardewValley.TerrainFeatures;
 
 namespace StardewMCP.Agent;
 
@@ -23,8 +25,44 @@ public static partial class AgentTools
         try { steps = OpenPlanSteps(); }
         catch (Exception) { return ""; }
         if (steps.Count == 0) return "";
-        var parts = steps.Take(2).Select((s, i) => $"{i + 1}) {s.What} — {s.Call}: {CostText(s.Gold, s.Materials)}{Lacking(s)}. {s.Why}");
-        return "Next farm buildings (save up for them; seeds for a season you can't finish and spare purchases come after): " + string.Join(" ", parts);
+        var shown = steps.Take(3).ToList();
+        var parts = shown.Select((s, i) => $"{i + 1}) {s.What} — {s.Call}: {CostText(s.Gold, s.Materials)}{Lacking(s)}. {s.Why}");
+        return "Next farm buildings (save up for them; seeds for a season you can't finish and spare purchases come after): " + string.Join(" ", parts) + GatherAdvice(shown);
+    }
+
+    /// <summary>Where the missing materials come from: never a shop (decided 2026-11-01). Day 98: AI1 had 9,814g and 59 of the Coop's 300 Wood, and about 345 Wood came in over 44 days.</summary>
+    private static string GatherAdvice(List<PlanStep> steps)
+    {
+        bool Short(string qid) => steps.Any(s => s.Materials.Any(m => ItemRegistry.QualifyItemId(m.ItemId) == qid
+            && CountItem(m.ItemId) + ChestCount(m.ItemId) < m.Amount));
+        var advice = "";
+        if (Short("(O)388")) advice += " " + WoodAdvice();
+        if (Short("(O)390")) advice += " Stone: mine, or clear_area over stones on the farm; never bought.";
+        if (Short("(O)334")) advice += " Copper Bars: Copper Ore and Coal from mine, smelted in a Furnace (machine); never bought.";
+        return advice;
+    }
+
+    /// <summary>The grown trees to chop on the farm, and tree seeds to plant when they run out.</summary>
+    private static string WoodAdvice()
+    {
+        var farm = Game1.getFarm();
+        var me = P.TilePoint;
+        var grown = farm.terrainFeatures.Pairs.Where(kv => kv.Value is Tree { stump.Value: false } t && t.growthStage.Value >= 5)
+            .Select(kv => new Point((int)kv.Key.X, (int)kv.Key.Y)).ToList();
+        var text = "Wood: never bought. ";
+        if (grown.Count > 0)
+        {
+            var near = grown.OrderBy(t => Math.Abs(t.X - me.X) + Math.Abs(t.Y - me.Y)).Take(5).Select(t => $"[{t.X},{t.Y}]");
+            text += $"On the Farm stand {grown.Count} grown trees: use_tool(tool=\"Axe\", tiles=[{string.Join(",", near)}]) fells them for Wood; look shows more (T).";
+        }
+        if (grown.Count >= 10) return text;
+
+        var seeds = new[] { "(O)311", "(O)309", "(O)310" }.Where(id => CountItem(id) + ChestCount(id) > 0).Select(id => ItemRegistry.GetData(id)?.InternalName ?? id).ToList();
+        var spots = FreeSpots(farm, 1, 1, 40).Skip(30).Take(6).Select(t => $"[{t.X},{t.Y}]").ToList(); // away from the bin: those places are for buildings
+        text += " Too few trees: " + (seeds.Count > 0
+            ? $"take {string.Join(", ", seeds)} from your pack or chest and place(item, tiles=[{string.Join(",", spots)}]) on open ground, at least 2 tiles apart; they grow except in winter, chop them when grown."
+            : "chopping and shaking trees drops Pine Cones, Acorns and Maple Seeds: keep them and place them on open ground to grow more.");
+        return text;
     }
 
     private static List<PlanStep> OpenPlanSteps()
@@ -49,6 +87,9 @@ public static partial class AgentTools
             steps.Add(Robin("Coop", "Chickens lay an egg a day; eggs, mayonnaise and the animal achievements need it."));
         else if (!RanchText.AllFarmAnimals().Any(t => RanchText.IsMine(t.animal)) && !building)
             steps.Add(new PlanStep("chickens for your Coop", "buy_animal(type=\"Chicken\") at Marnie's (AnimalShop, 9:00-16:00)", 800, new(), "Pet them and collect eggs every day."));
+        // Day 62: Clint's price was out of reach once and upgrade_tool never came back, with 10,000g idle at day 100.
+        if (P.Items.Any(i => i is StardewValley.Tools.Pickaxe { UpgradeLevel: 0 }) && P.toolBeingUpgraded.Value == null)
+            steps.Add(new PlanStep("the Copper Pickaxe", "upgrade_tool(tool=\"Pickaxe\") at Clint's (Blacksmith)", 2000, new() { ("(O)334", "Copper Bar", 5) }, "Rocks break with fewer swings, so the same energy goes more floors down the mines."));
         if (P.HouseUpgradeLevel == 0 && P.daysUntilHouseUpgrade.Value <= 0)
         {
             var (gold, itemId, count, label) = HouseUpgradeCost(0);

@@ -35,7 +35,7 @@ makes every choice.
 ## ⛏️ Mines and combat
 
 - Go down the Mines floor by floor: the elevator to the deepest floor, rocks broken until the ladder shows, monsters fought, treasure chests opened, quartz and cave forage on the floors picked up; everything but the mine kit (tools, weapons, bombs, food) is left in your own chest first, and a full pack no longer ends the trip (`mine`)
-- Fight nearby monsters with the best weapon, eating when health drops (`fight`)
+- Fight nearby monsters with the strongest weapon, eating when health drops; rock crabs get the Pickaxe first, and a weapon is never thrown away for pack space (`fight`)
 - Get out of the Mines from any floor, or warp out when it gets dangerous (`leave_mine`)
 - Take the elevator, crack geodes at Clint's: walks there itself, knows every kind of geode and where it comes from, and points out finds the Museum still needs (`menu`, `crack_geode`)
 - Long actions stop by themselves when a monster hurts you
@@ -50,7 +50,7 @@ makes every choice.
 
 ## 🛒 Shops and money
 
-- Read a shop, buy, sell for gold at once, ship for overnight pay (`shop_list`, `buy`, `sell`, `ship`)
+- Read a shop, buy, sell for gold at once, ship for overnight pay (`shop_list`, `buy`, `sell`, `ship`); basic resources are neither sold nor bought: the AIs chop, replant trees and mine for them
 - Tool upgrades at Clint's in one call, and picking them up when they are done (`upgrade_tool`); backpack upgrades at Pierre's
 - Separate wallets per farmer (or switch a shared-wallet save with `SeparateWallets`), and paying another farmer at any distance (`pay`)
 - In the last week of a season the morning briefing says which seeds can no longer ripen and which seeds the next season wants

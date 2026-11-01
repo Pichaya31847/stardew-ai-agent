@@ -1094,6 +1094,16 @@ public static partial class AgentTools
     private static IEnumerator CloseMenu(JsonElement a, CallContext c)
     {
         if (Game1.activeClickableMenu == null) { c.Result = "No menu open."; yield break; }
+        // Day 68: a proposal's waiting box comes back unless the proposal itself is cancelled (77 close_menu calls said "closed").
+        if (Game1.activeClickableMenu.GetType().Name.Contains("PendingProposal", StringComparison.Ordinal))
+        {
+            var waiting = Game1.activeClickableMenu;
+            waiting.GetType().GetMethod("cancelProposal", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)?.Invoke(waiting, new object[] { P });
+            for (int i = 0; i < 300 && Game1.activeClickableMenu == waiting; i++) yield return null;
+            if (Game1.activeClickableMenu == waiting) c.Fail(Reasons.MenuOpen, "The proposal could not be withdrawn yet: the other farmer's game has not confirmed it. Try close_menu again in a moment.");
+            else c.Result = "Proposal withdrawn. Menu closed.";
+            yield break;
+        }
         var notes = new List<string>();
         yield return ClaimBeforeClose(Game1.activeClickableMenu, notes);
         if (Game1.activeClickableMenu != null)
@@ -1192,6 +1202,8 @@ public static partial class AgentTools
             foreach (var e in Exits(loc))
             {
                 if (prev.ContainsKey(e.Target) || Game1.getLocationFromName(e.Target) == null) continue;
+                // The Tunnel opens into a walled-off corner of Backwoods (48,30): no way on to the Farm or Mountain (days 58-101, 36 failures).
+                if (cur == "Tunnel" && e.Target == "Backwoods") continue;
                 prev[e.Target] = cur;
                 queue.Enqueue(e.Target);
             }
@@ -1219,6 +1231,12 @@ public static partial class AgentTools
         yield return WaitIdle();
         var route = FindRoute(Loc.Name, dest);
         if (route == null) { c.Fail(Reasons.NoPath, $"No known route from {Loc.Name} to {dest}."); yield break; }
+        // Already in that corner of Backwoods: the only way out is back through the Tunnel.
+        if (Loc.Name == "Backwoods" && route.Count > 1 && route[1] != "Tunnel"
+            && !Exits(Loc).Any(e => e.Target == route[1] && ExitReachable(Loc, P.TilePoint, e))
+            && Exits(Loc).Any(e => e.Target == "Tunnel" && ExitReachable(Loc, P.TilePoint, e))
+            && FindRoute("Tunnel", dest) is { } viaTunnel)
+            route = viaTunnel.Prepend("Backwoods").ToList();
 
         for (int hop = 1; hop < route.Count; hop++)
         {
@@ -1397,6 +1415,7 @@ public static partial class AgentTools
         if (sal == null || !shop.itemPriceAndStock.TryGetValue(sal, out var st)) { c.Fail(Reasons.NotFound, $"\"{name}\" is not sold here. Use shop_list."); yield break; }
         if (shop.canPurchaseCheck != null && !shop.canPurchaseCheck(shop.forSale.IndexOf(sal))) { c.Fail($"{sal.DisplayName} can't be bought right now."); yield break; }
         if (SeedWouldDie(sal) is { } die) { c.Fail(die); yield break; }
+        if (SaleReserve.BuyRefusal(sal.QualifiedItemId, sal.DisplayName) is { } gather) { c.Fail(gather); yield break; }
 
         // Friendly pre-checks; the game's purchase would only play a "cancel" sound.
         if (sal.IsRecipe) qty = 1;

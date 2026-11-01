@@ -433,7 +433,8 @@ public static partial class AgentTools
                 if (owner != null && owner != me) continue;
                 foreach (var it in chest.Items)
                 {
-                    if (it == null || !IsSaleProduce(it) || QuestWants(it)) continue;
+                    // Days 58-101: this line called Sap money every morning, and ship refused it 40 times.
+                    if (it == null || !IsSaleProduce(it) || SaleReserve.IsBasicResource(it.QualifiedItemId) || QuestWants(it)) continue;
                     int spare = it.Stack - BundleWants(it);
                     if (spare <= 0) continue;
                     int each = it is StardewValley.Object o ? o.sellToStorePrice() : 0;

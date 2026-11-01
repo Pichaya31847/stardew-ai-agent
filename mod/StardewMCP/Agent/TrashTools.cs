@@ -60,6 +60,7 @@ public static partial class AgentTools
         var byQuality = QualityIs(a);
         bool Fits(Item it) => byQuality == null || byQuality(it);
         int first = FindIn(P.Items, want, Fits);
+        if (first >= 0 && KeepToolError(P.Items[first]) is { } keep) { c.Fail(keep); yield break; }
         if (first < 0)
         {
             c.Fail($"No \"{want}\" in your pack{(S(a, "quality").Trim().Length > 0 ? " with that quality" : "")}.");

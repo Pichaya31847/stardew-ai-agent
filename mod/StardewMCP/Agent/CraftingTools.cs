@@ -42,7 +42,7 @@ public static partial class AgentTools
             Name = "place",
             Description = "Put an item from your inventory on the ground at one or more tiles: machines (Furnace...), chests, sprinklers, scarecrows, fences, paths, torches, furniture, bombs, crab pots. " +
                           "You walk next to each tile automatically. The tile must be free and the item must be allowed there (a crab pot needs water, a sprinkler goes on open ground). " +
-                          "Seeds and fertilizer on tilled soil also work here, but plant is the usual tool for them.",
+                          "Tree seeds (Pine Cone, Acorn, Maple Seed) go on open ground, at least 2 tiles apart. Crop seeds and fertilizer on tilled soil also work here, but plant is the usual tool for them.",
             Schema = Obj(new
             {
                 item = Str("Item name, e.g. \"Chest\" or \"Furnace\""),

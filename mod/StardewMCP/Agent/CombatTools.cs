@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
 using StardewValley;
+using StardewValley.Monsters;
 using StardewValley.Pathfinding;
 using StardewValley.Tools;
 using Monster = StardewValley.Monsters.Monster;
@@ -41,6 +42,7 @@ public static partial class AgentTools
     {
         Name = "fight",
         Description = "Fight monsters near you (mostly in the Mines). You equip your best weapon, walk to the nearest monster within 12 tiles, face it and keep swinging, then go on to the next. " +
+                      "Rock crabs in their shell get the Pickaxe first. " +
                       "Stops early when no monster is left in range, when your health is low (30% of your maximum, never less than 15) or when a menu opens. About 1.4 game minutes pass per second. " +
                       "Check Health in status before you start. With eat_below it eats the best health-restoring food from your inventory whenever your health falls below that percent, then keeps fighting. " +
                       "The result lists the monsters defeated, the damage you took, the food eaten and the loot.",
@@ -153,6 +155,36 @@ public static partial class AgentTools
         return steps;
     }
 
+    /// <summary>Marlon's strongest weapon you can pay for, when you own no weapon at all: a Scythe does 1-3 damage. The reason goes to <paramref name="notes"/>.</summary>
+    private static IEnumerator BuyFirstWeapon(List<string> notes)
+    {
+        const string noWeapon = "You own no weapon, so you fight with the Scythe (1-3 damage). ";
+        var trip = new CallContext();
+        yield return TravelTo("AdventureGuild", trip);
+        if (!trip.Ok || Loc.Name != "AdventureGuild") { notes.Add($"{noWeapon}Marlon's shop (AdventureGuild) could not be reached: {trip.Result}"); yield break; }
+        var open = new CallContext();
+        yield return OpenShopHere(open);
+        if (Game1.activeClickableMenu is not StardewValley.Menus.ShopMenu shop) { notes.Add($"{noWeapon}Marlon's shop did not open: {open.Result}"); yield break; }
+        var best = shop.forSale.OfType<MeleeWeapon>()
+            .Where(w => shop.itemPriceAndStock.TryGetValue(w, out var st) && st.Price <= P.Money)
+            .OrderByDescending(w => w.maxDamage.Value).FirstOrDefault();
+        if (best == null) notes.Add($"{noWeapon}You can't pay for any of Marlon's weapons yet.");
+        else
+        {
+            var buy = new CallContext();
+            yield return Buy(ArgsOf(new { item = best.DisplayName, quantity = 1, reason = "a real weapon for the mines" }), buy);
+            notes.Add(HasMainTool(WeaponKind) ? $"Bought {best.DisplayName} ({best.minDamage.Value}-{best.maxDamage.Value} damage) from Marlon for the mines." : noWeapon + buy.Result);
+        }
+        if (Game1.activeClickableMenu != null) yield return CloseMenu(default, new CallContext());
+    }
+
+    /// <summary>A Rock Crab (or its Lava and Iridium kinds) still in its shell, disguised as a rock: a weapon only clinks on it, the Pickaxe cracks it (the game's RockCrab.hitWithTool).</summary>
+    private static bool InShell(Monster mon) => mon is RockCrab { shellGone.Value: false, isStickBug.Value: false };
+
+    /// <summary>Nothing a weapon can do right now: an Armored Bug (needs a special enchantment), a downed Mummy waiting to revive (needs a bomb), a Duggy under the ground.</summary>
+    private static bool CannotBeHit(Monster mon) =>
+        mon.IsInvisible || mon is Bug { isArmoredBug.Value: true } || mon is Mummy m && m.reviveTimer.Value > 0;
+
     // ------------------------------------------------------------------ fight
 
     private static IEnumerator Fight(JsonElement a, CallContext c)
@@ -167,6 +199,10 @@ public static partial class AgentTools
         if (slot < 0) { c.Fail("You have no weapon in your inventory (sword, club, dagger or scythe)."); yield break; }
         P.CurrentToolIndex = slot;
         var weapon = P.Items[slot];
+        int pickaxe = P.Items.ToList().FindIndex(i => i is Pickaxe);
+        var hits = new Dictionary<Monster, (int health, int swings)>(ReferenceEqualityComparer.Instance);
+        var noEffect = new HashSet<Monster>(ReferenceEqualityComparer.Instance);
+        int shellHits = 0;
 
         var before = Snapshot();
         int healthStart = P.health;
@@ -216,10 +252,10 @@ public static partial class AgentTools
             var me = P.TilePoint;
             // A monster with no walkable route is skipped for a while, unless it has come within reach by itself.
             var mon = NearestMonster(loc, me, FightSightTiles,
-                m => ignoreUntil.TryGetValue(m, out var until) && t < until && TileDistance(me, m.TilePoint) > FightMeleeTiles);
+                m => CannotBeHit(m) || noEffect.Contains(m) || ignoreUntil.TryGetValue(m, out var until) && t < until && TileDistance(me, m.TilePoint) > FightMeleeTiles);
             if (mon == null)
             {
-                if (NearestMonster(loc, me, FightSightTiles) == null)
+                if (NearestMonster(loc, me, FightSightTiles, m => CannotBeHit(m) || noEffect.Contains(m)) == null)
                 {
                     stop = $"All clear: no monsters within {FightSightTiles} tiles.";
                     allClear = true;
@@ -230,7 +266,8 @@ public static partial class AgentTools
             }
             engaged.TryAdd(mon, mon.Name);
 
-            if (TileDistance(me, mon.TilePoint) <= FightMeleeTiles)
+            bool crack = pickaxe >= 0 && InShell(mon);
+            if (TileDistance(me, mon.TilePoint) <= (crack ? 1.5f : FightMeleeTiles))
             {
                 if (P.controller != null)
                 {
@@ -239,7 +276,16 @@ public static partial class AgentTools
                 }
                 if (!P.UsingTool && P.CanMove && t >= nextSwing)
                 {
-                    if (P.CurrentToolIndex != slot) P.CurrentToolIndex = slot;
+                    P.CurrentToolIndex = crack ? pickaxe : slot;
+                    if (crack) shellHits++;
+                    else
+                    {
+                        // Eight swings and its health never moved: stop hitting it and say so.
+                        hits.TryGetValue(mon, out var seen);
+                        seen = seen.swings == 0 || seen.health != mon.Health ? (mon.Health, 1) : (seen.health, seen.swings + 1);
+                        hits[mon] = seen;
+                        if (seen.swings > 8) { noEffect.Add(mon); yield return null; continue; }
+                    }
                     Face(mon.TilePoint);
                     P.lastClick = new Vector2(mon.StandingPixel.X, mon.StandingPixel.Y);
                     P.BeginUsingTool();
@@ -281,6 +327,8 @@ public static partial class AgentTools
 
         var sb = new StringBuilder($"Fought {t / 60}s with {weapon.DisplayName} ({swings} swings). {stop}");
         sb.Append($"\nDefeated: {(defeated.Count > 0 ? string.Join(", ", defeated) : "none")}.");
+        if (shellHits > 0) sb.Append($"\nPickaxe on rock crab shells: {shellHits} hit(s); a weapon only clinks on a shell.");
+        if (noEffect.Count > 0) sb.Append($"\nNo effect after 8 swings, left alone: {string.Join(", ", noEffect.Select(m => m.Name).Distinct())}.");
         if (eaten.Count > 0) sb.Append($"\nAte: {string.Join(", ", eaten)}.");
         if (noFood) sb.Append("\neat_below: you carry no (more) food that restores health.");
         sb.Append($"\nHealth {healthStart} → {P.health}/{P.maxHealth}.");

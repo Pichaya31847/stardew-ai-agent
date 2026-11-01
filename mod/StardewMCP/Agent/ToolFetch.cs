@@ -18,7 +18,7 @@ namespace StardewMCP.Agent;
 /// </summary>
 public static partial class AgentTools
 {
-    internal const string ScytheKind = "Scythe", AxeKind = "Axe", HoeKind = "Hoe", CanKind = "Watering Can", PickaxeKind = "Pickaxe", RodKind = "Fishing Rod";
+    internal const string ScytheKind = "Scythe", AxeKind = "Axe", HoeKind = "Hoe", CanKind = "Watering Can", PickaxeKind = "Pickaxe", RodKind = "Fishing Rod", WeaponKind = "weapon";
 
     /// <summary>Which of the five main tools this item is, or null.</summary>
     internal static string? MainToolKind(Item? it) => it switch
@@ -29,8 +29,18 @@ public static partial class AgentTools
         Pickaxe => PickaxeKind,
         MeleeWeapon w when w.isScythe() => ScytheKind,
         FishingRod => RodKind, // days 38-49: the rods sat in a chest and every fish call failed
+        MeleeWeapon => WeaponKind, // day 15: AI1 threw its only sword away for a pack slot and fought with the Scythe (1-3 damage) until day 100
         _ => null
     };
+
+    /// <summary>For trash, sell and ship: why this item must stay, or null. A weapon may go only when you carry a stronger one.</summary>
+    internal static string? KeepToolError(Item item)
+    {
+        var kind = MainToolKind(item);
+        if (kind == null) return null;
+        if (item is MeleeWeapon w && kind == WeaponKind && P.Items.Any(i => i is MeleeWeapon o && !ReferenceEquals(o, w) && !o.isScythe() && o.maxDamage.Value > w.maxDamage.Value)) return null;
+        return $"Kept: your {item.DisplayName} stays in the pack ({(kind == WeaponKind ? "a Scythe does only 1-3 damage in the mines; this is your best weapon" : "you work with it every day")}). To free a slot, store or ship something else.";
+    }
 
     private static bool HasMainTool(string kind) => P.Items.Any(i => MainToolKind(i) == kind);
 
@@ -84,7 +94,7 @@ public static partial class AgentTools
                 if (put.Ok) swapped = $" (put {spare.Stack} {spare.Name} in to make room)";
             }
         }
-        var tool = menu.ItemsToGrabMenu.actualInventory.First(i => MainToolKind(i) == kind);
+        var tool = menu.ItemsToGrabMenu.actualInventory.Where(i => MainToolKind(i) == kind).OrderByDescending(i => (i as MeleeWeapon)?.maxDamage.Value ?? 0).First();
         var take = new CallContext();
         if (Game1.activeClickableMenu is ItemGrabMenu now)
             yield return Take(now, ArgsOf(new { item = tool.Name }), take);
@@ -121,8 +131,8 @@ public static partial class AgentTools
     {
         var tools = jobs.Where(j => MainToolKind(j.item) != null).Select(j => j.item.Name).ToList();
         if (tools.Count == 0) return jobs;
-        problems.Add($"Not stored: {string.Join(", ", tools)}. Your Axe, Hoe, Watering Can, Pickaxe, Scythe and fishing rod stay in the pack: harvesting Wheat, " +
-                     "clearing, mining, watering and fishing need them. To free slots, ship or store other things, or upgrade_backpack (2,000g for 24 slots).");
+        problems.Add($"Not stored: {string.Join(", ", tools)}. Your Axe, Hoe, Watering Can, Pickaxe, Scythe, fishing rod and weapons stay in the pack: harvesting Wheat, " +
+                     "clearing, mining, watering, fishing and fighting need them. To free slots, ship or store other things, or upgrade_backpack (2,000g for 24 slots).");
         return jobs.Where(j => MainToolKind(j.item) == null).ToList();
     }
 }

@@ -10,6 +10,7 @@ public static partial class AgentTools
 {
     private static string? SaleProtectionError(Item item, int quantity, JsonElement args)
     {
+        if (KeepToolError(item) is { } keep) return keep;
         bool allow = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("allow_reserved", out var value) && value.ValueKind == JsonValueKind.True;
         int count = P.Items.Where(i => i != null && i.QualifiedItemId == item.QualifiedItemId).Sum(i => i.Stack);
         bool planting = item.Category == StardewValley.Object.SeedsCategory || item.Category == StardewValley.Object.fertilizerCategory;

@@ -661,6 +661,8 @@ public static partial class AgentTools
         var sb = new StringBuilder($"Talking to {npc.Name} (friendship {P.getFriendshipHeartLevelForNPC(npc.Name)} hearts).");
         if (traveled) sb.Append($" You went to {Loc.Name}.");
         sb.Append($" Points {before.Points} -> {after.Points} ({NpcInfo.Signed(delta)}).");
+        // Days 58-100: about 100 talks and one gift, so nobody got past 3 hearts.
+        if (giftItem == null) sb.Append(" A gift moves hearts far faster: next visit bring forage, a crop or a mine find as gift_item.");
 
         bool accepted = false;
         if (giftItem != null)
