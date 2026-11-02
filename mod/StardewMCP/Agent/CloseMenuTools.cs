@@ -17,7 +17,7 @@ public static partial class AgentTools
     private static readonly HashSet<string> ClearMenusBeforeAction = new()
     {
         "walk_to", "travel_to", "talk_to", "interact", "use_tool", "fish", "plant", "harvest",
-        "water_all", "harvest_all", "clear_area", "till_area", "place", "craft", "ship", "eat", "rest", "accept_quest"
+        "water_all", "harvest_all", "clear_area", "till_area", "chop_trees", "place", "craft", "ship", "eat", "rest", "accept_quest"
     };
 
     internal static IEnumerator WithMenuLifecycle(string name, bool instant, IEnumerator action, CallContext c)

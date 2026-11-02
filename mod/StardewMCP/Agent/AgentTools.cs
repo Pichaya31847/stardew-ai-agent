@@ -165,6 +165,7 @@ public static partial class AgentTools
                 Run = Harvest
             },
             FarmSummaryTool(), WaterAllTool(), HarvestAllTool(), ClearAreaTool(), TillAreaTool(), // FarmTools.cs
+            ChopTreesTool(), // WoodTools.cs
             new()
             {
                 Name = "interact",

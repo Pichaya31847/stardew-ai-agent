@@ -33,11 +33,12 @@ Every tool the AI can call, grouped by job. Each farmer's MCP endpoint (`/mcp`, 
 | Tool | Arguments | What it does |
 |---|---|---|
 | `use_tool` | `tool`, `tiles`, *`max_hits`* | Use a tool on one or more tiles (hoe, watering can, axe, pickaxe, scythe...); an empty watering can is refilled at the nearest reachable water first |
-| `plant` | `item`, *`tiles`* or *`area`* | Plant seeds or fertilizer on tilled soil: listed tiles, an `[x, y, w, h]` area, or no tiles at all = every empty tilled tile of yours (or nobody's) on the map; soil another farmer tilled or planted is left alone |
+| `plant` | `item`, *`tiles`* or *`area`* | Plant seeds or fertilizer on tilled soil: listed tiles, an `[x, y, w, h]` area, or no tiles at all = every empty tilled tile of yours (or nobody's) on the map; soil another farmer tilled or planted is left alone. Tree seeds (Pine Cone, Acorn, Maple Seed) go on open ground instead |
 | `harvest` | `tiles` | Harvest crops or forage on the given tiles |
 | `water_all` | *`whose`* | Water every dry crop on the map (`whose: "mine"` = only your own); refills the can at the nearest reachable water and says whose crops it watered; on day 28 it skips crops that die when the season changes |
 | `harvest_all` | *`whose`* | Collect your ready crops and every forage item on the map; crops another farmer planted are left for them unless `whose=all` |
 | `forage` | *`places`*, *`max_places`*, *`list`* | Travel to the maps around the farm that have forage today, nearest first, and pick it all up; `list=true` only counts it |
+| `chop_trees` | *`count`* | Get Wood: goes to the Farm, fells the nearest grown trees with the Axe (stumps too), then plants the Pine Cones, Acorns and Maple Seeds in the pack on open ground (not in winter) |
 | `clear_area` | `x`, `y`, `w`, `h` | Clear a rectangle with the right tool, row by row from the end nearest you; the Scythe also cuts dead crops. Large stumps and boulders are skipped and reported. Over 100 tiles it does the first rows and says the call for the rest |
 | `till_area` | `x`, `y`, `w`, `h` | Clear, then till a rectangle row by row, but only as many tiles as you have this season's seeds for (minus the empty tilled soil already there); with no seeds it refuses |
 | `place` | `item`, `tiles` | Put items, machines, chests, sprinklers, fences or furniture on the ground. With Automate installed, a placed machine says what it makes from what and asks for a Chest touching it; a placed chest touching machines says it only takes their inputs |

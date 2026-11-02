@@ -19,6 +19,7 @@ makes every choice.
 - Pick up forage on the maps around the farm (`forage`)
 - Water every dry crop on the map, refilling the can at the nearest water it can reach (`water_all`), or only your own crops; on the last day of a season it leaves the crops that die overnight
 - Harvest your own ripe crops and every forage item (`harvest_all`); another farmer's crops are left for them unless asked with `whose=all`
+- Fell trees for Wood and plant tree seeds so the farm never runs out of trees (`chop_trees`); when a building is short of Wood, the next-task hint sends the AI to chop
 - Walking cuts its way through weeds, stones and twigs when they wall the farmer in (up to 15 tiles; more is left to `clear_area`)
 - A whole-farm report: what is dry, ready, dead or won't make it this season (`farm_summary`)
 - Plan the season from the game's own data: growth days, last day to plant, gold per tile per day (`crops`)

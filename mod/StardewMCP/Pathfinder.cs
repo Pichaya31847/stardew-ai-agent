@@ -46,6 +46,10 @@ public partial class Pathfinder
     {
         if (!location.isTileOnMap(x, y))
             return false;
+        // A bedroom door that needs friendship lets nobody through: day 112, AI1 walked into Abigail's door in Pierre's shop 33 times.
+        if (location.doesTileHaveProperty(x, y, "Action", "Buildings") is { } door && door.StartsWith("Door ", StringComparison.OrdinalIgnoreCase)
+            && !CanPassDoor(location, x, y, Game1.player))
+            return false;
 
         // Same footprint the game uses for a farmer standing on the tile.
         var feet = new Rectangle(x * Game1.tileSize + 8, y * Game1.tileSize + 16, 48, 32);

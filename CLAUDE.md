@@ -57,6 +57,7 @@ mod/StardewMCP/
     ChestTidy.cs       chest(action=tidy): one main storage chest, Automate machine chests left alone
     ToolFetch.cs       The main tools and weapons stay in the pack: chest refuses them, farm tools fetch a missing one from a chest
     FarmPlan.cs        Next farm buildings to save up for (Coop + chickens, house upgrade, Barn) and what is missing
+    WoodTools.cs       chop_trees: fell the nearest grown trees for Wood, plant tree seeds on open ground
     ChestLedger.cs     Shared chests: every put / take logged (kind chest, chests.jsonl), chest(action=all) and the morning report
     MachineTools.cs    machine: list / load / collect placed machines through the game's own drop-in and click
     UpgradeTools.cs    upgrade_tool: Clint's ClintUpgrade shop and the pickup at his counter

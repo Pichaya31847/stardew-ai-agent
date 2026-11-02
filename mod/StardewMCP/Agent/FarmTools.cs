@@ -262,9 +262,19 @@ public static partial class AgentTools
         var seed = P.Items.FirstOrDefault(i => IsSeasonCropSeed(i) && SeedTooLate(i!) == null);
         if (seed != null && empty > 0) return $"plant(item=\"{seed.DisplayName}\") — {empty} empty tilled tile(s) of yours";
         if (dead > 0) return $"clear_area over the {dead} dead crop(s) with the Scythe";
-        if (NpcInfo.NearestUntalked() is { } npc) return $"talk_to(name=\"{npc.name}\") — {npc.where}";
+        if (farm != null && WoodNeed() is { } wood && GrownTrees(farm).Count > 0 && P.Stamina > P.MaxStamina / 3)
+            return $"chop_trees() — {wood.missing} Wood short for {wood.what}";
+        if (NpcInfo.NearestUntalked() is { } npc)
+            return GiftFor() is { } gift
+                ? $"talk_to(name=\"{npc.name}\", gift_item=\"{gift}\") — {npc.where}; a gift moves hearts far faster than talk"
+                : $"talk_to(name=\"{npc.name}\") — {npc.where}";
         return "forage() — wild food to pick up and sell";
     }
+
+    /// <summary>A gift to bring along: the dearest produce in the pack (forage, crop, fish, mine find) that no quest or bundle needs. Days 102-133: 7 gifts, nobody at 5 hearts.</summary>
+    private static string? GiftFor() =>
+        P.Items.Where(i => i is SObject o && IsSaleProduce(i) && !SaleReserve.IsBasicResource(i.QualifiedItemId) && !QuestWants(i) && BundleWants(i) == 0 && o.sellToStorePrice() < 1000)
+            .OrderByDescending(i => ((SObject)i!).sellToStorePrice()).FirstOrDefault()?.DisplayName;
 
     /// <summary>Ripe (of yours), dry (and not dying tonight), empty (of yours, not on day 28) and dead tiles on the farm.</summary>
     private static (int ripe, int dry, int empty, int dead) FarmWorkCounts(Farm farm)
@@ -1016,6 +1026,13 @@ public static partial class AgentTools
         // Days 44-47: go_to_bed said plant(item) and the model added guessed tiles that weren't tilled, failing over and over.
         // When none of the given tiles is tilled soil, the seeds go into the farmer's empty tilled soil instead.
         var given = TileList(a, "tiles");
+        // Day 122: plant(Pine Cone) on tilled soil failed; tree seeds go on open ground.
+        if (IsTreeSeed(P.Items.ElementAtOrDefault(FindItem(S(a, "item"), it => it is SObject))) && Loc is Farm treeFarm)
+        {
+            yield return PlantTreeSeeds(treeFarm, P.Items[FindItem(S(a, "item"), it => it is SObject)].Name, c, given.Count > 0 ? given : null);
+            if (c.Result.Length == 0) c.Fail("No tree seeds of that kind in your pack.");
+            yield break;
+        }
         string redirected = "";
         if (given.Count > 0)
         {

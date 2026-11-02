@@ -159,6 +159,12 @@ public static partial class AgentTools
     private static IEnumerator BuyFirstWeapon(List<string> notes)
     {
         const string noWeapon = "You own no weapon, so you fight with the Scythe (1-3 damage). ";
+        // Days 110 and 114: the walk to Marlon at 9:00 found the door shut (open 14:00-2:00).
+        if (Game1.timeOfDay < 1400)
+        {
+            notes.Add($"{noWeapon}Marlon's shop (AdventureGuild, by the Mine) opens at 14:00: start mine after 14:00 once and it buys his strongest weapon you can pay for on the way.");
+            yield break;
+        }
         var trip = new CallContext();
         yield return TravelTo("AdventureGuild", trip);
         if (!trip.Ok || Loc.Name != "AdventureGuild") { notes.Add($"{noWeapon}Marlon's shop (AdventureGuild) could not be reached: {trip.Result}"); yield break; }

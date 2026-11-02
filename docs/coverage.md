@@ -65,6 +65,7 @@ Rules:
 | System | How a human does it | Covered by | Status | Issue |
 |---|---|---|---|---|
 | Clear, till, water, chop, mine | tool on a tile | `use_tool`; `clear_area`, `till_area` for rectangles (row by row; `till_area` only as many tiles as there are seeds; the Scythe also clears dead crops through `HoeDirt.performToolAction`) | ✅ single tiles; 🟡 `clear_area`/`till_area` untested (smoke `farm_batch`) | #15 |
+| Chop and replant trees | Axe on a tree, tree seed on open ground | `chop_trees`: `use_tool` swings on the nearest grown trees, then `place` (`Utility.tryToPlaceItem`) for tree seeds; `plant` sends tree seeds there | 🟡 untested, no smoke case yet | |
 | Plant seeds, fertilizer | item on soil | `plant` (tiles, or `area`/whole map) | ✅ tiles; 🟡 area mode untested (smoke `farm_batch`) | #15 |
 | Harvest crops, forage | action on a tile | `harvest`; `harvest_all` for the whole map; `forage` travels to the maps that have forage and runs `harvest_all` there | ✅ tiles; 🟡 `harvest_all`, `forage` untested | #15 |
 | Whole-farm routine | look at every plot, water, collect | `farm_summary`, `water_all` (`whose: mine` keeps to your own crops; the result says whose were watered), `harvest_all` | 🟡 untested (smoke `farm_batch` covers summary and water; refill and rain need manual play) | #15 |

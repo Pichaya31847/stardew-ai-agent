@@ -38,30 +38,60 @@ public static partial class AgentTools
         var advice = "";
         if (Short("(O)388")) advice += " " + WoodAdvice();
         if (Short("(O)390")) advice += " Stone: mine, or clear_area over stones on the farm; never bought.";
-        if (Short("(O)334")) advice += " Copper Bars: Copper Ore and Coal from mine, smelted in a Furnace (machine); never bought.";
+        if (Short("(O)334")) advice += " " + SmeltAdvice("Copper Ore", "(O)378");
+        if (Short("(O)335")) advice += " " + SmeltAdvice("Iron Ore", "(O)380");
         return advice;
+    }
+
+    /// <summary>
+    /// Bars come from a Furnace, which must stand on the ground: days 102-133 the only Furnace sat in a chest and Clint refused
+    /// the Copper Axe for want of bars, with 16 Copper Ore stored.
+    /// </summary>
+    private static string SmeltAdvice(string ore, string oreId)
+    {
+        var farm = Game1.getFarm();
+        int ores = CountItem(oreId) + ChestCount(oreId);
+        var placed = farm.objects.Pairs.FirstOrDefault(kv => kv.Value.QualifiedItemId == "(BC)13");
+        var text = $"Bars: never bought, smelt them: 5 {ore} + 1 Coal in a Furnace make one bar (you have {ores} {ore} in pack and chests; more from mine). ";
+        if (placed.Value != null)
+            return text + (AutomateLoaded
+                ? $"Your Furnace stands at ({(int)placed.Key.X},{(int)placed.Key.Y}): put the ore and Coal into the Chest touching it and Automate smelts them."
+                : $"Your Furnace stands at ({(int)placed.Key.X},{(int)placed.Key.Y}): machine(action=\"load\") puts ore and Coal in.");
+        bool owned = CountItem("(BC)13") + ChestCount("(BC)13") > 0;
+        return text + (owned
+            ? "Your Furnace is in a pack or chest, where it does nothing: place it on open farm ground" + (AutomateLoaded ? ", place a Chest touching it and put the ore and Coal into that chest (Automate smelts)." : ", then machine(action=\"load\").")
+            : "craft(item=\"Furnace\") (20 Copper Ore + 25 Stone), then place it" + (AutomateLoaded ? " with a Chest touching it for the ore and Coal (Automate smelts)." : " and machine(action=\"load\")."));
+    }
+
+    /// <summary>How much Wood the first open plan step still lacks (pack and chests), and what it is for; null when none is short.</summary>
+    internal static (int missing, string what)? WoodNeed()
+    {
+        try
+        {
+            foreach (var s in OpenPlanSteps())
+                foreach (var m in s.Materials.Where(m => ItemRegistry.QualifyItemId(m.ItemId) == "(O)388"))
+                {
+                    int have = CountItem(m.ItemId) + ChestCount(m.ItemId);
+                    if (have < m.Amount) return (m.Amount - have, s.What);
+                }
+        }
+        catch (Exception) { }
+        return null;
     }
 
     /// <summary>The grown trees to chop on the farm, and tree seeds to plant when they run out.</summary>
     private static string WoodAdvice()
     {
         var farm = Game1.getFarm();
-        var me = P.TilePoint;
-        var grown = farm.terrainFeatures.Pairs.Where(kv => kv.Value is Tree { stump.Value: false } t && t.growthStage.Value >= 5)
-            .Select(kv => new Point((int)kv.Key.X, (int)kv.Key.Y)).ToList();
+        int grown = GrownTrees(farm).Count;
         var text = "Wood: never bought. ";
-        if (grown.Count > 0)
-        {
-            var near = grown.OrderBy(t => Math.Abs(t.X - me.X) + Math.Abs(t.Y - me.Y)).Take(5).Select(t => $"[{t.X},{t.Y}]");
-            text += $"On the Farm stand {grown.Count} grown trees: use_tool(tool=\"Axe\", tiles=[{string.Join(",", near)}]) fells them for Wood; look shows more (T).";
-        }
-        if (grown.Count >= 10) return text;
+        if (grown > 0) text += $"On the Farm stand {grown} grown trees: chop_trees() fells the nearest ones (about 12 Wood each) and plants the tree seeds you carry.";
+        if (grown >= 10) return text;
 
         var seeds = new[] { "(O)311", "(O)309", "(O)310" }.Where(id => CountItem(id) + ChestCount(id) > 0).Select(id => ItemRegistry.GetData(id)?.InternalName ?? id).ToList();
-        var spots = FreeSpots(farm, 1, 1, 40).Skip(30).Take(6).Select(t => $"[{t.X},{t.Y}]").ToList(); // away from the bin: those places are for buildings
         text += " Too few trees: " + (seeds.Count > 0
-            ? $"take {string.Join(", ", seeds)} from your pack or chest and place(item, tiles=[{string.Join(",", spots)}]) on open ground, at least 2 tiles apart; they grow except in winter, chop them when grown."
-            : "chopping and shaking trees drops Pine Cones, Acorns and Maple Seeds: keep them and place them on open ground to grow more.");
+            ? $"take {string.Join(", ", seeds)} from the chest and plant(item=\"{seeds[0]}\") (tree seeds go on open ground); they grow except in winter, chop them when grown."
+            : "chopping trees drops Pine Cones, Acorns and Maple Seeds: keep them and plant them to grow more.");
         return text;
     }
 
@@ -116,7 +146,7 @@ public static partial class AgentTools
             else missing.Add($"{label}: {pack + chests} of {amount} (pack and chests)");
         }
         if (missing.Count == 0) return " (you have everything: go now)";
-        return $" (missing: {string.Join("; ", missing)}{(fetch ? "; materials must be in your pack at Robin's" : "")})";
+        return $" (missing: {string.Join("; ", missing)}{(fetch ? "; materials must be in your pack when you order" : "")})";
     }
 
     /// <summary>How many of this item the shared chests on the farm maps hold.</summary>
