@@ -59,12 +59,27 @@ public static class Brains
         {
             foreach (var slot in Players.Slots)
             {
-                if (slot.Role != SeatRole.Ai || slot.Screen >= Players.ScreenCount)
+                if (slot.Role is not (SeatRole.Ai or SeatRole.Human) || slot.Screen >= Players.ScreenCount)
                     continue;
                 var sc = _cfg.Seat(slot.Screen);
                 if (!sc.HasBrain)
                     continue;
                 var settings = new LlmSettings(sc.Brain, sc.Model, sc.ApiKey, sc.BaseUrl, _cfg.MaxOutputTokens, _cfg.BrainReasoning);
+                if (slot.Role == SeatRole.Human)
+                {
+                    // The person plays; the model only turns their /do commands into tool calls.
+                    if (LlmProviders.Problem(settings) is { } why)
+                    {
+                        _mon.Log($"{slot.Id}: /do not available: {why}. Fix Seats[{slot.Screen}] in config.json.", LogLevel.Error);
+                        continue;
+                    }
+                    if (LlmProviders.Create(settings, Http) is { } llm)
+                    {
+                        Commands = new CommandBrain(slot, llm, _mon, tools, llmTools);
+                        _mon.Log($"{slot.Id}: /do ready ({llm.Name} {llm.Model}): type /do <command> in chat.", LogLevel.Info);
+                    }
+                    continue;
+                }
                 if (LlmProviders.Problem(settings) is { } problem)
                 {
                     _mon.Log($"{slot.Id}: built-in AI not started: {problem}. Fix Seats[{slot.Screen}] in config.json (or the mod's config menu).", LogLevel.Error);
@@ -83,10 +98,24 @@ public static class Brains
         }
     }
 
+    /// <summary>The /do translator for a human P1 with a Brain configured, or null.</summary>
+    public static CommandBrain? Commands { get; private set; }
+
+    /// <summary>"/do ..." from the chat box or the console (game thread).</summary>
+    public static void Do(string text)
+    {
+        if (Commands is { } c) c.Do(text);
+        else CommandBrain.Say(Players.Host.Role == SeatRole.Human
+            ? "/do needs a model: set Seats[0].Brain (and Model, BaseUrl or ApiKey) in the StardewMCP config.json, then load the save again."
+            : "/do is for a person playing P1: set Seats[0].Role to \"human\".", Microsoft.Xna.Framework.Color.OrangeRed);
+    }
+
     public static void StopAll()
     {
         lock (Gate)
         {
+            if (Commands?.Busy == true) Commands.Stop();
+            Commands = null;
             foreach (var b in Running.Values)
                 b.Stop();
             Running.Clear();

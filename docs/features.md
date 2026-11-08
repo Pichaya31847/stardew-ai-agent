@@ -156,6 +156,7 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - The built-in AI: Anthropic, OpenAI, Gemini, or any OpenAI-compatible server (OpenRouter, Ollama, LM Studio)
 - Any MCP client over streamable HTTP: Claude Code, Claude Desktop, Cursor...
 - The [HTTP API](api.md) for your own bots, overlays and scripts
+- Play yourself and give orders: `/do <command>` in chat (English or Thai). Your farmer does it with the AIs' tools and guards, then stops ([configuration](configuration.md#seats-and-roles))
 
 ## 🚧 Not yet
 

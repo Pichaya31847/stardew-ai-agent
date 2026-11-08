@@ -235,6 +235,16 @@ public static class Players
             Slots[i].Role = roles[i];
     }
 
+    /// <summary>
+    /// The config menu's play mode (AI or Manual) for P1, applied at once: only P1 switches between ai and human, so the
+    /// screens and the other seats stay as the save loaded them.
+    /// </summary>
+    public static void RefreshHostRole(ModConfig config)
+    {
+        if (Slots.Length == 0) return;
+        Slots[0].Role = config.Seat(0).IsHuman ? SeatRole.Human : SeatRole.Ai;
+    }
+
     /// <summary>The seat of the screen being updated. Only valid on the game thread.</summary>
     public static PlayerSlot Current => Slots[Math.Clamp(Context.ScreenId, 0, Seats - 1)];
 

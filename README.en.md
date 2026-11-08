@@ -71,6 +71,8 @@ must be downloaded by hand, the `local/` kit is Windows-only, and some new featu
 - 🗣️ **They only hear what is near them.** `say` reaches the farmers whose screen shows the speaker, `think` is private
   (viewers see it), and every AI sees what the others are *actually* doing next to what they said.
 - ⏸️ **Time freezes while an AI thinks**, so a slow model loses no game time. Turn it off when you play along.
+- 🎮 **Play yourself and give orders.** Manual mode: you play, type `/do water the crops` in chat, and your farmer does
+  it to the end, then stops, with the AIs' tools and guards.
 - 🧠 **Memory across days**: a diary, lessons, a plan, and a `self` note each AI rewrites every evening.
 - 🎥 **Made for streams and videos**: an overlay page for OBS, a day-by-day replay, logs, diaries and daily stats.
 - 🔌 **Use any AI**: the built-in loop (Anthropic, OpenAI, Gemini, OpenRouter, Ollama, LM Studio), any MCP client
@@ -133,6 +135,17 @@ in the game: title screen → the cog → *Stardew MCP*.
   { "Role": "ai", "Brain": "openai", "Model": "stardew-local", "BaseUrl": "http://127.0.0.1:11434/v1" }
 ]
 ```
+
+### Play yourself with `/do` (Manual mode)
+
+1. In the mod's settings pick **Play mode → Your farmer (P1): Manual**. It applies at once, also in a running game.
+   In `config.json` the same is `"Role": "human"` for P1.
+2. Keep P1's AI set up (`Brain`, `Model`, `BaseUrl` or key): it only translates your commands, it does not play.
+3. Play as usual. To give an order press `T` (or `/`) and type, e.g. `/do water the crops`, `/do รดน้ำผัก`, `/do go mining`.
+
+The AI translates the command once, carries it out to the end and stops; it never plans further. Your farmer keeps the
+AIs' guards (basic resources are never sold, the main tools stay in the pack). The clock stops while you type and while
+it translates. `/do stop` ends the running command.
 
 ### Several AIs, or you plus AIs
 

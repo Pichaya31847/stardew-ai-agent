@@ -36,6 +36,15 @@ An `ai` seat takes these fields:
 | `BaseUrl` | `openai` only: any OpenAI-compatible server, e.g. OpenRouter `https://openrouter.ai/api/v1`, Ollama `http://localhost:11434/v1` |
 | `Name` | The farmer's name (wins over `FarmhandNames`) |
 
+The config menu's first option, **Play mode → Your farmer (P1)**, switches P1 between `ai` (AI plays) and `human`
+(Manual) and applies at once, even with a save loaded. A `human` P1 that also has a `Brain` gets `/do`: type `/do <command>` in the chat box (T, or `/` when playing alone), in
+English or Thai, e.g. `/do water the crops` or `/do รดน้ำผัก`. The model makes one request that turns the command into
+tool calls (at most 5) and does not plan further. The clock stops while the chat box is open and while the model
+translates, so typing and waiting cost no game time. The tools run on your farmer with every guard the AIs have, and each
+result shows in the chat. An action that something interrupts is resumed up to 3 times. `/do stop` (or `หยุด`) ends the
+running command. The SMAPI console takes `do <command>` too. `think`, `name` and `journal` are left out, so `go_to_bed`
+still asks for the day's journal; sleep by hand.
+
 ### Time modes
 
 `FreezeTimeWhileThinking` decides what happens while an AI is between actions:

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using StardewMCP.Agent;
 using StardewMCP.Agent.Brain;
 using StardewModdingAPI;
@@ -50,6 +51,21 @@ public class ModEntry : Mod
         {
             _http.Start(_config.HttpPort);
             ConfigMenu.Register(helper, ModManifest, _config, Monitor);
+            // /do <command>: a person playing P1 has a command done for them (Brain/CommandBrain.cs).
+            ChatCommands.Register("do", (args, _) => Brains.Do(string.Join(" ", args.Skip(1))),
+                _ => "/do <command>: your farmer does it (any tool the AIs have; English or Thai). /do stop ends it.",
+                null, false, false, false);
+        };
+        // Without multiplayer the game does not open the chat box: the chat key opens it for /do.
+        helper.Events.Input.ButtonPressed += (_, e) =>
+        {
+            if (Brains.Commands == null || Game1.IsMultiplayer || !Context.IsPlayerFree || Game1.chatBox == null || Game1.chatBox.isActive()) return;
+            if (e.Button.TryGetKeyboard(out var key) && (Game1.options.doesInputListContain(Game1.options.chatButton, key) || key == Microsoft.Xna.Framework.Input.Keys.OemQuestion))
+            {
+                Game1.chatBox.activate();
+                if (key == Microsoft.Xna.Framework.Input.Keys.OemQuestion) Game1.chatBox.setText("/");
+                Helper.Input.Suppress(e.Button);
+            }
         };
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
@@ -96,6 +112,11 @@ public class ModEntry : Mod
             "mcp_brain",
             "The mod's built-in AI players.\n\nUsage: mcp_brain [status|start|stop]",
             (_, args) => Brains.Command(args));
+
+        helper.ConsoleCommands.Add(
+            "do",
+            "Have your farmer (P1, Role \"human\") do a command, like /do in chat.\n\nUsage: do <command> | do stop",
+            (_, args) => { if (Context.IsWorldReady) Brains.Do(string.Join(" ", args)); });
 
         Monitor.Log($"Stardew MCP loaded{(_config.SplitScreen ? $" (split-screen: {Players.ScreenCount} screens, {Players.Describe()})" : "")}. Logs: {logDir}", LogLevel.Info);
     }
@@ -155,6 +176,7 @@ public class ModEntry : Mod
         if (seat.Screen == 0)
         {
             WorldClock.Tick();
+            CommandBrain.Tick();
             if (e.IsMultipleOf(60))
                 Bedtime.Tick(_config);
             if (e.IsMultipleOf(15))

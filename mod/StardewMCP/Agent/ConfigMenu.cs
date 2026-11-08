@@ -30,8 +30,18 @@ public static class ConfigMenu
             save: () =>
             {
                 helper.WriteConfig(config);
+                Players.RefreshHostRole(config);
                 Brains.OnConfigSaved();
             });
+
+        // The first choice: does an AI play your farmer, or do you (with /do for orders)? Applies at once, also in a running game.
+        api.AddSectionTitle(manifest, () => "Play mode");
+        api.AddTextOption(manifest, () => config.Seat(0).IsHuman ? "human" : "ai", v => config.Seat(0).Role = v,
+            () => "Your farmer (P1)", () =>
+                "AI: the AI set in 'Player 1 settings' plays the farmer by itself. " +
+                "Manual: you play with keyboard and mouse; type /do <command> in chat (English or Thai) and that AI only turns it " +
+                "into actions, does them and stops. The clock stops while you type and while it translates.",
+            new[] { "ai", "human" }, v => v == "human" ? "Manual (you play, /do orders)" : "AI plays");
 
         api.AddSectionTitle(manifest, () => "Players");
         api.AddParagraph(manifest, () =>
@@ -89,7 +99,7 @@ public static class ConfigMenu
         var roles = seat == 0 ? new[] { "ai", "human" } : new[] { "ai", "camera", "off" };
         api.AddTextOption(manifest, () => Norm(S().Role, roles), v => S().Role = v,
             () => "Who plays this seat", () => seat == 0
-                ? "ai: an AI plays the save's farmer. human: you play P1 with keyboard and mouse while the AIs take the other seats."
+                ? "ai: an AI plays the save's farmer. human: you play P1 with keyboard and mouse (the AI below only translates your /do orders) while the AIs take the other seats."
                 : "ai: an AI farmer. camera: a parked farmer whose screen only watches. off: no screen for this seat.",
             roles, RoleLabel);
         if (seat > 0)

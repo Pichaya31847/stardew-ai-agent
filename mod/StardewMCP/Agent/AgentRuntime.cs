@@ -152,6 +152,12 @@ public class AgentRuntime
 
     private void AutoHandleOverlays()
     {
+        // A person at the keyboard watches their own cutscenes and clicks their own menus; only a /do action is helped along.
+        if (!ActionRunning && Players.ById(Log.Player) is { Role: SeatRole.Human })
+        {
+            _eventTicks = 0;
+            return;
+        }
         if (!Context.IsWorldReady && Game1.activeClickableMenu is not StardewValley.Menus.ShippingMenu && Game1.activeClickableMenu is not StardewValley.Menus.LevelUpMenu)
             return;
 

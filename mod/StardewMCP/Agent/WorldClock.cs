@@ -57,6 +57,9 @@ public static class WorldClock
         // Paused / stopped by the operator: let the running actions finish, then stand still whoever is thinking.
         if (RunControl.Holding)
             freeze = Context.IsWorldReady && !transitioning && !Game1.newDay && !Game1.fadeToBlack && !NightMenuOpen() && !RunControl.AnyActionRunningAwake;
+        // A person typing a /do command, and the model translating it, cost no game time.
+        if (CommandHold())
+            freeze = true;
 
         if (split)
         {
@@ -112,6 +115,11 @@ public static class WorldClock
         }
         return true;
     }
+
+    /// <summary>A human P1 with /do is typing in the chat box, or the model is turning their command into tool calls.</summary>
+    private static bool CommandHold() =>
+        Context.IsWorldReady && Brain.Brains.Commands is { } c && Players.Host.Role == SeatRole.Human &&
+        !Game1.newDay && !Game1.fadeToBlack && (c.Translating || Context.ScreenId == 0 && Game1.chatBox?.isActive() == true);
 
     /// <summary>The overnight menus need the world running to finish. So does waking up: AIs whose day is over sit
     /// idle (thinking) in the morning and would otherwise keep a slower farmer in bed until the think timeout.</summary>

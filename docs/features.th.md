@@ -155,6 +155,7 @@ AI รอเหตุการณ์กลางคืน การวูบ แ
 - AI ในตัว mod: Anthropic, OpenAI, Gemini หรือ server ที่รองรับแบบ OpenAI (OpenRouter, Ollama, LM Studio)
 - MCP client ตัวไหนก็ได้ที่ใช้ streamable HTTP: Claude Code, Claude Desktop, Cursor...
 - [HTTP API](api.md) (อังกฤษ) สำหรับบอท overlay และสคริปต์ของตัวเอง
+- เล่นเองแล้วสั่งงานได้ พิมพ์ `/do <คำสั่ง>` ในแชทเป็นไทยหรืออังกฤษก็ได้ ชาวไร่ของเราจะทำให้ด้วยเครื่องมือและระบบป้องกันชุดเดียวกับ AI ทำเสร็จแล้วหยุด ไม่คิดต่อเอง ([การตั้งค่า](configuration.md#seats-and-roles))
 
 ## 🚧 ยังทำไม่ได้
 

@@ -87,6 +87,7 @@ mod/StardewMCP/
       Prompts.cs       System prompt from assets/system_prompt.md + memory files; morning / nudge / handoff texts (game-free)
       LessonBook.cs    Nightly lesson condensing (max 20) and the lasting lessons kept across saves (game-free)
       SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; breaks, retries (no meeting phase)
+      CommandBrain.cs  /do for a human P1: one model request turns a chat command into tool calls on P1's runtime, then stops
       Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source, the overlay pages and the docs (see Tests)
