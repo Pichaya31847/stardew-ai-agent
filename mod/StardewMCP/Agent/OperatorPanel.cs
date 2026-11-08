@@ -145,9 +145,10 @@ public static class OperatorPanel
         _input.Text = "";
     }
 
+    /// <summary>Queue an instruction for the built-in AIs. Works without the panel too (Screens 1 or 4 have none), for /api/order and mcp_order.</summary>
     public static int Send(string target, string text)
     {
-        if (!_cfg.OperatorDashboard || string.IsNullOrWhiteSpace(text) || text.Length > 1000) return 0;
+        if (string.IsNullOrWhiteSpace(text) || text.Length > 1000) return 0;
         int count = 0;
         foreach (var seat in Players.Slots.Where(s => s.Role == SeatRole.Ai))
         {

@@ -383,6 +383,9 @@ public class AgentRuntime
             if (mail.Length > 0) text = text.TrimEnd() + "\n" + mail;
             if (call.Tool.AppendStatus && Context.IsWorldReady)
                 text = text.TrimEnd() + "\n" + Observation.OneLine(AgentTools.Footer()); // one line, however many menus are open
+            // the day's checklist under every action, so one job doesn't become the whole day (day 58)
+            if (!call.Instant && DayPlans.For(_rt.Log.Player).Line(AgentLog.FarmDay) is { Length: > 0 } planLine)
+                text = text.TrimEnd() + "\n" + planLine;
             text = SessionBreaks.Annotate(_rt.Log, call, text); // planned session break notice (#30)
             text = EnglishNames.Apply(text); // the AI reads English keys, never the game's localized names
 

@@ -50,16 +50,35 @@ public static partial class AgentTools
             if (!trip.Ok || Loc is not Farm) { c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get to the Farm: {trip.Result}"); yield break; }
         }
         var farm = (Farm)Loc;
-        int wood0 = CountItem("(O)388");
+        // A full pack sends drops to the chests (storage mods): count both, or day 11's 12 felled trees read "Wood 0 → 0".
+        int WoodNow() => CountItem("(O)388") + ChestCount("(O)388");
+        int wood0 = WoodNow(), pack0 = CountItem("(O)388");
         var sb = new StringBuilder();
 
         var trees = RouteOrder(GrownTrees(farm), P.TilePoint).Take(count).ToList();
         if (trees.Count == 0) sb.Append("No grown trees stand on the Farm.");
         else
         {
-            var chop = new CallContext();
-            yield return UseTool(ArgsOf(new { tool = "Axe", tiles = trees.Select(t => new[] { t.X, t.Y }).ToArray(), max_hits = 40, reason = "fell trees for Wood" }), chop);
-            sb.Append($"Wood {wood0} → {CountItem("(O)388")} in your pack. ").Append(chop.Result);
+            // One tree at a time, keeping FarmBatchMinEnergy plus one more tree's swings in reserve: day 1 felled trees from
+            // 270 energy down to 1 by 08:20 and the day was over.
+            var lines = new List<string>();
+            int felled = 0, lastCost = 30;
+            string? stop = null;
+            foreach (var tree in trees)
+            {
+                if (P.Stamina < Math.Max(0, Config.FarmBatchMinEnergy) + lastCost) { stop = $"Stopped to keep energy for the rest of the day ({(int)P.Stamina} left): {DaySafety.LowEnergyAdvice(Game1.timeOfDay, BedRegen)}."; break; }
+                if (Game1.activeClickableMenu != null || Game1.timeOfDay >= 2400) break;
+                float before = P.Stamina;
+                var chop = new CallContext();
+                yield return UseTool(ArgsOf(new { tool = "Axe", tiles = new[] { new[] { tree.X, tree.Y } }, max_hits = 40, reason = "fell trees for Wood" }), chop);
+                lines.Add(chop.Result.Split('\n')[0]);
+                if (chop.Ok) felled++;
+                lastCost = Math.Max(lastCost, (int)Math.Ceiling(before - P.Stamina));
+            }
+            int pack = CountItem("(O)388"), all = WoodNow();
+            sb.Append($"Wood {wood0} → {all} (pack {pack0} → {pack}{(all - wood0 > pack - pack0 ? ", the rest went to your chests because the pack is full" : "")}). ")
+              .Append($"Felled {felled} of {trees.Count} tree(s). ").Append(string.Join("\n", lines));
+            if (stop != null) sb.Append('\n').Append(stop);
         }
 
         if (Game1.activeClickableMenu == null && Loc == farm)
@@ -70,7 +89,7 @@ public static partial class AgentTools
         }
         int left = GrownTrees(farm).Count;
         sb.Append($"\n{left} grown tree(s) left on the Farm.");
-        if (CountItem("(O)388") == wood0 && trees.Count > 0) c.Fail(sb.ToString());
+        if (WoodNow() == wood0 && trees.Count > 0) c.Fail(sb.ToString());
         else c.Result = sb.ToString();
     }
 

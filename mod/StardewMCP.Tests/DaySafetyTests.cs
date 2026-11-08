@@ -52,11 +52,11 @@ public class DaySafetyTests
     [Fact]
     public void ATiredFarmerEarlyInACoopDayIsPointedAtARestInBed()
     {
-        Assert.True(DaySafety.SuggestRest(1320, 20, 270, 100, 100, multiplayer: true));
-        Assert.False(DaySafety.SuggestRest(1320, 20, 270, 100, 100, multiplayer: false)); // alone, a bed gives nothing back
-        Assert.False(DaySafety.SuggestRest(1900, 20, 270, 100, 100, multiplayer: true));  // evening: sleep
-        Assert.False(DaySafety.SuggestRest(1320, 200, 270, 100, 100, multiplayer: true)); // not tired
-        Assert.False(DaySafety.SuggestRest(1320, 20, 270, 10, 100, multiplayer: true));   // hurt: sleep
+        Assert.True(DaySafety.SuggestRest(1320, 20, 270, 100, 100, bedRegen: true));
+        Assert.False(DaySafety.SuggestRest(1320, 20, 270, 100, 100, bedRegen: false)); // alone with BedRestAlone off, a bed gives nothing back
+        Assert.False(DaySafety.SuggestRest(1900, 20, 270, 100, 100, bedRegen: true));  // evening: sleep
+        Assert.False(DaySafety.SuggestRest(1320, 200, 270, 100, 100, bedRegen: true)); // not tired
+        Assert.False(DaySafety.SuggestRest(1320, 20, 270, 10, 100, bedRegen: true));   // hurt: sleep
         Assert.Contains("rest", DaySafety.LowEnergyAdvice(1320, true));
         Assert.Equal("eat something or go to bed", DaySafety.LowEnergyAdvice(2100, true));
         Assert.Equal("eat something or go to bed", DaySafety.LowEnergyAdvice(1000, false));

@@ -39,11 +39,20 @@ public static class Prompts
     /// <param name="Speech">Language of `say` ({SPEECH_LANGUAGE}); empty = <paramref name="Language"/>.</param>
     /// <param name="MemoryLines">How many of the last lessons and notes lines go into the prompt.</param>
     /// <param name="Work">Language of reasons and the memory files ({WORK_LANGUAGE}); empty = <paramref name="Language"/>.</param>
+    /// <param name="Automate">Whether the Automate mod is loaded: template lines starting with {AUTOMATE} are kept only then.</param>
     public sealed record SystemInputs(
         string Model, string PlayerName, string Seat, string Language, bool FreezeWhileThinking,
         IReadOnlyList<(string Seat, string Name, string Kind)> Others,
         string Self, string People, string Lessons, string Plan, string Notes,
-        string Speech = "", int MemoryLines = MemoryMaxLines, string Work = "");
+        string Speech = "", int MemoryLines = MemoryMaxLines, string Work = "", bool Automate = false, string Lasting = "");
+
+    private const string AutomateMark = "{AUTOMATE}";
+
+    /// <summary>The template with its {AUTOMATE} lines unmarked when Automate is loaded, or left out when it is not.</summary>
+    public static string ForMods(string template, bool automate) =>
+        !template.Contains(AutomateMark) ? template : string.Join("\n", template.Split('\n')
+            .Where(l => automate || !l.StartsWith(AutomateMark, StringComparison.Ordinal))
+            .Select(l => l.StartsWith(AutomateMark, StringComparison.Ordinal) ? l.Substring(AutomateMark.Length) : l));
 
     public static string System(string template, SystemInputs i)
     {
@@ -62,7 +71,7 @@ public static class Prompts
             others = sb.ToString();
         }
 
-        return template
+        return ForMods(template, i.Automate)
             .Replace("{MODEL_NAME}", i.Model)
             .Replace("{PLAYER_NAME}", i.PlayerName)
             .Replace("{SEAT}", i.Seat)
@@ -73,6 +82,7 @@ public static class Prompts
             .Replace("{OTHERS}", others)
             .Replace("{SELF}", Or(i.Self, "(nothing yet: you are new here)"))
             .Replace("{PEOPLE}", Or(i.People, "(nothing yet)"))
+            .Replace("{LASTING}", Or(Tail(i.Lasting, LessonBook.MaxLasting), "(none yet)"))
             .Replace("{LESSONS}", Or(Tail(i.Lessons, Math.Max(1, i.MemoryLines)), "(none yet)"))
             .Replace("{PLAN}", Or(i.Plan, "(no plan yet: make one this morning)"))
             .Replace("{NOTES}", Or(Tail(i.Notes, Math.Max(1, i.MemoryLines)), "(none yet)"));
@@ -105,7 +115,8 @@ public static class Prompts
                 sb.Append($"\nThis is your first morning here. {Join(names)} {(names.Count == 1 ? "lives" : "live")} in the cabins near yours on this farm.");
             sb.Append("\n`say` is heard only by people who can see you, so to talk with someone, go where they are.");
         }
-        sb.Append("\nStart the day: `think` about your plan, then get to work. When the work is done or it gets late, write your `journal` " +
+        sb.Append("\nStart the day: write today's plan with `todo(items=[...])`, 3-6 jobs in the order you will do them, then work through it " +
+                  "and tick each job off with `todo(done=...)` when it is finished; every result shows the next open job. When the work is done or it gets late, write your `journal` " +
                   "(diary, lessons, plan, and your `self` / `people` notes), then `go_to_bed`.");
         sb.Append("\nInclude social actions TODAY, not only on the first day: use villagers() and talk_to a reachable NPC you have not greeted today. " +
                   "AI companions are players: find them with look/status and use say nearby, not talk_to. If say reports nobody heard, move within view before trying again. " +
@@ -123,14 +134,20 @@ public static class Prompts
             : $"You ended your turn without an action. It is {time}. Continue the day with a tool call: work, talk, or `journal` and `go_to_bed` when you are done.";
 
     /// <summary>First message of a continued conversation after a session break (the mod asked the AI to stop and the context restarts).</summary>
-    public static string Handoff(int day, string time, string plan, string? lastThink, IEnumerable<string> lastResults)
+    public static string Handoff(int day, string time, string plan, string? lastThink, IEnumerable<string> lastResults, string? checklist = null)
     {
         var sb = new StringBuilder($"Continuing farm day {day}; it is {time}. Your earlier context was cleared to keep the conversation small.\n");
         if (!string.IsNullOrWhiteSpace(lastThink))
             sb.Append("\nYour last thought:\n").Append(lastThink.Trim()).Append('\n');
-        var today = PlanSection(plan, "Today");
-        if (!string.IsNullOrWhiteSpace(today))
-            sb.Append("\nYour plan for today:\n").Append(today).Append('\n');
+        // Today's todo checklist wins over the plan file's "Today", which was written the night before (day 58: "Go to bed now at 18:30").
+        if (!string.IsNullOrWhiteSpace(checklist))
+            sb.Append("\nToday's plan (your todo list; [x] = done). Carry on with the first open job:\n").Append(checklist.Trim()).Append('\n');
+        else
+        {
+            var today = PlanSection(plan, "Today");
+            if (!string.IsNullOrWhiteSpace(today))
+                sb.Append("\nYour plan for today:\n").Append(today).Append('\n');
+        }
         var results = lastResults.ToList();
         if (results.Count > 0)
         {

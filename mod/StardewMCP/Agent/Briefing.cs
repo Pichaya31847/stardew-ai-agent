@@ -564,6 +564,14 @@ public static class Briefing
             lines.Add($"Still under construction: {string.Join(", ", building)}.");
         var plan = AgentTools.FarmPlanText();
         if (plan.Length > 0) lines.Add(plan);
+        // A line another mod's note starts with "DO THIS FIRST TODAY" goes to the top with the build line: the same hint at the
+        // bottom of the farm part was skipped every morning for 51 days.
+        var notes = ToolExtensions.MorningNotesText().SelectMany(n => n.Split('\n')).Where(l => l.Trim().Length > 0).ToList();
+        var urgent = notes.Where(l => l.StartsWith("DO THIS FIRST TODAY", StringComparison.Ordinal)).ToList();
+        lines.AddRange(notes.Except(urgent));
+        lines.InsertRange(0, urgent);
+        // First line of the farm part: days 43-48 had 5,600-7,400g and the Coop's Wood and Stone, then 6,500g went on seeds.
+        if (AgentTools.ReadyToBuildText() is { Length: > 0 } payable) lines.Insert(0, payable);
         return string.Join("\n", lines);
     }
 

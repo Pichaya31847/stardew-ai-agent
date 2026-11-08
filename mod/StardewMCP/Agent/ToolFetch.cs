@@ -51,6 +51,33 @@ public static partial class AgentTools
     internal static IEnumerator EnsureMainTool(string kind, List<string> notes)
     {
         if (HasMainTool(kind)) yield break;
+        if (RemoteChest is { } remote)
+        {
+            // The storage hands it over where the farmer stands: find which tool of this kind it holds, best first.
+            var stored = ChestPlaces().SelectMany(l => l.objects.Values.OfType<Chest>().Where(ch => ch.playerChest.Value))
+                .SelectMany(ch => ch.Items).Where(i => MainToolKind(i) == kind)
+                .OrderByDescending(i => (i as MeleeWeapon)?.maxDamage.Value ?? (i as Tool)?.UpgradeLevel ?? 0).FirstOrDefault();
+            if (stored == null) { notes.Add($"You have no {kind} in your pack or in the storage."); yield break; }
+            var made = "";
+            if (!P.Items.Any(i => i == null) && P.Items.Count >= P.MaxItems)
+            {
+                // Make room with the stack that matters least on the job: not a tool, not seeds, not food.
+                var spare = P.Items.Where(i => i != null && i is not Tool && i.Category != StardewValley.Object.SeedsCategory && i.Category != -7)
+                    .OrderBy(i => i.salePrice() * i.Stack).FirstOrDefault();
+                if (spare != null)
+                {
+                    var put = new CallContext();
+                    yield return RemoteChestCall(remote, new { action = "store", item = spare.Name, reason = $"room for the {kind}" }, put);
+                    if (put.Ok) made = $" (stored {spare.Name} to make room)";
+                }
+            }
+            var got = new CallContext();
+            yield return RemoteChestCall(remote, new { action = "take", item = stored.Name, quantity = 1, reason = $"take the {kind} back" }, got);
+            notes.Add(HasMainTool(kind)
+                ? $"Took your {stored.Name} back from the storage{made}; main tools stay in the pack."
+                : $"Your {stored.Name} is in the storage and could not be taken: {got.Result}");
+            yield break;
+        }
         string? where = null;
         Point tile = default;
         foreach (var name in new[] { Loc.NameOrUniqueName, P.homeLocation.Value, "FarmHouse", "Farm" }.Where(n => !string.IsNullOrEmpty(n)).Distinct())

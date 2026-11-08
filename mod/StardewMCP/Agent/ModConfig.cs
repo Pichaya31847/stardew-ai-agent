@@ -1,36 +1,10 @@
 using System;
+using System.Collections.Generic;
 using StardewValley;
 
 namespace StardewMCP.Agent;
 
-/// <summary>One split-screen seat in config.json: who sits there and, for an AI, which model plays it.</summary>
-public class SeatConfig
-{
-    /// <summary>"ai" (a farmer played by an AI), "human" (P1 only: you, with keyboard and mouse), "camera" (a parked farmer whose screen only watches) or "off" (no screen).</summary>
-    public string Role { get; set; } = "ai";
-
-    /// <summary>
-    /// The AI that plays this seat: "anthropic", "openai" (also any OpenAI-compatible server: OpenRouter, Ollama, LM Studio...),
-    /// "gemini", or "none" = an external MCP client drives the seat through /mcp/pN (Claude Code, the studio runner).
-    /// </summary>
-    public string Brain { get; set; } = "none";
-
-    /// <summary>Model name for the provider; empty = the provider's default.</summary>
-    public string Model { get; set; } = "";
-
-    public string ApiKey { get; set; } = "";
-
-    /// <summary>Optional endpoint override, e.g. http://localhost:11434/v1 for Ollama with Brain "openai".</summary>
-    public string BaseUrl { get; set; } = "";
-
-    /// <summary>Farmhand name (P2-P4); empty = FarmhandNames / "P{N}".</summary>
-    public string Name { get; set; } = "";
-
-    public bool IsOff => Role.Equals("off", StringComparison.OrdinalIgnoreCase);
-    public bool IsHuman => Role.Equals("human", StringComparison.OrdinalIgnoreCase);
-    public bool IsCamera => Role.Equals("camera", StringComparison.OrdinalIgnoreCase);
-    public bool HasBrain => !string.IsNullOrWhiteSpace(Brain) && !Brain.Equals("none", StringComparison.OrdinalIgnoreCase);
-}
+// SeatConfig lives in ScreenPlan.cs (game-free, linked into the tests).
 
 /// <summary>User-editable settings (config.json in the mod folder).</summary>
 public class ModConfig
@@ -66,6 +40,35 @@ public class ModConfig
         }
         return Seats[Math.Clamp(screen, 0, 3)] ??= new SeatConfig();
     }
+
+    /// <summary>
+    /// How many farmers play, 1-4; 0 = as SplitScreen, OperatorDashboard and the seat roles say. 1: P1 alone, no split-screen.
+    /// 2 and 3: that many farmers and the command panel (the operator dashboard) in the free part of the window.
+    /// 4: four farmers and no command panel. Sets those three settings itself (<see cref="ApplyScreens"/>).
+    /// </summary>
+    public int Screens { get; set; } = 0;
+
+    /// <summary>
+    /// Turns <see cref="Screens"/> into SplitScreen, OperatorDashboard and the seat roles: P1..PN play (an "off" or camera
+    /// seat among them becomes an AI and takes the brain of the seat before it when it has none), the seat after them is the
+    /// command panel's camera with 2 or 3 screens, the rest are off. Returns what it changed, for the log.
+    /// </summary>
+    public List<string> ApplyScreens()
+    {
+        if (Screens <= 0) return new List<string>();
+        Seat(3); // pads a short Seats array to four
+        var (split, dashboard, notes) = ScreenPlan.Apply(Seats, Screens);
+        Screens = Math.Clamp(Screens, 1, 4);
+        SplitScreen = split;
+        OperatorDashboard = dashboard;
+        return notes;
+    }
+
+    /// <summary>
+    /// Playing alone, an AI farmer lying in bed gets energy and health back at the game's multiplayer rate (about +14 energy
+    /// per 10 game minutes), so <c>rest</c> works without other farmers. The game does this only in multiplayer.
+    /// </summary>
+    public bool BedRestAlone { get; set; } = true;
 
     /// <summary>Show each AI seat's thoughts, chat and current action on its own screen (no OBS needed).</summary>
     public bool ShowHud { get; set; } = true;

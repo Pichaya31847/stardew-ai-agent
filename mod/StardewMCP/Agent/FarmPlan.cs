@@ -30,6 +30,27 @@ public static partial class AgentTools
         return "Next farm buildings (save up for them; seeds for a season you can't finish and spare purchases come after): " + string.Join(" ", parts) + GatherAdvice(shown);
     }
 
+    /// <summary>
+    /// "DO THIS FIRST TODAY: ..." when a plan step is fully paid for (money, and the materials in the pack and chests), or "".
+    /// Days 43-48: AI1 had 5,600-7,400g, 360 Wood and the Stone for the Coop, the plan said "(you have everything: go now)" in the
+    /// middle of a long line, and on day 49 6,500g went on seeds instead. Only the first such step, in the plan's own order.
+    /// </summary>
+    internal static string ReadyToBuildText()
+    {
+        try
+        {
+            foreach (var s in OpenPlanSteps())
+            {
+                if (P.Money < s.Gold) continue;
+                if (s.Materials.Any(m => CountItem(m.ItemId) + ChestCount(m.ItemId) < m.Amount)) continue;
+                return $"DO THIS FIRST TODAY: you can pay for {s.What} now ({CostText(s.Gold, s.Materials)}; you have {P.Money:N0}g). Call {s.Call} before buying " +
+                       $"seeds or anything else: money spent elsewhere puts it off again. {s.Why}";
+            }
+        }
+        catch (Exception) { }
+        return "";
+    }
+
     /// <summary>Where the missing materials come from: never a shop (decided 2026-11-01). Day 98: AI1 had 9,814g and 59 of the Coop's 300 Wood, and about 345 Wood came in over 44 days.</summary>
     private static string GatherAdvice(List<PlanStep> steps)
     {
@@ -57,6 +78,8 @@ public static partial class AgentTools
             return text + (AutomateLoaded
                 ? $"Your Furnace stands at ({(int)placed.Key.X},{(int)placed.Key.Y}): put the ore and Coal into the Chest touching it and Automate smelts them."
                 : $"Your Furnace stands at ({(int)placed.Key.X},{(int)placed.Key.Y}): machine(action=\"load\") puts ore and Coal in.");
+        // A Furnace another mod holds (a machine slot) smelts there: say how, and never ask for another (day 35: two were crafted).
+        if (ToolExtensions.HeldNote("(BC)13") is { Length: > 0 } held) return text + held;
         bool owned = CountItem("(BC)13") + ChestCount("(BC)13") > 0;
         return text + (owned
             ? "Your Furnace is in a pack or chest, where it does nothing: place it on open farm ground" + (AutomateLoaded ? ", place a Chest touching it and put the ore and Coal into that chest (Automate smelts)." : ", then machine(action=\"load\").")
@@ -142,6 +165,7 @@ public static partial class AgentTools
             int pack = P.Items.Where(i => i != null && i.QualifiedItemId == ItemRegistry.QualifyItemId(id)).Sum(i => i.Stack);
             int chests = ChestCount(id);
             if (pack >= amount) continue;
+            if (pack + chests >= amount && ToolExtensions.StoragePays) continue; // paid out of the chests at the counter
             if (pack + chests >= amount) { fetch = true; missing.Add($"{label}: {pack} in your pack, take {amount - pack} from the chests"); }
             else missing.Add($"{label}: {pack + chests} of {amount} (pack and chests)");
         }
@@ -149,14 +173,11 @@ public static partial class AgentTools
         return $" (missing: {string.Join("; ", missing)}{(fetch ? "; materials must be in your pack when you order" : "")})";
     }
 
-    /// <summary>How many of this item the shared chests on the farm maps hold.</summary>
+    /// <summary>How many of this item the shared chests hold (the farm maps; every map when a remote chest tool's storage spans them).</summary>
     private static int ChestCount(string itemId)
     {
         var qid = ItemRegistry.QualifyItemId(itemId);
-        int n = 0;
-        foreach (var name in new[] { "Farm", "FarmHouse", P.homeLocation.Value }.Where(s => !string.IsNullOrEmpty(s)).Distinct())
-            if (Game1.getLocationFromName(name) is { } loc)
-                n += loc.objects.Values.OfType<Chest>().Where(c => c.playerChest.Value).SelectMany(c => c.Items).Where(i => i?.QualifiedItemId == qid).Sum(i => i!.Stack);
-        return n;
+        return ChestPlaces().Sum(loc => loc.objects.Values.OfType<Chest>().Where(c => c.playerChest.Value)
+            .SelectMany(c => c.Items).Where(i => i?.QualifiedItemId == qid).Sum(i => i!.Stack));
     }
 }

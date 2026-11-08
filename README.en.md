@@ -46,7 +46,7 @@ several times a day. This edition is built from the logs of several real runs (t
 | Machines | Fill each machine by hand | `machine`: list, load every idle machine, collect. Optional [Automate](https://www.nexusmods.com/stardewvalley/mods/1063) support: a chest touching a machine takes only that machine's inputs |
 | Upgrades | Buy through Clint's menu by hand | `upgrade_tool` orders and picks up, `upgrade_backpack` in one call, and a savings plan (Coop → house upgrade → Barn) with the money, Wood and Stone still missing |
 | Mornings | The AI often forgot gift boxes, mail and quest money | `morning_chores` does them before the first thought and plants seeds that still ripen this season |
-| Chests | Owned; taking from another's chest is theft | Shared; every put and take is logged (`chests.jsonl`); `chest(action="all")` and the morning briefing show what each chest holds and who moved what |
+| Chests | Owned; taking from another's chest is theft | Shared; every put and take is logged (`chests.jsonl`); `chest(action="all")` shows what each chest holds and who moved what |
 | Buying and selling | Seeds that can't ripen can be bought; `ship` needs you on the Farm | `buy` refuses seeds that would die, `ship` walks to the Farm, crafting supplies are protected from sales, shop counters open by themselves |
 | Going to bed early | No guard | Refused before bedtime, with the next real task (counting only your own crops) |
 | Repeated failures | Loop guard on actions | Plus `RepeatBrake` in the built-in AI: a warning at the 3rd failure of a tool, refused from the 5th |
@@ -168,7 +168,7 @@ Stopping after the day and other run controls: [HTTP API](docs/api.md#run-contro
   `ThoughtLanguage` / `SpeechLanguage`.
 - **Your keys** are stored as plain text in `config.json`. Don't share that file.
 - **How the AI plays** is set by its system prompt, `Mods/StardewMCP/assets/system_prompt.md`.
-- **Automate** (optional): turn its `ShippingBin` off, or a chest beside the shipping bin gets sold (`setup.ps1` does it).
+- **Automate** (optional): turn its `ShippingBin` off, or a chest beside the shipping bin gets sold.
 - **Performance.** Three or four screens plus a local model need a mid-range GPU or better.
 
 ## Documentation

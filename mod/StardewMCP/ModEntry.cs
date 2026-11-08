@@ -19,6 +19,9 @@ public class ModEntry : Mod
     private AgentHttp _http = null!;
     private bool _autoLoadDone;
 
+    /// <summary>Lets other mods add tools (Agent/StardewMcpApi.cs).</summary>
+    public override object GetApi() => new StardewMcpApi();
+
     public override void Entry(IModHelper helper)
     {
         _config = helper.ReadConfig<ModConfig>();
@@ -134,6 +137,8 @@ public class ModEntry : Mod
         SplitScreen.ScreenTick();
 
         seat.Runtime.Tick();
+        BedRest.Tick(_config, seat);
+        BookTools.Tick(seat, e.Ticks);
         ChestLedger.Tick(seat);
         Briefing.Tick(seat, e.IsMultipleOf(300));
         if (e.IsMultipleOf(15))

@@ -604,7 +604,13 @@ public static partial class AgentTools
         var plan = new List<(string map, Point tile, string name, int quality, int count)>();
         var claimed = new Dictionary<Item, int>(ReferenceEqualityComparer.Instance);
         var chests = new List<(string map, Point tile, StardewValley.Objects.Chest chest)>();
-        foreach (var loc in new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation })
+        // A chest tool added by another mod reaches the storage from where the farmer stands: every placed chest counts, and
+        // nothing is walked to (the walk home and back to the Community Center cost hours).
+        var remote = ToolExtensions.Find("chest");
+        var places = new List<GameLocation>();
+        if (remote != null) Utility.ForEachLocation(l => { places.Add(l); return true; });
+        else places.AddRange(new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation }.Where(l => l != null)!);
+        foreach (var loc in places)
         {
             if (loc == null) continue;
             foreach (var (t, obj) in loc.objects.Pairs)
@@ -626,6 +632,16 @@ public static partial class AgentTools
                 }
             }
         // One map at a time, this one first, so the house and the farm are each visited once.
+        if (remote != null)
+        {
+            foreach (var (_, _, name, quality, count) in plan.Take(8))
+            {
+                var take = new CallContext();
+                yield return remote.Run(ArgsOf(new { action = "take", item = name, quality = QualityName(quality), quantity = count, reason = "bundle item for the Community Center" }), take);
+                notes.Add(take.Ok ? $"For the bundles: {take.Result.Split('\n')[0]}" : $"Couldn't take {name} from the storage: {take.Result}");
+            }
+            yield break;
+        }
         foreach (var (map, tile, name, quality, count) in plan.Take(8).OrderBy(p => p.map == Loc.Name ? 0 : 1).ThenBy(p => p.map).ThenBy(p => p.tile.X).ThenBy(p => p.tile.Y).ToList())
         {
             if (Loc.Name != map)

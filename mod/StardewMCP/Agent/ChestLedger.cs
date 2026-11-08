@@ -94,6 +94,27 @@ internal static class ChestLedger
         catch (IOException) { /* the day log still has it */ }
     }
 
+    /// <summary>A change another mod made (its own chest tool, a storage of chests), for the farmer on this screen.</summary>
+    public static void External(bool put, string item, int count, string location, int x, int y)
+    {
+        if (count <= 0 || string.IsNullOrWhiteSpace(item) || !Game1.hasLoadedGame || Game1.player == null) return;
+        var seat = Players.Current;
+        var change = new Change(AgentLog.FarmDay, WorldText.FormatTime(Game1.timeOfDay), seat.Id, Game1.player.Name, put ? "put" : "took", item, count, location, x, y);
+        Load();
+        lock (Recent)
+        {
+            Recent.Add(change);
+            if (Recent.Count > KeepChanges) Recent.RemoveRange(0, Recent.Count - KeepChanges);
+        }
+        seat.Runtime.Log.Add("chest", text: $"{Game1.player.Name} {Describe(new[] { change })} the chest at {location} ({x},{y})",
+            args: new { location, tile = new[] { x, y }, changes = new[] { new { change.Action, change.Item, change.Count } } });
+        try
+        {
+            if (File() is { } file) System.IO.File.AppendAllLines(file, new[] { JsonSerializer.Serialize(change, AgentLog.Json) });
+        }
+        catch (IOException) { }
+    }
+
     /// <summary>"put 30 Pumpkin, 2 Wood into / took 5 Coal from"</summary>
     private static string Describe(IEnumerable<Change> changes)
     {

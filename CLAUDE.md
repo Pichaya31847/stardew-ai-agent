@@ -47,6 +47,7 @@ mod/StardewMCP/
     AgentHttp.cs       HttpListener on localhost:8770: /mcp, /overlay, /replay, /api/*
     AgentRuntime.cs    Runs tool calls on the game thread as coroutines; freezes time between calls
     AgentTools.cs      Tool definitions (ToolDef) and their coroutines
+    StardewMcpApi.cs   Mod API for other SMAPI mods (AddTool, which may replace a built-in tool; AddMorningNote); ToolExtensions.cs keeps what they add
     MenuTools.cs       menu: reads any open menu and clicks it through per-menu adapters
     SocialTools.cs     say (heard only by screens that show the speaker) / emote / give; per-seat inbox appended to the next tool result
     Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat interrupt events
@@ -58,10 +59,12 @@ mod/StardewMCP/
     ToolFetch.cs       The main tools and weapons stay in the pack: chest refuses them, farm tools fetch a missing one from a chest
     FarmPlan.cs        Next farm buildings to save up for (Coop + chickens, house upgrade, Barn) and what is missing
     WoodTools.cs       chop_trees: fell the nearest grown trees for Wood, plant tree seeds on open ground
-    ChestLedger.cs     Shared chests: every put / take logged (kind chest, chests.jsonl), chest(action=all) and the morning report
+    ChestLedger.cs     Shared chests: every put / take logged (kind chest, chests.jsonl), chest(action=all)
     MachineTools.cs    machine: list / load / collect placed machines through the game's own drop-in and click
     UpgradeTools.cs    upgrade_tool: Clint's ClintUpgrade shop and the pickup at his counter
     MineTools.cs       mine (down floor by floor), leave_mine, the damage interrupt
+    BookTools.cs       Books in an AI's pack are read at once (the game's own use action), catalogues kept
+    BedRest.cs         Alone in bed: energy and health back at the game's multiplayer rate (BedRestAlone), so rest works single-player
     WorldText.cs       Text renderings of status / surroundings / inventory for the model
     GameEnglish.cs     English for the AIs in a localized game: builds the EnglishNames map, English dialogue / letters / options / professions by key
     AgentLog.cs        Per-day JSONL logs and diaries; per-seat lessons / plan / notes files (MemoryFile)
@@ -82,12 +85,13 @@ mod/StardewMCP/
       Llm.cs           Provider-neutral chat types, ILlmProvider, LlmProviders factory, SchemaFilter (game-free)
       AnthropicProvider.cs / OpenAiProvider.cs / GeminiProvider.cs   Wire formats (game-free; OpenAI = any compatible server)
       Prompts.cs       System prompt from assets/system_prompt.md + memory files; morning / nudge / handoff texts (game-free)
+      LessonBook.cs    Nightly lesson condensing (max 20) and the lasting lessons kept across saves (game-free)
       SeatBrain.cs     One seat's day loop: model call -> tool calls on the seat's runtime -> results; breaks, retries (no meeting phase)
       Brains.cs        Starts a SeatBrain per configured seat on save load; mcp_brain console command
 mod/StardewMCP.Tests/  xUnit, game-free (see Tests)
 mod/tests/             pytest lints over the C# source, the overlay pages and the docs (see Tests)
 local/                 Local-model kit (Windows): setup.ps1 (game, SMAPI, mod, Ollama, stardew-local), start.cmd/.ps1,
-                       Modelfile, config.example.json, automate-config.json, mods/ThaiFontInEnglish (CP pack, fonts copied
+                       Modelfile, config.example.json, mods/ThaiFontInEnglish (CP pack, fonts copied
                        from the Thai pack at setup, never committed) (docs/local-ai.md)
 README.md, README.en.md   Landing page (Thai = the front page / English): the EP.1 video, install, quick start, links into docs/
 CONTEXT.md             Glossary: the project's words
@@ -147,6 +151,10 @@ Game-free mod files (no `Game1`, `GameLocation`, `Farmer`; linked into the tests
 ```
 mod/StardewMCP/PathSearch.cs         A* over IWalkableGrid (Pathfinder.cs supplies the game's collision check)
 mod/StardewMCP/Agent/ToolDef.cs      ToolDef, CallContext, ToolRunner
+mod/StardewMCP/Agent/ToolExtensions.cs  tools other mods add through the mod API (StardewMcpApi.cs)
+mod/StardewMCP/Agent/FieldLayout.cs  Scarecrow circles (249 tiles), the 16-tile scarecrow grid, the field disk till_area fills first, sprinkler patterns
+mod/StardewMCP/Agent/DayPlan.cs      DayPlan, DayPlans: each seat's todo checklist for the day, its line under every action result and in the handoff
+mod/StardewMCP/Agent/ScreenPlan.cs   SeatConfig, ScreenPlan: the Screens setting (1-4 farmers, command panel with 2 or 3) as seat roles
 mod/StardewMCP/Agent/ToolArgs.cs     Schema and argument helpers (Obj, Str, Int, Tiles, S, I, TileList), part of AgentTools
 mod/StardewMCP/Agent/ToolContract.cs Rules for tools/list (valid schema, required in properties, reason on actions); logged at startup
 mod/StardewMCP/Agent/LoopDetector.cs GuardKind, GuardNote, LoopDetector: repeat-failure and no-progress rules (LoopGuard.cs feeds it from the game)

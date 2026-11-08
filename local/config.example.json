@@ -50,6 +50,7 @@
   "ThoughtLanguage": "Thai",
   "SpeechLanguage": "Thai",
   "WorkLanguage": "English",
+  "Screens": 2,
   "SplitScreen": true,
   "FarmhandNames": [ "AI2", "Control", "Off" ],
   "ThinkTimeoutSeconds": 900,

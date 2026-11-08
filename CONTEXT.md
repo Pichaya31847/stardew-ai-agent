@@ -147,7 +147,13 @@ An AI's written memory across days: diary, lessons, plan, notes, self note and p
 The day told in the AI's own words, for viewers.
 
 **Lessons**:
-What the AI learned, one line per lesson, kept and added to across days.
+What the AI learned, one line per lesson, kept and added to across days; condensed to the 20 most useful once they outgrow the prompt.
+
+**Lasting lessons**:
+The lessons that hold on any farm, kept outside the logs so a new save starts with them, and read in every prompt.
+
+**Todo list**:
+Today's jobs in order, written in the morning and ticked off one by one; every action result names the next open job.
 
 **Plan**:
 The AI's plan for the season, the week and today, rewritten as it changes.

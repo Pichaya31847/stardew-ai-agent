@@ -13,7 +13,10 @@ public static partial class AgentTools
         if (free > 2) return "";
         var chests = Loc.Objects.Pairs.Where(p => p.Value is Chest c && c.playerChest.Value).Take(4)
             .Select(p => $"({(int)p.Key.X},{(int)p.Key.Y})").ToList();
-        string storage = chests.Count > 0
+        // A chest tool that reaches the storage from anywhere needs no chest on this map (the mines, the town).
+        string storage = RemoteChest != null
+            ? "FIRST store items not needed for the current trip/job: chest(action=store, item/items, reason) puts them into the storage from where you stand; keep necessary tools, food and current quest items."
+            : chests.Count > 0
             ? $"FIRST store items not needed for the current trip/job. Storage chests on this map: {string.Join(", ", chests)}. Use chest(action=store,x,y,item/items,reason); keep necessary tools, food and current quest items. List first if ownership is uncertain."
             : "No storage chest found on this map. Look around your farm/home for one; if needed use craft() to inspect the Chest recipe, gather its ingredients (standard Chest needs 50 Wood), craft, place on a free reachable tile away from doors/paths, then chest(action=store).";
         int price = P.MaxItems < 24 ? 2000 : 10000;

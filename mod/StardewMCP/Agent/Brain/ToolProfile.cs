@@ -17,7 +17,7 @@ public static class ToolProfile
     /// <summary>The tools a farming day needs, sent whole in compact mode.</summary>
     public static readonly IReadOnlyCollection<string> Core = new HashSet<string>(StringComparer.Ordinal)
     {
-        "think", "status", "look", "inventory", "walk_to", "travel_to", "use_tool", "plant", "harvest", "harvest_all",
+        "think", "todo", "status", "look", "inventory", "walk_to", "travel_to", "use_tool", "plant", "harvest", "harvest_all",
         "water_all", "clear_area", "till_area", "chop_trees", "farm_summary", "interact", "respond", "close_menu", "menu", "shop_list",
         "buy", "sell", "ship", "eat", "chest", "craft", "place", "rest", "wait", "go_to_bed", "journal", "say", "give",
         "talk_to", "villagers", "quests", "accept_quest", "festival", "calendar", "crops", "fish", "fish_guide", "fight", "leave_mine",
@@ -31,7 +31,7 @@ public static class ToolProfile
 
     /// <summary>The tools as configured: unchanged for "full" (or anything unknown), shortened for "compact".</summary>
     public static List<LlmTool> Apply(string? profile, IEnumerable<LlmTool> tools) =>
-        IsCompact(profile) ? tools.Select(t => Core.Contains(t.Name) ? ShortReason(t) : Brief(t)).ToList() : tools.ToList();
+        IsCompact(profile) ? tools.Select(t => Core.Contains(t.Name) || ToolExtensions.Core.Contains(t.Name) ? ShortReason(t) : Brief(t)).ToList() : tools.ToList();
 
     /// <summary>The first sentence of the description, and the schema without argument descriptions (types, enums and required stay).</summary>
     public static LlmTool Brief(LlmTool tool)

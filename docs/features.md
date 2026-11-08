@@ -16,6 +16,8 @@ makes every choice.
 ## 🌱 Farming
 
 - Clear, till, plant and fertilize, tile by tile or a whole rectangle at once, row by row (`clear_area`, `till_area`, `plant`). Tilling stops at as many tiles as there are seeds; the Scythe clears the crops that died at the season change
+- Tidy fields around the scarecrows: `till_area()` tills inside a scarecrow's circle (8 tiles each way) before any other ground, as a circle growing from the scarecrow; scarecrows stand 16 tiles apart on one grid, so the circles touch without overlapping, and the morning advice says which one to move when two stand too close. Sprinklers go on a pattern inside those circles (`place` with no tiles) that waters every field tile once, and tilling leaves their spots bare
+- Books are read as soon as they reach the pack: skill books give their experience, power books their perk (the price and animal catalogues are kept)
 - Pick up forage on the maps around the farm (`forage`)
 - Water every dry crop on the map, refilling the can at the nearest water it can reach (`water_all`), or only your own crops; on the last day of a season it leaves the crops that die overnight
 - Harvest your own ripe crops and every forage item (`harvest_all`); another farmer's crops are left for them unless asked with `whose=all`
@@ -35,7 +37,7 @@ makes every choice.
 
 ## ⛏️ Mines and combat
 
-- Go down the Mines floor by floor: the elevator to the deepest floor, rocks broken until the ladder shows, monsters fought, treasure chests opened, quartz and cave forage on the floors picked up; everything but the mine kit (tools, weapons, bombs, food) is left in your own chest first, and a full pack no longer ends the trip (`mine`)
+- Go down the Mines floor by floor: the elevator to the deepest floor, rocks broken until the ladder shows, monsters fought, treasure chests opened, quartz and cave forage on the floors picked up; everything but the mine kit (tools, weapons, bombs, food) is left in your own chest first (from where you stand, without the walk home, when another mod's `chest` tool reaches the storage from anywhere); low energy or health is fixed on the floor by eating the cheapest food, from the pack or that storage; and a full pack no longer ends the trip (`mine`)
 - Fight nearby monsters with the strongest weapon, eating when health drops; rock crabs get the Pickaxe first, and a weapon is never thrown away for pack space (`fight`)
 - Get out of the Mines from any floor, or warp out when it gets dangerous (`leave_mine`)
 - Take the elevator, crack geodes at Clint's: walks there itself, knows every kind of geode and where it comes from, and points out finds the Museum still needs (`menu`, `crack_geode`)
@@ -43,7 +45,7 @@ makes every choice.
 
 ## 🍳 Crafting, cooking and items
 
-- Craft from known recipes, cook in the kitchen with the fridge's ingredients (`craft`, `cook`). The recipe list says what Scarecrows, Sprinklers, Fertilizer and machines are for and how to learn the ones still missing; a craft takes what is short out of the farmer's own chests, or says where to get it (Coal at Clint's or in the Mines) and won't repeat from an unchanged pack; every morning the AI hears which crops have no Scarecrow and what useful things it can craft now
+- Craft from known recipes, cook in the kitchen with the fridge's ingredients (`craft`, `cook`). The recipe list says what Scarecrows, Sprinklers, Fertilizer and machines are for and how to learn the ones still missing; a craft takes what is short out of the farmer's own chests, or says where to get it (Coal at Clint's or in the Mines) and won't repeat from an unchanged pack; every morning the AI hears which crops have no Scarecrow and what useful things it can craft now. Scarecrows already in the pack or the chests are placed first: the morning advice names a free tile among the uncovered crops, and crafting another is refused until they are out
 - Store and take items in chests and the fridge in one call (`chest`); produce goes into a chest only as far as a bundle or quest needs it, the rest stays in the pack for the shipping bin
 - Rings, boots, hats, shirts and pants (`equip`, `wear`, `wardrobe`)
 - Look up any item: sell prices, what it restores, shops, recipes (`item_info`)
@@ -60,7 +62,7 @@ makes every choice.
 ## 🐔 Animals and buildings
 
 - Buy animals from Marnie, pet them, collect eggs, milk and wool, fill the hay troughs (`buy_animal`, `animals`)
-- The next farm buildings to save up for, in order (a Coop and chickens, the house upgrade for the kitchen, a Barn), with the money, Wood and Stone still missing (counting the shared chests): in `goals`, the morning briefing, and `animals` while the farmer has no animals yet
+- The next farm buildings to save up for, in order (a Coop and chickens, the house upgrade for the kitchen, a Barn), with the money, Wood and Stone still missing (counting the shared chests): in `goals`, the morning briefing, and `animals` while the farmer has no animals yet. Once one is fully paid for (money, and materials in the pack and chests), the farm part of the briefing opens with "DO THIS FIRST TODAY" and the call to make
 - Order a Coop, Barn, Silo, Well or Shed from Robin and upgrade the house (`build`, `upgrade_house`)
 - Name pets, animals, the horse and children (`name`), ride the horse (`mount`)
 - When the spouse asks for a baby at night, an AI farmer says yes (children are part of the Full House goal)
@@ -103,14 +105,14 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - The Community Center story step by step: Lewis's scene (enter Town from the Bus Stop, no rain, spring 5+, 8:00-13:00; `quests` says when that works TODAY), the Junimo note, the Wizard, then the bundles. Once the door is open, `quests` and `bundles` say so plainly, so a farmer stops planning the Bus Stop trip from older notes. Each farmer learns the Junimo script from the Wizard himself: a farmhand can't donate on the host's knowledge, and `community_center` sends them to the tower. A `community_center` call that donated nothing reports a failure
 - Shops open at the counter by themselves once inside, `sell` names the shops that buy an item, and the backpack upgrade is one call (`upgrade_backpack`)
 - Completed journal quests and Special Orders expose unclaimed money; `quests(action="claim_reward")` clicks the native journal reward button. The daily guidance covers objectives, delivery, reward collection, crafting shortages and reserving bundle items. These choices still depend on the model.
-- Community Center bundles and donations, gold for the Vault (`bundles`, `donate_bundle`); `community_center` does the next step itself (reads the first Junimo note, visits the Wizard, walks to each open room's note and hands in what fits), and `bundles` lists only the rooms that take donations now
+- Community Center bundles and donations, gold for the Vault (`bundles`, `donate_bundle`); `community_center` does the next step itself (reads the first Junimo note, visits the Wizard, walks to each open room's note and hands in what fits, taking bundle items out of the chests first, on the spot when another mod's `chest` tool reaches the storage from anywhere), and `bundles` lists only the rooms that take donations now
 - The Joja route, with a warning before the membership that changes everyone's game (`joja`)
 - The goal of the run is every achievement except Joja: `goals` reads each farmer's progress from the game (money, hearts, recipes cooked and crafted, fish, items shipped, Museum, Marlon's monster goals, mine depth, skills, house, tools, family) and lists exactly what is missing; status points out carried items never shipped. Every night `progress_pN.json` records what was shipped, cooked, crafted and caught and what is still missing
 - Museum donations and Gunther's rewards: status reminds the AI of carried pieces the Museum still needs, and one call walks there, donates and collects (`museum`)
 
 ## 🛏️ Daily life
 
-- Wait, rest in bed to recover, go to bed (`wait`, `rest`, `go_to_bed`)
+- Wait, rest in bed to recover, go to bed (`wait`, `rest`, `go_to_bed`); playing alone, the bed gives energy and health back at the co-op rate too (`BedRestAlone`)
 - Mail and letters, with quests and attachments claimed (`interact`, `close_menu`)
 - Profession choices at skill levels 5 and 10 (`choose_profession`)
 - Night events (fairy, witch, meteorite...) reported the next morning
@@ -123,12 +125,14 @@ Built-in brains track daily social progress across conversation resets. Mornings
 - Chat that only reaches farmers whose screen shows the speaker; emotes; handing over items (`say`, `emote`, `give`)
 - Each farmer sees what the others are *actually* doing next to what they last said, so lies can be caught
 - Interrupts: an @mention, a gift, someone entering your house, a theft, rain or crows stop a long action; someone just coming into view is reported with the next result instead
-- Ownership: who planted a crop, and a `theft` record when someone harvests another farmer's crop. Chests are shared: anyone may put in or take out, every change is logged (`chests.jsonl`), `chest(action="all")` and the morning briefing show what each chest holds and who moved what lately, and `chest` says what the others changed since you last used that chest
+- Ownership: who planted a crop, and a `theft` record when someone harvests another farmer's crop. Chests are shared: anyone may put in or take out, every change is logged (`chests.jsonl`), `chest(action="all")` shows what each chest holds and who moved what lately, and `chest` says what the others changed since you last used that chest
 - Marriage between players (`propose`, `answer_proposal`), a bedtime warning when the others wait for you
 
 ## 🧠 Memory and character
 
 - A diary for the viewers, lessons, a plan by season, week and day, and facts (`journal`)
+- Lessons stay useful: once they outgrow the prompt, the built-in AI condenses them after bed to the 20 that matter most, and keeps lessons true on any farm in a lasting file that a new save starts with
+- Today's checklist (`todo`): written in the morning and ticked off job by job; every action result names the next open job, and the list survives a session break
 - A `self` note each AI rewrites every evening, and one line on each of the other farmers
 - A morning briefing: overnight results, shipping, mail, weather, the farm (`/api/briefing`)
 
@@ -165,6 +169,8 @@ Want one of these? See [coverage.md → Keeping it complete](coverage.md#keeping
 [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Local operator dashboard
+`Screens` in config.json picks how many farmers play in one number: 1 or 4 have no command panel, 2 or 3 have it in the free part of the window.
+
 With OperatorDashboard enabled and four split-screen seats, a camera seat is replaced visually by a panel with all AI statuses, latest thoughts and speech, recent logs, and an instruction box. F9 focuses the box, Enter queues an instruction for the selected AI or all, and Escape releases the keyboard. Instructions apply before the next model request. The three farm views omit the old thought panels.
 
 The local operator dashboard uses a warm timber frame, cream paper cards, individual farmer colors, a field-notes feed, and green recipient/send controls.

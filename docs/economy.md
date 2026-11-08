@@ -29,9 +29,10 @@ Everything here was checked against the decompiled game (1.6) and, where marked,
   counts: `harvest`, `interact` and a scythe swing.
 - Chests are shared (decided 2026-10-29): anyone may put in or take out, and that is no theft. Every change is
   written down instead: when a chest menu closes, its contents are compared with what it held when it opened, and
-  each item put in or taken out goes to the day log (kind `chest`) and `chests.jsonl`. `chest(action=all)` and the
-  built-in AI's morning briefing list every chest with its contents and the recent changes; a `chest` call adds
-  what the others did to that chest since the farmer last used it.
+  each item put in or taken out goes to the day log (kind `chest`) and `chests.jsonl`. `chest(action=all)` lists
+  every chest with its contents and the recent changes when a farmer asks (the built-in AI's morning briefing no
+  longer calls it: it cost an action and a long text every day); a `chest` call adds what the others did to that
+  chest since the farmer last used it.
 - Basic resources (Wood, Stone, Fiber, Coal, Clay, Hardwood, Sap, ores, bars, Refined Quartz) are never sold by `ship` or `sell` (`SaleReserve.BasicResources`), except a single one of a kind never shipped before (Full Shipment): they are kept in the main chest (`chest(action="tidy")`). Chests beside an Automate machine are not storage: their inputs stay for the machine. They are never bought either (`buy` refuses them at Robin's and Clint's): Wood comes from chopping trees, planted from tree seeds when they run out, and ores from the mines.
 - Not recorded: the starting plot as a fixed tile area. A plot is "whatever the seat planted"; a fixed area per seat would be a config of rectangles.
 

@@ -241,6 +241,30 @@ public static partial class AgentTools
         return null;
     }
 
+    /// <summary>
+    /// The chest tool another mod put in place of the built-in one, or null. Such a tool reaches its storage from where the farmer
+    /// stands, so the mod's own steps call it instead of walking to a chest (days 35-57: craft, mine and community_center each
+    /// walked home and back for what that tool hands over on the spot).
+    /// </summary>
+    internal static ToolDef? RemoteChest => ToolExtensions.Find("chest");
+
+    /// <summary>Where the farmer's chests count: every map with a remote chest tool (its storage spans them), else the Farm and your home.</summary>
+    internal static List<GameLocation> ChestPlaces()
+    {
+        var places = new List<GameLocation>();
+        if (RemoteChest != null) { Utility.ForEachLocation(l => { places.Add(l); return true; }); return places; }
+        foreach (var name in new[] { "Farm", "FarmHouse", P.homeLocation.Value }.Where(s => !string.IsNullOrEmpty(s)).Distinct())
+            if (Game1.getLocationFromName(name) is { } loc && !places.Contains(loc)) places.Add(loc);
+        return places;
+    }
+
+    /// <summary>Take (or store) through the remote chest tool; the first line of its answer, or the failure, lands in <paramref name="c"/>.</summary>
+    internal static IEnumerator RemoteChestCall(ToolDef remote, object args, CallContext c)
+    {
+        yield return remote.Run(ArgsOf(args), c);
+        if (c.Ok) c.Result = c.Result.Split('\n')[0];
+    }
+
     private static Point? NearestOwnChest() => NearestOwnChest(Loc);
 
     /// <summary>The nearest player chest on this map, your own first: chests are shared (<see cref="ChestLedger"/>).</summary>

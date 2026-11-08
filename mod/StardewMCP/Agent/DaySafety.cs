@@ -31,11 +31,12 @@ public static class DaySafety
     public const int RestUntil = 1800;
 
     /// <summary>
-    /// Out of energy early in the day (but not hurt): rest in bed and carry on rather than end the day. Only in co-op,
-    /// where lying in bed gives energy back (Farmer.Update regenerates a multiplayer farmer on a bed tile).
+    /// Out of energy early in the day (but not hurt): rest in bed and carry on rather than end the day. Only where lying in
+    /// bed gives energy back (<paramref name="bedRegen"/>): in co-op Farmer.Update regenerates a farmer on a bed tile, and
+    /// alone BedRest does (BedRestAlone).
     /// </summary>
-    public static bool SuggestRest(int time, float energy, int maxEnergy, int health, int maxHealth, bool multiplayer) =>
-        multiplayer && time < RestUntil && energy <= maxEnergy / 4 && health > maxHealth / 3;
+    public static bool SuggestRest(int time, float energy, int maxEnergy, int health, int maxHealth, bool bedRegen) =>
+        bedRegen && time < RestUntil && energy <= maxEnergy / 4 && health > maxHealth / 3;
 
     /// <summary>Real seconds a message box with no text may stay up before it is closed for the farmer.</summary>
     public const double EmptyMessageSeconds = 2;
@@ -51,9 +52,9 @@ public static class DaySafety
     public static bool CloseStaleMessage(double secondsOpen, bool emptyText, bool isQuestion, bool othersWaitingInBed) =>
         !isQuestion && (emptyText ? secondsOpen >= EmptyMessageSeconds : othersWaitingInBed && secondsOpen >= StaleMessageSeconds);
 
-    /// <summary>What to do about low energy: a rest in bed while it is early and others are online, else eat or sleep.</summary>
-    public static string LowEnergyAdvice(int time, bool multiplayer) =>
-        multiplayer && time < RestUntil
-            ? "eat something, or rest in your bed (rest: about +14 energy every 10 minutes) and then get up and carry on; the day is not over"
+    /// <summary>What to do about low energy: a rest in bed while it is early and the bed gives energy back, else eat or sleep.</summary>
+    public static string LowEnergyAdvice(int time, bool bedRegen) =>
+        bedRegen && time < RestUntil
+            ? "eat something, or rest in your bed (rest gives energy back while game time passes) and then get up and carry on; the day is not over"
             : "eat something or go to bed";
 }

@@ -1,0 +1,12 @@
+# Lessons that hold on every farm (kept across saves)
+- Write today's plan with todo in the morning and finish each job before starting another; a failed step means fix it or go to the next job.
+- When energy runs low before 18:00, rest in bed and carry on; sleeping early throws away the rest of the day.
+- When the morning briefing says DO THIS FIRST TODAY, do it before buying seeds or anything else.
+- Buy only as many seeds as you can plant; seeds that only grow this season die unplanted at its end.
+- Wood, Stone, ores and other basic resources are gathered (chop trees, break rocks, mine), never bought and never sold.
+- Chop only grown trees; young trees are the Wood of next month.
+- Till inside a scarecrow's circle first (till_area with no area); keep scarecrows 16 tiles apart.
+- When a craft fails, gather only what it lists under Still short: the chests already hold the rest.
+- Check the shop's opening days and hours before walking there.
+- Talk to a villager every day, and give gifts they love: friendship opens recipes, events and achievements.
+- Be home and in bed before 01:00: passing out at 02:00 costs money.

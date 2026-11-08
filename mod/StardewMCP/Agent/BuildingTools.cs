@@ -93,18 +93,8 @@ public static partial class AgentTools
 
     private static int CountItem(string id) => P.Items.Where(i => i != null && MatchesId(i, id)).Sum(i => i.Stack);
 
-    private static void TakeItems(string id, int amount)
-    {
-        for (int i = 0; i < P.Items.Count && amount > 0; i++)
-        {
-            var it = P.Items[i];
-            if (it == null || !MatchesId(it, id)) continue;
-            int take = Math.Min(amount, it.Stack);
-            it.Stack -= take;
-            amount -= take;
-            if (it.Stack <= 0) P.Items[i] = null;
-        }
-    }
+    // The game's own ContainsId / ReduceId, as Robin's menu uses them: a storage mod that extends them (pulling from chests) works here too.
+    private static void TakeItems(string id, int amount) => P.Items.ReduceId(ItemRegistry.QualifyItemId(id), amount);
 
     private static string CostText(int gold, IEnumerable<(string ItemId, string Label, int Amount)> mats)
     {
@@ -121,8 +111,8 @@ public static partial class AgentTools
         if (P.Money < gold) lacking.Add($"{gold - P.Money:N0}g more gold");
         foreach (var m in mats)
         {
-            int have = CountItem(m.ItemId);
-            if (have < m.Amount) lacking.Add($"{m.Amount - have} more {m.Label}");
+            if (P.Items.ContainsId(ItemRegistry.QualifyItemId(m.ItemId), m.Amount)) continue;
+            lacking.Add($"{m.Amount - CountItem(m.ItemId)} more {m.Label}");
         }
         return string.Join(", ", lacking);
     }

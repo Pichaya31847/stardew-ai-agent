@@ -40,6 +40,11 @@
     <Compile Include="..\StardewMCP\Agent\Brain\DailySocialProgress.cs" Link="Mod\Brain\DailySocialProgress.cs" />
     <Compile Include="..\StardewMCP\PathSearch.cs" Link="Mod\PathSearch.cs" />
     <Compile Include="..\StardewMCP\Agent\ToolDef.cs" Link="Mod\ToolDef.cs" />
+    <Compile Include="..\StardewMCP\Agent\ToolExtensions.cs" Link="Mod\ToolExtensions.cs" />
+    <Compile Include="..\StardewMCP\Agent\ScreenPlan.cs" Link="Mod\ScreenPlan.cs" />
+    <Compile Include="..\StardewMCP\Agent\DayPlan.cs" Link="Mod\DayPlan.cs" />
+    <Compile Include="..\StardewMCP\Agent\FieldLayout.cs" Link="Mod\FieldLayout.cs" />
+    <Compile Include="..\StardewMCP\Agent\Brain\LessonBook.cs" Link="Mod\Brain\LessonBook.cs" />
     <Compile Include="..\StardewMCP\Agent\ToolArgs.cs" Link="Mod\ToolArgs.cs" />
     <Compile Include="..\StardewMCP\Agent\FieldOrder.cs" Link="Mod\FieldOrder.cs" />
     <Compile Include="..\StardewMCP\Agent\ToolContract.cs" Link="Mod\ToolContract.cs" />

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -84,6 +85,9 @@ public sealed class SeatBrain
     private PlayerLog Log => _slot.Runtime.Log;
     private static bool OvernightTransition => Players.Slots.Any(s => s.Role == SeatRole.Ai && s.State is ScreenState { Transitioning: true });
 
+    /// <summary>This seat's todo checklist for the handoff after a session break, or null when it wrote none today.</summary>
+    private string? TodayChecklist(int day) => DayPlans.For(Id) is { } plan && plan.Active(day) ? plan.Checklist() : null;
+
     // ------------------------------------------------------------------ the day loop
 
     private async Task Run(CancellationToken ct)
@@ -153,9 +157,8 @@ public sealed class SeatBrain
             (questsOk, questReport) = await RunTool(new LlmToolCall("morning_quests", "quests", "{}"), ct);
         }
         if (questsOk) briefing += "\nToday's actual journal and board report:\n" + questReport;
-        // The chests are shared: what is in them and what the others put in or took out lately.
-        var (chestsOk, chestReport) = await RunTool(new LlmToolCall("morning_chests", "chest", "{\"action\":\"all\",\"reason\":\"shared chests\"}"), ct);
-        if (chestsOk) briefing += "\n" + chestReport;
+        // No chest listing here any more: a chest(action=all) call every morning cost an action and a long text, and the
+        // tools that need what the chests hold (craft, build, the farm plan) read them themselves.
         var pass = PassOut.View(Id);
         var messages = new List<ChatMessage>
         {
@@ -222,7 +225,7 @@ public sealed class SeatBrain
                     _slot.MarkContact();
                     messages = new List<ChatMessage>
                     {
-                        ChatMessage.User(EnglishNames.Apply(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) +
+                        ChatMessage.User(EnglishNames.Apply(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults, TodayChecklist(day)) +
                             "\nYour last replies contained no tool calls. The day is not finished. Call status now, then use a real tool to continue. End the day only with journal and go_to_bed.\n" + _social.Pending))
                     };
                     NewSession();
@@ -271,7 +274,7 @@ public sealed class SeatBrain
 
             if (breakNow || messages.Sum(m => m.Chars) > hardCap)
             {
-                messages = new List<ChatMessage> { ChatMessage.User(EnglishNames.Apply(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults) + "\n" + _social.Brief)) };
+                messages = new List<ChatMessage> { ChatMessage.User(EnglishNames.Apply(Prompts.Handoff(day, Time, Log.ReadPlan(), lastThink, lastResults, TodayChecklist(day)) + "\n" + _social.Brief)) };
                 NewSession();
                 _slot.Runtime.Stats.Count("session_break");
                 Log.Add("system", text: $"{Id}: conversation restarted with a handoff ({(breakNow ? "session break" : "context too large")})");
@@ -284,8 +287,71 @@ public sealed class SeatBrain
             }
         }
 
+        if (dayDone) await CondenseLessons(ct);
         Status = dayDone ? "in bed" : "stopped";
         return true;
+    }
+
+    // ------------------------------------------------------------------ lessons (LessonBook)
+
+    /// <summary>
+    /// Lessons that hold on any farm, shared by every seat and every save: Mods/StardewMCP/memory/lasting_lessons.md, outside the
+    /// log folder, so clearing the logs for a new save keeps them. The first time it starts from assets/lasting_lessons_seed.md.
+    /// </summary>
+    private string LastingFile =>
+        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_assetDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))!, "memory", "lasting_lessons.md");
+
+    private string ReadLasting()
+    {
+        try
+        {
+            var file = LastingFile;
+            if (!File.Exists(file))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                var seed = Path.Combine(_assetDir, "lasting_lessons_seed.md");
+                if (File.Exists(seed)) File.Copy(seed, file);
+            }
+            return File.Exists(file) ? File.ReadAllText(file) : "";
+        }
+        catch (IOException) { return ""; }
+    }
+
+    /// <summary>
+    /// After bed: once the lessons outgrow the prompt, one model call (no tools) condenses them to the most useful
+    /// <see cref="LessonBook.MaxLessons"/> and updates the lasting lessons. The old text goes to lessons_archive.md.
+    /// </summary>
+    private async Task CondenseLessons(CancellationToken ct)
+    {
+        var path = _log.LessonsFile(Id);
+        var lessons = _log.ReadMemoryText(path);
+        if (!LessonBook.ShouldCondense(lessons)) return;
+        try
+        {
+            Status = "tidying the lessons";
+            var language = string.IsNullOrWhiteSpace(_cfg.WorkLanguageName()) ? _cfg.LanguageName() : _cfg.WorkLanguageName();
+            var r = await _llm.Complete(LessonBook.System,
+                new List<ChatMessage> { ChatMessage.User(LessonBook.Request(lessons, ReadLasting(), language)) }, Array.Empty<LlmTool>(), ct);
+            InputTokens += r.InputTokens;
+            OutputTokens += r.OutputTokens;
+            if (LessonBook.Parse(r.Text) is not { } p)
+            {
+                Log.Add("system", text: $"{Id}: lessons kept as they are (the condensing answer had no LESSONS list)");
+                return;
+            }
+            int before = lessons.Split('\n').Count(l => l.Trim().Length > 0);
+            _log.ReplaceLessons(p.lessons, lessons, Id);
+            if (p.lasting.Count > 0)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LastingFile)!);
+                File.WriteAllText(LastingFile, "# Lessons that hold on every farm (kept across saves)\n" + LessonBook.Format(p.lasting));
+            }
+            Log.Add("system", text: $"{Id}: lessons condensed from {before} lines to {p.lessons.Count}; {p.lasting.Count} lasting lesson(s)");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Add("system", text: $"{Id}: lessons not condensed: {Prompts.Clip(ex.Message, 200)}");
+        }
     }
 
     // ------------------------------------------------------------------ pieces
@@ -306,7 +372,9 @@ public sealed class SeatBrain
             Notes: _log.ReadMemoryText(_log.NotesFile(Id)),
             Speech: _cfg.SpeechLanguageName(),
             MemoryLines: _cfg.BrainMemoryLines,
-            Work: _cfg.WorkLanguageName());
+            Work: _cfg.WorkLanguageName(),
+            Automate: AgentTools.AutomateLoaded,
+            Lasting: ReadLasting());
         return EnglishNames.Apply(Prompts.System(Prompts.Template(_assetDir), inputs));
     }
 

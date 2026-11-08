@@ -204,6 +204,8 @@ public static class Players
     /// </summary>
     public static void Resolve(ModConfig config, IMonitor monitor)
     {
+        foreach (var note in config.ApplyScreens())
+            monitor.Log(note, LogLevel.Info);
         var roles = new SeatRole[Seats];
         int last = 0;
         for (int i = 0; i < Seats; i++)

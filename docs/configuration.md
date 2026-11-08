@@ -71,6 +71,7 @@ An `ai` seat takes these fields:
 | `RepeatHintAfter` | `3` | Loop guard: add a "try something different" hint when the identical call has failed this many times in a row (0 = off) |
 | `RepeatBlockAfter` | `5` | Loop guard: refuse the Nth identical call in a row without running it when the N-1 before it failed (0 = off) |
 | `NoProgressAfter` | `25` | Loop guard: add a "pick an action" hint after this many calls in a row with no game time, inventory or position change (0 = off) |
+| `BedRestAlone` | `true` | Playing alone, an AI farmer in bed gets energy and health back at the game's co-op rate (about +14 energy per 10 minutes), so `rest` works without other farmers |
 | `PauseKey` | `"F8"` | Key (an XNA `Keys` name) that toggles pause / resume while the game window has focus; empty = off |
 | `EnableDebugApi` | `false` | Serve `/api/debug/*` test hooks for automated tests; leave off for normal play |
 | `ChatSeconds` | `5` | Longest time an AI's `say` stays up, as the bubble above its head and its line in the chat box |
@@ -79,6 +80,7 @@ An `ai` seat takes these fields:
 
 | Setting | Default | Meaning |
 |---|---|---|
+| `Screens` | `0` | How many farmers play, 1–4, set in one number (see below); `0` = as `SplitScreen`, `OperatorDashboard` and `Seats` say |
 | `SplitScreen` | `false` | Up to four screens share the farm in split-screen co-op |
 | `AutoBuildCabins` | `true` | Build the cabins the farmhands need when the farm has too few (changes the save) |
 | `SeparateWallets` | `false` | Give every farmer their own wallet: on a shared-wallet save the host asks for it on load like the Mayor's ledger, and the game splits the money evenly that night (changes the save) |
@@ -88,6 +90,19 @@ An `ai` seat takes these fields:
 | `LockHostInput` | `true` | Ignore the real keyboard/mouse on P1 once a save is loaded, when P1 is an AI |
 | `CleanFrames` | `true` | Frozen frames look live (no Paused banner, HUD kept), no cursors, gamepad hint or join messages |
 | `AutoZoom` | `true` | Zoom each screen to about 20 tiles across |
+
+`Screens` sets `SplitScreen`, `OperatorDashboard` and the seat roles for you when the game loads a save:
+
+| `Screens` | Farmers | Command panel ([OperatorDashboard](#operatordashboard-local-customization)) |
+|---|---|---|
+| `1` | P1 alone, no split-screen | No |
+| `2` | P1, P2 | Yes, in the free part of the window (`DashboardLayout`) |
+| `3` | P1–P3 | Yes, in the fourth quarter |
+| `4` | P1–P4 | No |
+
+A seat that starts to play this way (it was `off` or `camera`) becomes `ai`; with no `Brain` of its own it takes the AI
+of the seat before it, and an empty or camera name becomes `AI3`, `AI4`. The seats after the farmers are turned off. A
+farm that gets more farmers needs another cabin (`AutoBuildCabins`).
 
 The first time the game starts its co-op server, Windows Firewall may ask for permission once; allow it. For
 separate wallets, create the co-op farm with "Separate wallets" on, or set `SeparateWallets` (see [economy.md](economy.md)).
@@ -145,6 +160,6 @@ a 24k context, lower `SessionBreakResultChars` (about 24000) so the prompt and t
 The built-in AI's system prompt is `Mods/StardewMCP/assets/system_prompt.md`. Edit it to change how the AIs play.
 
 ### OperatorDashboard (local customization)
-Default false. Draw a combined status/log/instruction panel. Put the camera seat after the AI seats: a trailing camera is a virtual UI region and does not join a farmer, consume a cabin or participate in sleep. With three AIs and a trailing camera, the dashboard occupies the upper right quadrant. F9 focuses input, Enter sends, Escape releases input. The panel suppresses the old per-AI HUD and paused scrolls while preserving the cursor. Seat names are applied on save load in dashboard mode. A camera between AI seats still requires a real local instance because the game joins screens in order.
+Default false. Draw a combined status/log/instruction panel. Put the camera seat after the AI seats: a trailing camera is a virtual UI region and does not join a farmer, consume a cabin or participate in sleep. With three AIs and a trailing camera, the dashboard occupies the upper right quadrant. F9 focuses input, Enter sends, Escape releases input. The panel suppresses the old per-AI HUD and paused scrolls while preserving the cursor. Seat names are applied on save load in dashboard mode. Instructions through `POST /api/order` and `mcp_order` work without the panel too (`Screens` 1 or 4). A camera between AI seats still requires a real local instance because the game joins screens in order.
 
 DashboardLayout defaults to quadrant. Set it to bottom with seats AI1(ai), AI2(ai), Control(camera), off to show two AI views across the upper 60% and a full-width dashboard in the lower 40%. Only two game instances join. Screen/UI render targets are allocated for these dimensions, preserving aspect ratios. MCP endpoints are p1 for AI1 and p2 for AI2; Control is only the dashboard. Reload the game after upgrading from a version that joined Control as a farmer; existing cabins and saved farmhands are preserved.

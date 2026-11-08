@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Locations;
 using StardewValley.Menus;
+using SObject = StardewValley.Object;
 
 namespace StardewMCP.Agent;
 
@@ -56,6 +57,85 @@ public static partial class AgentTools
     private const int MineMinEnergy = 10;
     private const int MineRocksPerFloor = 80;
 
+    /// <summary>How many times one mine call stops to eat before it gives up on low energy or health.</summary>
+    private const int MineMaxRefuels = 6;
+
+    /// <summary>Eat until energy reaches this share of the maximum (and health is no longer low).</summary>
+    private const float MineRefuelTo = 0.6f;
+
+    /// <summary>
+    /// Energy (or health) ran low on a mine floor: eat the cheapest food per point of energy, from the pack first, then from
+    /// the storage when another mod's chest tool reaches it from anywhere (days 46-54: the trip stopped at energy 8-9, the
+    /// farmer climbed out and walked home, then took food out of the storage it could have reached on the floor). Seeds and
+    /// basic resources (Sap) are never eaten. The result says what was eaten, or "" when nothing was.
+    /// </summary>
+    private static IEnumerator RefuelInMine(CallContext c)
+    {
+        bool Hungry() => P.Stamina < P.MaxStamina * MineRefuelTo || IsHealthLow(P);
+        bool Eatable(Item? i) => i is SObject o && o.Edibility > 0 && !o.bigCraftable.Value && o.Category != SObject.SeedsCategory
+                                 && !SaleReserve.IsBasicResource(o.QualifiedItemId) && o.staminaRecoveredOnConsumption() > 0;
+        double Cost(SObject o) => (double)Math.Max(1, o.sellToStorePrice()) / o.staminaRecoveredOnConsumption();
+
+        var eaten = new Dictionary<string, int>();
+        int startEnergy = (int)P.Stamina, startHealth = P.health;
+        string fetched = "";
+
+        IEnumerator EatPack()
+        {
+            for (int n = 0; n < 30 && Hungry(); n++)
+            {
+                int slot = -1;
+                double best = double.MaxValue;
+                for (int s = 0; s < P.Items.Count; s++)
+                    if (Eatable(P.Items[s]) && Cost((SObject)P.Items[s]) is var cost && cost < best) { best = cost; slot = s; }
+                if (slot < 0) yield break;
+                var name = P.Items[slot].DisplayName;
+                yield return EatSlot(slot);
+                eaten[name] = eaten.TryGetValue(name, out var k) ? k + 1 : 1;
+            }
+        }
+
+        yield return EatPack();
+        if (Hungry() && ToolExtensions.Find("chest") is { } remote)
+        {
+            // The storage's contents are only known to its own tool: ask for the cheapest foods the game has, one by one.
+            int need = (int)(P.MaxStamina * MineRefuelTo - P.Stamina);
+            foreach (var (name, energy) in CheapFoods())
+            {
+                if (!Hungry()) break;
+                int count = Math.Clamp((int)Math.Ceiling(Math.Max(need, 1) / (double)energy), 1, 20);
+                var had = new HashSet<Item>(P.Items.Where(i => i != null)!);
+                var take = new CallContext();
+                yield return remote.Run(ArgsOf(new { action = "take", item = name, quantity = count, reason = "food to keep going in the mine" }), take);
+                if (!take.Ok) continue;
+                // A name can match more than one thing ("Egg" in "Dinosaur Egg"): what is not food goes straight back.
+                foreach (var odd in P.Items.Where(i => i != null && !had.Contains(i) && !Eatable(i)).Select(i => i!.Name).Distinct().ToList())
+                    yield return remote.Run(ArgsOf(new { action = "store", item = odd, reason = "not food: back into the storage" }), new CallContext());
+                fetched += (fetched.Length > 0 ? "; " : "") + take.Result.Split('\n')[0].TrimEnd('.');
+                yield return EatPack();
+                need = (int)(P.MaxStamina * MineRefuelTo - P.Stamina);
+            }
+        }
+        if (eaten.Count == 0) { c.Result = ""; yield break; }
+        c.Result = $"ate {string.Join(", ", eaten.Select(kv => $"{kv.Value} {kv.Key}"))} on the floor" +
+                   (fetched.Length > 0 ? $" (from the storage: {fetched})" : "") +
+                   $": energy {startEnergy} → {(int)P.Stamina}, health {startHealth} → {P.health}";
+    }
+
+    /// <summary>Every food the game has (no seeds, no basic resources), cheapest per point of energy first, with its energy at normal quality.</summary>
+    private static List<(string Name, int Energy)> CheapFoods()
+    {
+        var list = new List<(string Name, int Energy, double Cost)>();
+        foreach (var (id, data) in Game1.objectData)
+        {
+            if (data.Edibility <= 0 || data.Category == SObject.SeedsCategory || SaleReserve.IsBasicResource("(O)" + id)) continue;
+            int energy = (int)Math.Ceiling(data.Edibility * 2.5);
+            if (energy <= 0 || string.IsNullOrEmpty(data.Name)) continue;
+            list.Add((data.Name, energy, (double)Math.Max(1, data.Price) / energy));
+        }
+        return list.OrderBy(f => f.Cost).Select(f => (f.Name, f.Energy)).Distinct().Take(80).ToList();
+    }
+
     private static ToolDef MineTool() => new()
     {
         Name = "mine",
@@ -64,7 +144,8 @@ public static partial class AgentTools
                       "On each floor you pick up quartz, crystals and forage lying on the floor, break rocks with the Pickaxe until a ladder shows up, take it, " +
                       "fight monsters that come close (fight, eating below 40% health), and open treasure chests. Ores, gems, geodes and coal land in your pack; " +
                       "once it is full you keep going down and new drops stay on the floor. floors: how many floors to go down this call (default 5). " +
-                      "Stops early at 22:00, when energy or health runs low or on floor 120 (the bottom). Then carry on with mine, or leave_mine.",
+                      "When energy or health runs low it eats right there, the cheapest food first (from your pack, else from the storage when the chest tool reaches it from anywhere), and goes on. " +
+                      "Stops early at 22:00, when energy or health runs low with no food left, or on floor 120 (the bottom). Then carry on with mine, or leave_mine.",
         Schema = Obj(new { floors = Int("How many floors to go down, 1-20 (default 5)"), reason = Str(ReasonDesc) }, "reason"),
         Run = Mine
     };
@@ -85,19 +166,27 @@ public static partial class AgentTools
             pick = FindItem("Pickaxe", it => it is StardewValley.Tools.Pickaxe);
         }
         if (Game1.timeOfDay >= MineStopTime) { c.Fail($"It is {WorldText.FormatTime(Game1.timeOfDay)}: too late to start down the mines (stop at {WorldText.FormatTime(MineStopTime)})."); yield break; }
-        if (IsHealthLow(P)) { c.Fail($"Health {P.health}/{P.maxHealth} is too low for the mines. Eat first."); yield break; }
-        if (P.Stamina <= MineMinEnergy) { c.Fail(Reasons.LowEnergy, $"Energy {(int)P.Stamina} is too low for the mines. Eat or rest first."); yield break; }
+        string firstMeal = "";
+        if (IsHealthLow(P) || P.Stamina <= MineMinEnergy)
+        {
+            var meal = new CallContext();
+            yield return RefuelInMine(meal);
+            firstMeal = meal.Result;
+        }
+        if (IsHealthLow(P)) { c.Fail($"Health {P.health}/{P.maxHealth} is too low for the mines and there is no food to eat. Rest first."); yield break; }
+        if (P.Stamina <= MineMinEnergy) { c.Fail(Reasons.LowEnergy, $"Energy {(int)P.Stamina} is too low for the mines and there is no food to eat. Rest first."); yield break; }
 
         var before = Snapshot();
         int deepestBefore = P.deepestMineLevel;
         uint killsBefore = P.stats.MonstersKilled;
         var lines = new List<string>(fetched);
+        if (firstMeal.Length > 0) lines.Add(firstMeal);
 
         if (Loc is not MineShaft)
         {
             // Days 59-119: the pack filled with crops and seeds and stopped the mine on the first floor 15 times. Everything but
             // the mine kit goes into your own chest first (not from the Mine entrance when the pack still has room: the walk home costs hours).
-            if (MineStashCount() > 0 && (Loc.Name != "Mine" || FreeSlots() < MineStashFreeSlots))
+            if (MineStashCount() > 0 && (Loc.Name != "Mine" || FreeSlots() < MineStashFreeSlots || ToolExtensions.Has("chest")))
             {
                 var stash = new CallContext();
                 yield return StashForMine(stash);
@@ -121,7 +210,7 @@ public static partial class AgentTools
             lines.Add($"took the {(start > 1 ? "elevator" : "ladder")} to floor {start}");
         }
 
-        int floors = 0, rocks = 0, chests = 0, picked = 0;
+        int floors = 0, rocks = 0, chests = 0, picked = 0, refuels = 0;
         string stop = "";
         bool fullNoted = false;
         var skip = new HashSet<Point>();
@@ -133,13 +222,23 @@ public static partial class AgentTools
             if (Game1.activeClickableMenu != null) yield return FinishMessages(new CallContext());
             if (Game1.activeClickableMenu != null) { stop = "a menu is open"; break; }
             if (Game1.timeOfDay >= MineStopTime) { stop = $"it is {WorldText.FormatTime(Game1.timeOfDay)}"; break; }
-            if (P.Stamina <= MineMinEnergy) { stop = $"energy is low ({(int)P.Stamina})"; break; }
-            if (IsHealthLow(P)) { stop = $"health is low ({P.health}/{P.maxHealth})"; break; }
+            // Eat right here before giving up: the pack first, then the storage through another mod's chest tool.
+            if ((P.Stamina <= MineMinEnergy || IsHealthLow(P)) && refuels < MineMaxRefuels)
+            {
+                refuels++;
+                var meal = new CallContext();
+                yield return RefuelInMine(meal);
+                if (meal.Result.Length > 0) lines.Add(meal.Result);
+            }
+            if (P.Stamina <= MineMinEnergy) { stop = $"energy is low ({(int)P.Stamina}) and there is no food left to eat"; break; }
+            if (IsHealthLow(P)) { stop = $"health is low ({P.health}/{P.maxHealth}) and there is no food left to eat"; break; }
             // A full pack no longer ends the trip: ladders still need rocks broken, the drops just stay on the floor.
             if (FreeSlots() == 0 && !fullNoted)
             {
                 fullNoted = true;
-                lines.Add($"your pack filled up on floor {shaft.mineLevel}: going on down, new drops stay on the floor");
+                lines.Add(RemoteChest != null
+                    ? $"your pack filled up on floor {shaft.mineLevel}: going on down; drops that don't fit go into the storage if it takes them in, else stay on the floor"
+                    : $"your pack filled up on floor {shaft.mineLevel}: going on down, new drops stay on the floor");
             }
 
             // Monsters next to you first: fight eats when health drops.
@@ -304,6 +403,23 @@ public static partial class AgentTools
     /// </summary>
     private static IEnumerator StashForMine(CallContext c)
     {
+        // A chest tool added by another mod reaches the storage from where the farmer stands (days 45-54: the stash walked
+        // home from Town and the Mine entrance, an hour each way, while that storage was a call away). Store by name, leaving
+        // out every name the mine kit keeps.
+        if (ToolExtensions.Find("chest") is { } remote)
+        {
+            var kept = MineKeeps();
+            // A name inside a kept item's name ("Bomb" in "Cherry Bomb") could take the kept one too: it stays.
+            bool Kept(Item i) => kept.Any(k => k.Name == i.Name || k.DisplayName.Contains(i.Name, StringComparison.OrdinalIgnoreCase));
+            var names = P.Items.Where(i => i != null && !(i is Tool) && !Kept(i)).Select(i => i.Name).Distinct().ToList();
+            if (names.Count == 0) yield break;
+            var store = new CallContext();
+            yield return remote.Run(ArgsOf(new { action = "store", items = names, reason = "store everything but the mine kit" }), store);
+            if (store.Ok) c.Result = "before the mines: " + store.Result.TrimEnd('.');
+            else c.Fail("before the mines: " + store.Result.TrimEnd('.'));
+            yield break;
+        }
+
         string? where = null;
         Point? tile = null;
         foreach (var name in new[] { Loc.NameOrUniqueName, P.homeLocation.Value, "FarmHouse", "Farm" }.Where(n => !string.IsNullOrEmpty(n)).Distinct())

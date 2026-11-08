@@ -12,7 +12,7 @@
 | Stardew Valley 1.6 | ซื้อเองจาก Steam หรือ GOG (ตัวเกมแจกต่อไม่ได้) |
 | การ์ดจอ | VRAM ประมาณ 10 GB สำหรับโมเดล 9B ที่ context 48k (RTX 3080 / 4070 / 5070 ขึ้นไป) |
 | พื้นที่ดิสก์ | ประมาณ 10 GB (ตัวโมเดล 6.5 GB) |
-| mod จาก Nexus (ไม่บังคับ) | [Automate](https://www.nexusmods.com/stardewvalley/mods/1063) (ให้เครื่องจักรดึงของจากหีบข้างๆ) และ [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) Nexus ต้องสมัครสมาชิก (ฟรี) จึงต้องโหลดเอง |
+| mod จาก Nexus (ไม่บังคับ) | [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) Nexus ต้องสมัครสมาชิก (ฟรี) จึงต้องโหลดเอง |
 
 ถ้าการ์ดจอไม่ถึง ใส่ key ของ Claude, GPT หรือ Gemini ใน `config.json` แทนได้ ([seats](configuration.md#seats-and-roles))
 
@@ -33,7 +33,7 @@
    - สร้างโมเดล `stardew-local`
 
    ขั้นไหนทำไปแล้วจะข้ามให้เอง เพิ่ม mod แล้วรันซ้ำได้เลย
-3. (ไม่บังคับ) แตกไฟล์ Automate และ Generic Mod Config Menu ลงใน `local\Mods` แล้วรัน `setup.ps1` อีกรอบ สคริปต์จะตั้งค่า Automate ให้ด้วย โดยปิดการส่งขายอัตโนมัติจากกล่องขาย ไม่งั้นของในหีบที่วางติดกล่องขายจะถูกขายหมด
+3. (ไม่บังคับ) แตกไฟล์ Generic Mod Config Menu ลงใน `local\Mods` แล้วรัน `setup.ps1` อีกรอบ
 4. ถ้าอยากให้ AI พูดไทยในเกมที่ตั้งเป็นภาษาอังกฤษ ให้แตก [Stardew Valley - THAI](https://www.nexusmods.com/stardewvalley/mods/7052) และ mod ฟอนต์ของมันลงใน `local\Mods` แล้วรัน `setup.ps1` อีกรอบ สคริปต์จะติดตั้ง pack `ThaiFontInEnglish` ที่โหลดฟอนต์ไทยให้ ทั้งที่เกมยังเป็นภาษาอังกฤษ (ซึ่งดีที่สุดสำหรับโมเดล) ใน config ตัวอย่างตั้งให้ AI คิด พูด และเขียนไดอารี่เป็นไทยไว้แล้ว
 5. เปิดเกมด้วย `local\start.cmd` จะเริ่มฟาร์มใหม่ (หน้าสร้างฟาร์มกรอกให้แล้ว) หรือโหลดเซฟก็ได้ ส่วน overlay เปิดที่ `http://localhost:8770/overlay`
 

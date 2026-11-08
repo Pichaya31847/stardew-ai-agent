@@ -37,6 +37,9 @@ public static class ConfigMenu
         api.AddParagraph(manifest, () =>
             "Up to four screens share the farm: P1 is the save's own farmer (you, or an AI), P2-P4 are farmhands. " +
             "Seat and screen changes take effect when a save is loaded; AI settings restart the AI at once.");
+        api.AddNumberOption(manifest, () => config.Screens, v => { config.Screens = v; config.ApplyScreens(); },
+            () => "Screens", () => "How many farmers play: 1 (alone) and 4 have no command panel, 2 and 3 have the command panel in the free part of the window. " +
+                                   "Sets split-screen, the command panel and the seat roles below. 0 = set those yourself.", 0, 4, 1);
         api.AddBoolOption(manifest, () => config.SplitScreen, v => config.SplitScreen = v,
             () => "Split-screen co-op", () => "Join the P2-P4 seats below as local players (needs a cabin per farmhand; see 'Build cabins').");
         api.AddBoolOption(manifest, () => config.AutoBuildCabins, v => config.AutoBuildCabins = v,

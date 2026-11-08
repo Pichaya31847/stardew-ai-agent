@@ -274,6 +274,14 @@ public class BrainTests
     }
 
     [Fact]
+    public void Automate_lines_appear_only_with_automate()
+    {
+        var template = "keep\n{AUTOMATE}- chests feed machines\nend";
+        Assert.Equal("keep\nend", Prompts.ForMods(template, automate: false));
+        Assert.Equal("keep\n- chests feed machines\nend", Prompts.ForMods(template, automate: true));
+    }
+
+    [Fact]
     public void Handoff_quotes_todays_plan_and_the_last_results()
     {
         var plan = "## Season\nmoney\n## Today\nwater the parsnips\n## Week\nfish";
@@ -284,6 +292,22 @@ public class BrainTests
         Assert.DoesNotContain("fish", text);
         Assert.Contains("I should hurry", text);
         Assert.Contains("walk_to: Arrived", text);
+    }
+
+    [Fact]
+    public void Handoff_prefers_todays_todo_checklist_over_last_nights_plan()
+    {
+        var plan = "## Today\nGo to bed now at 18:30";
+        var text = Prompts.Handoff(58, "12:00", plan, null, new string[0], "1. [x] water the crops\n2. [ ] chop wood");
+        Assert.Contains("2. [ ] chop wood", text);
+        Assert.DoesNotContain("Go to bed now", text);
+    }
+
+    [Fact]
+    public void Morning_asks_for_a_todo_list()
+    {
+        var text = Prompts.Morning(5, "", null, new string[0], "06:00");
+        Assert.Contains("todo(items=", text);
     }
 
     [Fact]

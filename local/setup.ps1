@@ -7,7 +7,7 @@
   2. Installs SMAPI from its official GitHub release if it is missing.
   3. Installs the Stardew MCP mod into a separate mods folder (local\Mods): from this repository's latest GitHub
      release, or built from this clone with -BuildFromSource. Copies config.example.json as its config.
-  4. Checks the optional mods from Nexus (Automate, Generic Mod Config Menu) and gives Automate its config.
+  4. Checks the optional mod from Nexus (Generic Mod Config Menu).
   5. Installs Ollama (winget) if it is missing, then builds the stardew-local model from the Modelfile
      (ollama pull qwen3.5:9b + ollama create), or pulls a published copy with -OllamaModel.
   6. Writes settings.json for start.cmd.
@@ -118,19 +118,13 @@ else {
 Note "Installed into $mcp"
 
 # ---------------------------------------------------------------- 4. mods from Nexus
-Step 'Optional mods (Nexus needs a free account, so download them yourself into the mods folder)'
+Step 'Optional mod (Nexus needs a free account, so download it yourself into the mods folder)'
 $optional = @(
-    @{ Id = 'Automate'; Url = 'https://www.nexusmods.com/stardewvalley/mods/1063'; Why = 'machines fed from a chest beside them' },
     @{ Id = 'GenericModConfigMenu'; Url = 'https://www.nexusmods.com/stardewvalley/mods/5098'; Why = 'change the settings in game' }
 )
 foreach ($m in $optional) {
     $found = Get-ChildItem $ModsPath -Directory | Where-Object { $_.Name -like "*$($m.Id)*" } | Select-Object -First 1
     if ($found) { Note "$($m.Id): installed" } else { Note "$($m.Id): not installed ($($m.Why)): $($m.Url)" }
-}
-$automate = Get-ChildItem $ModsPath -Directory | Where-Object { $_.Name -like '*Automate*' } | Select-Object -First 1
-if ($automate -and -not (Test-Path (Join-Path $automate.FullName 'config.json'))) {
-    Copy-Item (Join-Path $here 'automate-config.json') (Join-Path $automate.FullName 'config.json')
-    Note 'Automate: shipping-bin automation turned off (a chest beside the bin would be sold).'
 }
 # Thai speech and thoughts in an English game: the Thai pack's fonts (Thai + Latin glyphs) loaded in English too.
 $thai = Get-ChildItem $ModsPath -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'assets\Content\Fonts\SmallFont.xnb') } | Select-Object -First 1

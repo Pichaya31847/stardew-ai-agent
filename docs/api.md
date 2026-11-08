@@ -82,7 +82,9 @@ the other seats add `_p2`, `_p3`:
 Player state snapshots add `transitioning` and optional `nightEvent` (native overnight event class). The built-in brain waits until overnight events/fades/pass-out finish, even when `day` already advanced. Transition diagnostics refresh on unvalidated SMAPI ticks during saving without running gameplay coroutines.
 | `day_NNN_summary.json` | Failure reasons per tool and per player |
 | `diary_NNN.md` | The AI's diary for the day |
-| `lessons.md`, `plan.md`, `notes.md` | What `journal` keeps across days |
+| `lessons.md`, `plan.md`, `notes.md` | What `journal` keeps across days. With the built-in AI, once lessons.md passes 25 lines it is condensed after bed to the 20 most useful lessons |
+| `lessons_archive.md` | The lessons as they were before each condensing |
+| `Mods/StardewMCP/memory/lasting_lessons.md` | Not in the log folder: lessons that hold on any farm, shared by the seats and kept across saves; starts from `assets/lasting_lessons_seed.md` and is updated when lessons are condensed. Read in every built-in AI system prompt |
 | `self.md`, `people.md` | The AI's note on who it is, and its line on each other farmer |
 | `stats_NNN.json` | Daily stats, written at the day rollover. `progress` (added, same version) holds `backpackSlots`, `communityCenter` (`bundlesComplete`, `bundlesTotal`, `next`: the story's next step) and `events`: counts of `session_break` (built-in AI restarted its conversation), `rest`, `backpack_upgrade`, `quest_reward_claimed`, `festival_wait_gave_up` and the `quest_accepted` / `quest_completed` / `quest_failed` journal events |
 | `chests.jsonl` | Every change to a shared chest, one JSON line per item: `day`, `time`, `seat`, `farmer`, `action` (`put` / `took`), `item`, `count`, `location`, `x`, `y`. The same changes are in the day log as kind `chest` |
@@ -97,6 +99,52 @@ with `/api/control` and `/api/release_freeze`, and test with `/api/debug/*`. [re
 [howto-record-day.md](howto-record-day.md) describe one recording setup as an example.
 
 The API only grows: endpoints and tool names are added, never renamed or removed.
+
+### Tools from other SMAPI mods
+
+Another SMAPI mod can give the AI farmers its own tool through the mod API. Copy this interface into the mod, get it in
+its `GameLaunched` handler with `Helper.ModRegistry.GetApi<IStardewMcpApi>("Duckxy.StardewMCP")`, and call `AddTool`:
+
+```csharp
+public interface IStardewMcpApi
+{
+    void AddTool(string name, string description, string inputSchemaJson, Func<string, string> run, bool instant, bool core);
+    void AddMorningNote(Func<string> note);
+    void AddItemHolder(Func<string, int> count, Func<string, string> howToUse);
+    void SetStoragePays(bool pays);
+    void LogChestChange(bool put, string item, int count, string location, int x, int y);
+}
+```
+
+The last three came later: a mod that wants to work with an older Stardew MCP too asks for them in a second interface of
+their own (SMAPI refuses an interface when one of its methods is missing).
+
+- A tool added under a built-in tool's name (`chest`, say) takes that tool's place in `tools/list` and for the AIs'
+  calls. The mod's own tools that use the built-in one inside (craft fetching ingredients, for example) keep using it.
+
+- `name` is snake_case, and `inputSchemaJson` is the tool's JSON Schema: an object whose properties have types. A tool
+  that acts (`instant: false`) needs a string `reason` property.
+- `run` gets the arguments as JSON and returns the result text. It runs on the game thread with `Game1.player` set to
+  the calling farmer, and must answer in that one call. To report a failure, throw: the exception's message is the result.
+- `instant` tools only observe and keep the world frozen. `core` tools are sent whole in the compact tool profile
+  (`BrainTools: compact`); the others are cut to one sentence.
+- The tool is listed in `tools/list` on every seat, the built-in AI gets it too, and the tool contract is checked when it
+  is added (problems go to the SMAPI log).
+- `AddMorningNote` adds a line to every farmer's morning briefing (`/api/briefing` and the built-in AI's morning
+  message). The function runs on the game thread with `Game1.player` set to the farmer being briefed; it returns "" for
+  nothing that day, and one that throws is left out. A line of the note that starts with `DO THIS FIRST TODAY` goes to
+  the top of the farm part of the briefing instead of its end.
+- A `chest` tool added in place of the built-in one is taken to reach its storage from anywhere: the mod's own steps
+  (craft fetching ingredients, the mine's stash and meals, community_center's bundle items, a missing main tool, the full-pack
+  hint) call it where the farmer stands instead of walking to a chest, and the chests of every map count as the farmer's.
+- `AddItemHolder` tells the advice about items the farmer keeps outside the pack and the chests (machines in a slot of your
+  mod): `count` gets a qualified item id and returns how many `Game1.player` has there, `howToUse` the line that says where and
+  how to use them. The farm plan then stops asking for another Furnace and says your line instead.
+- `SetStoragePays(true)`: your mod pays building, house and tool upgrade materials out of the chests, so the farm plan stops
+  asking the farmer to carry them.
+- `LogChestChange` writes a change your mod made to the chests into the chest log of the farmer on this screen (`chests.jsonl`
+  and the day log, kind `chest`), like the built-in chest tool's changes.
+
 ### POST /api/order (local customization)
 
-Body: `{"target":"all","text":"Water the crops"}`. Target may also be a configured AI name or seat id. Requires `OperatorDashboard=true` and a running built-in brain. Returns `{"queued":N,"target":"all"}`; HTTP 400 if no matching brain accepts it. Empty text and text over 1000 characters are refused. This queues a user instruction before the next model request; it does not interrupt a request or action already in progress. Console equivalent: `mcp_order all Water the crops`.
+Body: `{"target":"all","text":"Water the crops"}`. Target may also be a configured AI name or seat id. Requires a running built-in brain; it works with any `Screens`, with or without the dashboard panel. Returns `{"queued":N,"target":"all"}`; HTTP 400 if no matching brain accepts it. Empty text and text over 1000 characters are refused. This queues a user instruction before the next model request; it does not interrupt a request or action already in progress. Console equivalent: `mcp_order all Water the crops`.

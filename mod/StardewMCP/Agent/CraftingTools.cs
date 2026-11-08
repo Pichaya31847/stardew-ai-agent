@@ -42,13 +42,15 @@ public static partial class AgentTools
             Name = "place",
             Description = "Put an item from your inventory on the ground at one or more tiles: machines (Furnace...), chests, sprinklers, scarecrows, fences, paths, torches, furniture, bombs, crab pots. " +
                           "You walk next to each tile automatically. The tile must be free and the item must be allowed there (a crab pot needs water, a sprinkler goes on open ground). " +
-                          "Tree seeds (Pine Cone, Acorn, Maple Seed) go on open ground, at least 2 tiles apart. Crop seeds and fertilizer on tilled soil also work here, but plant is the usual tool for them.",
+                          "Tree seeds (Pine Cone, Acorn, Maple Seed) go on open ground, at least 2 tiles apart. Crop seeds and fertilizer on tilled soil also work here, but plant is the usual tool for them. " +
+                          "Sprinklers with no tiles go on the farm's pattern inside the scarecrows' fields (a Sprinkler waters the 4 tiles next to it, a Quality Sprinkler 8, an Iridium one 24), " +
+                          "spaced so every field tile gets water once; till_area leaves those spots bare for them. Scarecrows stand 16 tiles apart.",
             Schema = Obj(new
             {
                 item = Str("Item name, e.g. \"Chest\" or \"Furnace\""),
-                tiles = Tiles("List of [x,y] tiles, max 40"),
+                tiles = Tiles("List of [x,y] tiles, max 40 (leave out for sprinklers: they go on the field pattern)"),
                 reason = Str(ReasonDesc)
-            }, "item", "tiles", "reason"),
+            }, "item", "reason"),
             Run = Place
         },
         ChestToolDef()
@@ -70,6 +72,13 @@ public static partial class AgentTools
         if (key == null)
         {
             c.Fail($"You don't know a recipe called \"{want}\". craft() lists the recipes you know.");
+            yield break;
+        }
+
+        // Days 134-196: 51 of 54 Scarecrow crafts failed for want of Fiber while 10 finished ones sat in the chest.
+        if (key is "Scarecrow" or "Deluxe Scarecrow" && OwnedScarecrows() is var owned && owned.total > 0)
+        {
+            c.Fail($"You already have {owned.total} scarecrow(s) ({owned.where}): place those before crafting more. {ScarecrowPlaceHint()}");
             yield break;
         }
 
@@ -262,10 +271,11 @@ public static partial class AgentTools
         ["(O)390"] = "break rocks with the Pickaxe",
         ["(O)771"] = "cut weeds with the Scythe",
         ["(O)92"] = "chop trees with the Axe",
-        ["(O)382"] = "break rocks in the Mines, or buy it at Clint's Blacksmith in Town",
-        ["(O)378"] = "Mines floors 1-39, or buy it at Clint's Blacksmith",
-        ["(O)380"] = "Mines floors 40-79, or buy it at Clint's Blacksmith",
-        ["(O)384"] = "Mines floors 80+, or buy it at Clint's Blacksmith",
+        // Basic resources are gathered, never bought (buy refuses them): day 14 sent the farmer to Clint's for Coal.
+        ["(O)382"] = "break rocks in the Mines (dark rocks and coal nodes), or kill dust sprites there; never bought",
+        ["(O)378"] = "break copper nodes on Mines floors 1-39; never bought",
+        ["(O)380"] = "break iron nodes on Mines floors 40-79; never bought",
+        ["(O)384"] = "break gold nodes on Mines floors 80+; never bought",
         ["(O)330"] = "hoe untilled ground or dig up artifact spots",
         ["(O)334"] = "smelt 5 Copper Ore + 1 Coal in a Furnace",
         ["(O)335"] = "smelt 5 Iron Ore + 1 Coal in a Furnace",
@@ -296,27 +306,33 @@ public static partial class AgentTools
     /// <summary>"have 12/50 Wood (...)" for each ingredient short for one craft, with your chests that hold it and where to get it.</summary>
     private static string Shortfall(CraftingRecipe cr)
     {
-        var parts = new List<string>();
+        // What really stops the craft comes first. Day 58: Fiber was short, so nothing came out of the chests, yet the line said
+        // "1 Coal ... craft takes them out for you" and AI1 broke stones for Coal for an hour while 31 sat in a chest.
+        var rows = new List<(string id, int need, int have, int inChests, bool category)>();
         foreach (var (id, need) in cr.recipeList)
         {
             int have = InPack(id);
             if (have >= need) continue;
-            var line = $"have {have}/{need} {IngredientName(id)}";
             bool category = int.TryParse(id, out var cat) && cat < 0;
-            if (!category)
-            {
-                var stored = StoredInOwnChests(id);
-                int inChests = stored.Sum(s => s.n);
-                if (inChests > 0)
-                    line += have + inChests >= need
-                        ? $" (the chest{(stored.Count > 1 ? "s" : "")} hold {inChests} more: craft takes them out for you)"
-                        : $" (the chest{(stored.Count > 1 ? "s" : "")} hold {inChests} more, but not enough)";
-                if (IngredientSources.TryGetValue(ItemRegistry.QualifyItemId(id), out var src))
-                    line += $" — {src}";
-            }
+            rows.Add((id, need, have, category ? 0 : StoredInOwnChests(id).Sum(s => s.n), category));
+        }
+        if (rows.Count == 0) return Ingredients(cr);
+        var shortRows = rows.Where(r => r.category || r.have + r.inChests < r.need).ToList();
+        var stored = rows.Except(shortRows).ToList();
+        var parts = new List<string>();
+        foreach (var r in shortRows)
+        {
+            var line = $"have {r.have}/{r.need} {IngredientName(r.id)}" + (r.inChests > 0 ? $" ({r.inChests} more in your chests, still not enough)" : "");
+            if (!r.category && IngredientSources.TryGetValue(ItemRegistry.QualifyItemId(r.id), out var src)) line += $" — {src}";
             parts.Add(line);
         }
-        return parts.Count == 0 ? Ingredients(cr) : string.Join("; ", parts) + ". Get what is short first, or craft something else from craft()";
+        if (shortRows.Count == 0)
+            return string.Join("; ", stored.Select(r => $"have {r.have}/{r.need} {IngredientName(r.id)} ({r.inChests} in your chests: craft takes them out for you)")) +
+                   ". Call craft again; if it still fails, chest(action=\"take\") them yourself";
+        var text = "Still short: " + string.Join("; ", parts) + ".";
+        if (stored.Count > 0)
+            text += $" Already enough in your chests (no need to gather): {string.Join(", ", stored.Select(r => $"{r.need - r.have} {IngredientName(r.id)}"))}; craft takes them out once the rest is there.";
+        return text + " Get only what is still short, or craft something else from craft()";
     }
 
     /// <summary>How many of item <paramref name="id"/> the farm and house chests hold, per chest (chests are shared: <see cref="ChestLedger"/>).</summary>
@@ -324,9 +340,8 @@ public static partial class AgentTools
     {
         var qid = ItemRegistry.QualifyItemId(id);
         var found = new List<(int n, string place, string map, Point tile)>();
-        foreach (var loc in new[] { Game1.getFarm(), Utility.getHomeOfFarmer(P) as GameLocation })
+        foreach (var loc in ChestPlaces())
         {
-            if (loc == null) continue;
             foreach (var (tile, obj) in loc.objects.Pairs)
             {
                 if (obj is not Chest { playerChest.Value: true, fridge.Value: false } chest) continue;
@@ -364,6 +379,18 @@ public static partial class AgentTools
                 missing -= take;
             }
         }
+        if (RemoteChest is { } remote)
+        {
+            // The storage hands them over where the farmer stands: no walk home (day 35: craft walked to the Farm chest for Stone).
+            foreach (var (name, n) in plan.GroupBy(p => p.name).Select(g => (g.Key, g.Sum(p => p.n))))
+            {
+                var take = new CallContext();
+                yield return RemoteChestCall(remote, new { action = "take", item = name, quantity = n, reason }, take);
+                notes.Add(take.Ok ? take.Result : $"Couldn't take {name} from the storage: {take.Result}");
+                if (!take.Ok) yield break;
+            }
+            yield break;
+        }
         // One map at a time, this one first: Wood from the house and Coal from the farm took two round trips otherwise.
         foreach (var (name, n, map, tile) in plan.OrderBy(p => p.map == Loc.Name ? 0 : 1).ThenBy(p => p.map).ThenBy(p => p.tile.X).ThenBy(p => p.tile.Y).ToList())
         {
@@ -399,7 +426,9 @@ public static partial class AgentTools
         {
             // Say what is short instead of "craft one" when it can't be made (the advice sent both farmers to a failing craft daily).
             string how;
-            if (!P.craftingRecipes.ContainsKey("Scarecrow")) how = "learn the Scarecrow recipe (Farming level 1) or buy one";
+            var owned = OwnedScarecrows();
+            if (owned.total > 0) how = $"you have {owned.total} scarecrow(s) ({owned.where}): {ScarecrowPlaceHint()}";
+            else if (!P.craftingRecipes.ContainsKey("Scarecrow")) how = "learn the Scarecrow recipe (Farming level 1) or buy one";
             else
             {
                 var sc = new CraftingRecipe("Scarecrow", false);
@@ -409,6 +438,28 @@ public static partial class AgentTools
                     : $"a Scarecrow needs {Ingredients(sc)}; short now: {Shortfall(sc)}";
             }
             lines.Add($"{bare} of your crops have no Scarecrow near them, so crows can eat them: {how}.");
+        }
+        // Sprinklers do the watering once placed: say so while some sit in the pack or a chest.
+        foreach (var (kind, id, recipe) in Sprinklers)
+        {
+            int idle = CountItem(id) + ChestCount(id);
+            if (idle == 0) continue;
+            lines.Add($"{idle} {recipe}(s) not placed yet: place(item=\"{recipe}\") with no tiles puts them on the field pattern inside your scarecrows' circles " +
+                      "(every field tile gets water each morning, no watering can).");
+        }
+        // Scarecrows placed side by side waste their circles: say which to move and where (the 16-tile grid).
+        var standing = scarecrows.Select(s => new Point((int)s.tile.X, (int)s.tile.Y)).ToList();
+        foreach (var s in standing)
+        {
+            var others = standing.Where(o => o != s).ToList();
+            if (FieldLayout.TooClose(s, others) is not Point near) continue;
+            var to = FieldLayout.NextSpots(others)
+                .Where(p => farm.isTileOnMap(p.X, p.Y) && !farm.objects.ContainsKey(p.ToVector2()) && farm.isTilePassable(p.ToVector2()))
+                .Cast<Point?>().FirstOrDefault();
+            lines.Add($"Scarecrows too close: ({s.X},{s.Y}) and ({near.X},{near.Y}) are under {FieldLayout.Spacing} tiles apart, so their circles overlap. " +
+                      $"Pick up ({s.X},{s.Y}) with use_tool(tool=\"Pickaxe\", tiles=[[{s.X},{s.Y}]]) and place it " +
+                      (to is { } p2 ? $"at ({p2.X},{p2.Y}) (16 tiles from the others)." : "16 tiles from the others."));
+            break;
         }
         var ready = new List<string>();
         foreach (var key in P.craftingRecipes.Keys.ToList())
@@ -422,6 +473,55 @@ public static partial class AgentTools
         }
         if (ready.Count > 0) lines.Add("You can craft now: " + string.Join("; ", ready.Take(5)) + ". craft(recipe, quantity), then place it.");
         return string.Join("\n", lines);
+    }
+
+    private static readonly string[] ScarecrowIds = { "(BC)8", "(BC)167" };
+
+    /// <summary>Scarecrows in the pack and the farm chests, and where ("3 in your pack, 10 in the chest at Farm (68,37)").</summary>
+    private static (int total, string where) OwnedScarecrows()
+    {
+        int pack = ScarecrowIds.Sum(id => CountOfId(P.Items, id));
+        var stored = ScarecrowIds.SelectMany(StoredInOwnChests).ToList();
+        var parts = new List<string>();
+        if (pack > 0) parts.Add($"{pack} in your pack");
+        parts.AddRange(stored.Select(s => $"{s.n} in the chest at {s.place}"));
+        return (pack + stored.Sum(s => s.n), string.Join(", ", parts));
+    }
+
+    /// <summary>"take them out of the chest and place(item="Scarecrow", tiles=[[x,y]])" with a free tile among the crops that no scarecrow covers.</summary>
+    private static string ScarecrowPlaceHint()
+    {
+        var farm = Game1.getFarm();
+        var me = Rt.Log.Player;
+        var scarecrows = farm.objects.Pairs.Where(kv => kv.Value.IsScarecrow()).Select(kv => kv.Key).ToList();
+        var bare = farm.terrainFeatures.Pairs
+            .Where(kv => kv.Value is StardewValley.TerrainFeatures.HoeDirt { crop: not null } d && Ownership.OwnerOf(d) is var o && (o == null || o == me)
+                         && !scarecrows.Any(s => Vector2.Distance(s, kv.Key) < 9))
+            .Select(kv => kv.Key).ToList();
+        // Days 197-265: "take them from that chest" sent the farmers to the wrong chest 22 times; name the chest's tile.
+        var stored = StoredInOwnChests("(BC)8").OrderByDescending(s => s.n).FirstOrDefault();
+        var take = CountOfId(P.Items, "(BC)8") > 0 || stored.n == 0 ? ""
+            : RemoteChest != null ? "chest(action=\"take\", item=\"Scarecrow\") (from where you stand), then "
+            : $"{(stored.map != Loc.Name ? $"travel_to(\"{stored.map}\"), " : "")}chest(action=\"take\", item=\"Scarecrow\", x={stored.tile.X}, y={stored.tile.Y}), then ";
+        // Once one stands, the next goes on the 16-tile grid (FieldLayout), wherever the bare crops are.
+        if (scarecrows.Count > 0 && NextScarecrowSpot(farm) is { } grid)
+            return $"{take}place(item=\"Scarecrow\", tiles=[[{grid.tile.X},{grid.tile.Y}]]): 16 tiles from the others, {grid.ground} tiles to till inside its circle " +
+                   "(till_area() then tills around it). Never next to another scarecrow: each protects 8 tiles each way.";
+        if (bare.Count == 0) return $"{take}place one in the middle of each field.";
+        // The bare crop with the most bare crops within 8 tiles, then the nearest free tile to it.
+        var middle = bare.OrderByDescending(t => bare.Count(u => Vector2.Distance(t, u) < 9)).First();
+        for (int r = 0; r <= 3; r++)
+            for (int dx = -r; dx <= r; dx++)
+                for (int dy = -r; dy <= r; dy++)
+                {
+                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
+                    var v = middle + new Vector2(dx, dy);
+                    if (farm.objects.ContainsKey(v)) continue;
+                    if (farm.terrainFeatures.TryGetValue(v, out var tf) && tf is not StardewValley.TerrainFeatures.HoeDirt { crop: null }) continue;
+                    if (!farm.isTilePassable(v)) continue;
+                    return $"{take}place(item=\"Scarecrow\", tiles=[[{(int)v.X},{(int)v.Y}]]) covers {bare.Count(u => Vector2.Distance(v, u) < 9)} of those crops.";
+                }
+        return $"{take}place one near ({(int)middle.X},{(int)middle.Y}).";
     }
 
     private static string Ingredients(CraftingRecipe cr) =>
@@ -453,17 +553,26 @@ public static partial class AgentTools
     {
         var name = S(a, "item").Trim();
         var tiles = TileList(a, "tiles").Take(40).ToList();
-        if (tiles.Count == 0) { c.Fail("No tiles given."); yield break; }
         int slot = FindItem(name, it => it is SObject);
         if (slot < 0) { c.Fail($"No placeable \"{name}\" in inventory. Craft it (craft) or buy it first."); yield break; }
 
         var first = P.Items[slot];
+        // Sprinklers with no tiles go on the pattern that waters every field tile once, inside the scarecrows' circles.
+        if (tiles.Count == 0 && FieldLayout.SprinklerKind(first.QualifiedItemId) is { } kind && Loc is Farm sprinklerFarm)
+        {
+            if (ScarecrowsOn(sprinklerFarm).Count == 0) { c.Fail(Reasons.NotHere, "Sprinklers go in the fields around a scarecrow, and none stands on the farm yet: place a Scarecrow first."); yield break; }
+            tiles = SprinklerAutoSpots(sprinklerFarm, kind, Math.Min(40, CountOfId(P.Items, first.QualifiedItemId)));
+            if (tiles.Count == 0) { c.Fail(Reasons.NotHere, $"No free {first.DisplayName} spot waters tilled soil inside your scarecrows' circles: till_area() first, then place the sprinklers."); yield break; }
+        }
+        if (tiles.Count == 0) { c.Fail("No tiles given."); yield break; }
         string qid = first.QualifiedItemId, label = first.DisplayName;
         bool IsIt(Item it) => it is SObject && it.QualifiedItemId == qid;
         var loc = Loc;
         var lines = new List<string>();
         var placedAt = new List<Point>();
         int placed = 0;
+        // Scarecrows on the Farm keep 16 tiles apart so their circles don't overlap (days 1-58 they stood side by side).
+        bool scarecrow = loc is Farm && first is SObject sc && sc.IsScarecrow();
 
         foreach (var t in tiles)
         {
@@ -472,6 +581,13 @@ public static partial class AgentTools
             if (loc.Objects.TryGetValue(t.ToVector2(), out var there))
             {
                 lines.Add($"({t.X},{t.Y}) already has {there.DisplayName}");
+                continue;
+            }
+            if (scarecrow && FieldLayout.TooClose(t, ScarecrowsOn(loc).Select(s => s.tile)) is Point near)
+            {
+                var spot = NextScarecrowSpot((Farm)loc);
+                lines.Add($"({t.X},{t.Y}) not placed: the scarecrow at ({near.X},{near.Y}) is closer than {FieldLayout.Spacing} tiles, and each protects 8 tiles each way, so the circles would overlap. " +
+                          (spot is { } s ? $"Place it at ({s.tile.X},{s.tile.Y}) instead: on the 16-tile grid, {s.ground} tiles to till inside its circle." : "Place it 16 tiles from the others."));
                 continue;
             }
             var sub = new CallContext();

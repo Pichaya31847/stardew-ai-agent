@@ -56,6 +56,13 @@ public class AgentHttp
         _mcp = new McpDispatcher(_tools, () => _config.SplitScreen);
         foreach (var problem in ToolContract.Check(_tools.Values))
             _monitor.Log("Tool contract: " + problem, LogLevel.Warn);
+        // Other mods add their tools at GameLaunched, after this table was made (the dispatcher reads the same table).
+        ToolExtensions.Added += tool =>
+        {
+            _tools[tool.Name] = tool;
+            foreach (var problem in ToolContract.Check(new[] { tool }))
+                _monitor.Log("Tool contract: " + problem, LogLevel.Warn);
+        };
     }
 
     public void Start(int port)

@@ -65,7 +65,7 @@ public static partial class AgentTools
     {
         if (!Game1.MasterPlayer.mailReceived.Contains("ccVault"))
         {
-            c.Fail(Reasons.ShopClosed, "The bus to Calico Desert is not repaired yet. Complete the Vault bundle in the Community Center, or buy the Bus project from Joja.");
+            c.Fail(Reasons.ShopClosed, "The bus to Calico Desert is not repaired yet. Complete the Vault bundles in the Community Center (gold from your wallet).");
             yield break;
         }
 
@@ -246,7 +246,7 @@ public static partial class AgentTools
     {
         if (!Game1.MasterPlayer.hasOrWillReceiveMail("ccMovieTheater"))
         {
-            c.Fail(Reasons.ShopClosed, "The movie theater is not restored yet. Complete the Movie Theater bundle in the Community Center, or buy it from Joja.");
+            c.Fail(Reasons.ShopClosed, "The movie theater is not built yet: it comes once the Community Center is restored (every bundle done).");
             yield break;
         }
 

@@ -1,6 +1,0 @@
-{
-  "MachineOverrides": {
-    "ShippingBin": { "Enabled": false },
-    "MiniShippingBin": { "Enabled": false }
-  }
-}

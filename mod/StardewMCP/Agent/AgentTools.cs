@@ -72,6 +72,12 @@ public static partial class AgentTools
 
     public static List<ToolDef> All()
     {
+        // A tool another mod added under a built-in name takes that tool's place.
+        return BuiltIn().Where(t => !ToolExtensions.Has(t.Name)).Concat(ToolExtensions.Tools).ToList();
+    }
+
+    private static List<ToolDef> BuiltIn()
+    {
         return new List<ToolDef>(SocialTools.All().Concat(JournalTools.All()).Concat(EconomyTools.All()).Concat(KnowledgeTools.All()).Concat(VillagerTools()).Concat(RomanceTools()).Concat(NamingTools()).Concat(Core()).Concat(CraftingToolDefs()).Concat(QolToolDefs()).Concat(CalendarToolDefs()).Concat(CommunityTools()).Concat(JojaTools()).Concat(BuildingToolDefs()).Concat(AnimalToolDefs()).Concat(ClothingToolDefs()).Concat(HorseToolDefs()).Concat(ChoreToolDefs()));
     }
 
@@ -87,6 +93,22 @@ public static partial class AgentTools
                 Schema = Obj(new { text = Str($"Your thought in {Lang}") }, "text"),
                 Instant = true, NeedsWorld = false, AppendStatus = false,
                 Run = Think
+            },
+            new()
+            {
+                Name = "todo",
+                Description = "Today's plan as a checklist the game keeps for you: every action result then shows the next open job, and it survives a session break. " +
+                              "In the morning: todo(items=[...]) with 3-6 jobs in the order you will do them. When one is finished: todo(done=\"...\") (its words or number). " +
+                              "todo(add=\"...\") adds a job; todo() shows the list. Work through the list instead of drifting to other jobs; a failed step is a reason to " +
+                              "fix it or move to the next job, not to start a new one.",
+                Schema = Obj(new
+                {
+                    items = new { type = "array", items = new { type = "string" }, description = $"Today's jobs in order (replaces the list, at most {DayPlan.MaxItems})" },
+                    done = Str("A finished job: its words or its number"),
+                    add = Str("One more job for the end of the list")
+                }),
+                Instant = true, NeedsWorld = false, AppendStatus = false,
+                Run = Todo
             },
             new()
             {
@@ -300,6 +322,28 @@ public static partial class AgentTools
         c.Result = "ok";
     }
 
+    private static IEnumerator Todo(JsonElement a, CallContext c)
+    {
+        var plan = DayPlans.For(Rt.Log.Player);
+        int day = AgentLog.FarmDay;
+        var notes = new List<string>();
+        if (a.ValueKind == JsonValueKind.Object && a.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            plan.Set(day, arr.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString() ?? ""));
+            Rt.Log.Add("system", text: "Today's plan: " + string.Join("; ", plan.Items.Select(i => i.Text)));
+        }
+        var add = TextArg(a, "add");
+        if (add.Length > 0 && !plan.Add(day, add)) notes.Add($"Not added: the list is full ({DayPlan.MaxItems}) or already has it.");
+        var done = TextArg(a, "done");
+        if (done.Length > 0)
+        {
+            if (plan.MarkDone(day, done) is { } ticked) Rt.Log.Add("system", text: "Plan job done: " + ticked);
+            else notes.Add($"No open job matches \"{done}\": use its number or words from the list.");
+        }
+        if (!plan.Active(day)) { c.Fail(Reasons.InvalidArgs, "No plan for today yet: todo(items=[\"water the crops\", \"...\"]) with 3-6 jobs in order."); yield break; }
+        c.Result = "Today's plan:\n" + plan.Checklist() + (notes.Count > 0 ? "\n" + string.Join(" ", notes) : "") + "\n" + plan.Line(day);
+    }
+
     private static IEnumerator WalkToTool(JsonElement a, CallContext c)
     {
         var target = new Point(I(a, "x", -1), I(a, "y", -1));
@@ -362,11 +406,16 @@ public static partial class AgentTools
         c.Result = $"Waited until {WorldText.FormatTime(Game1.timeOfDay)}.";
     }
 
-    /// <summary>Lie on the bed while time passes: the game itself regenerates a multiplayer farmer standing on a bed tile.</summary>
+    /// <summary>
+    /// Lying in bed gives energy back: the game does it for a farmer in bed only in multiplayer, <see cref="BedRest"/> alone
+    /// (BedRestAlone).
+    /// </summary>
+    internal static bool BedRegen => Game1.IsMultiplayer || Config.BedRestAlone;
+
+    /// <summary>Lie on the bed while time passes: the game regenerates a multiplayer farmer on a bed tile, <see cref="BedRest"/> a farmer alone.</summary>
     private static IEnumerator Rest(JsonElement a, CallContext c)
     {
-        // Farmer.Update regenerates a farmer in bed only in multiplayer (and alone, the bed's question would stop the clock)
-        if (!Game1.IsMultiplayer)
+        if (!BedRegen)
         {
             c.Fail(Reasons.NotReady, "Lying in bed only gives energy back while other farmers are in the game. Eat something, or go_to_bed to end the day.");
             yield break;
@@ -718,6 +767,15 @@ public static partial class AgentTools
         Face(target);
         P.lastClick = new Vector2(target.X * 64 + 32, target.Y * 64 + 32);
         P.BeginUsingTool();
+        // An upgraded Hoe or Watering Can charges for as long as the use button is held, and no button is held here: the
+        // Copper Watering Can charged to its full area and stayed there (day 266). Let go at once, the way a tap works:
+        // one tile, at no power.
+        if (P.CurrentTool is Hoe or WateringCan && P.CurrentTool.UpgradeLevel > 0)
+        {
+            for (int i = 0; i < 10 && !(P.UsingTool && P.canReleaseTool); i++) yield return null;
+            P.toolPower.Value = 0;
+            if (P.UsingTool && P.canReleaseTool) P.EndUsingTool();
+        }
         yield return Ticks(6);
         yield return WaitIdle();
     }
@@ -759,9 +817,10 @@ public static partial class AgentTools
                 batch.Skip(Reasons.NotHere);
                 continue;
             }
-            if (P.Stamina <= 2)
+            // The same floor as the farm batches: day 58 broke stones from 08:00 until energy 0 at 09:50 (it only stopped at 2).
+            if (P.Stamina <= Math.Max(2, Config.FarmBatchMinEnergy))
             {
-                lines.Add($"Stopped: energy too low ({(int)P.Stamina}): {DaySafety.LowEnergyAdvice(Game1.timeOfDay, Game1.IsMultiplayer)}.");
+                lines.Add($"Stopped: energy is low ({(int)P.Stamina}, limit {Math.Max(2, Config.FarmBatchMinEnergy)}): {DaySafety.LowEnergyAdvice(Game1.timeOfDay, BedRegen)}.");
                 batch.Stop = Reasons.LowEnergy;
                 break;
             }
@@ -838,12 +897,22 @@ public static partial class AgentTools
                 continue;
             }
 
+            // Wood wants the Axe and stone the Pickaxe: swing the right one when it is in the pack (the Pickaxe went at trees
+            // and stumps, the Axe at stones; a wasted swing still costs energy).
+            string? swungWith = null;
+            if (AxeOrPickaxeFor(loc, t) is { } need && need != used
+                && P.Items.ToList().FindIndex(i => need == "Axe" ? i is Axe : i is Pickaxe) is int other and >= 0)
+            {
+                P.CurrentToolIndex = other;
+                swungWith = need;
+            }
             int hits = 0;
             while (hits < maxHits && TargetAt(loc, t) != Target.None && P.Stamina > 2 && Game1.activeClickableMenu == null)
             {
                 yield return Swing(t);
                 hits++;
             }
+            if (swungWith != null) lines.Add($"({t.X},{t.Y}) {label} needs the {swungWith}: used it instead of the {used}");
             var after = TargetAt(loc, t);
             if (after == Target.None) batch.Done++;
             else batch.Skip(P.Stamina <= 2 ? Reasons.LowEnergy : Game1.activeClickableMenu != null ? Reasons.MenuOpen : kind == Target.Clump ? Reasons.NeedsUpgrade : null);
@@ -1157,7 +1226,7 @@ public static partial class AgentTools
         }
         if (target.Name == "MovieTheater" && !Game1.MasterPlayer.hasOrWillReceiveMail("ccMovieTheater"))
         {
-            c.Fail(Reasons.ShopClosed, "The movie theater is not restored yet. Complete the Movie Theater bundle in the Community Center, or buy it from Joja.");
+            c.Fail(Reasons.ShopClosed, "The movie theater is not built yet: it comes once the Community Center is restored (every bundle done).");
             yield break;
         }
         yield return TravelTo(target.Name, c);
@@ -1205,6 +1274,9 @@ public static partial class AgentTools
                 if (prev.ContainsKey(e.Target) || Game1.getLocationFromName(e.Target) == null) continue;
                 // The Tunnel opens into a walled-off corner of Backwoods (48,30): no way on to the Farm or Mountain (days 58-101, 36 failures).
                 if (cur == "Tunnel" && e.Target == "Backwoods") continue;
+                // Nor is the Tunnel a way through: BusStop -> Tunnel -> Backwoods is as short as BusStop -> Farm -> Backwoods, and day 45's
+                // forage trip took it into that corner and the Tunnel, with no way out until 2:00 AM (745g lost).
+                if (e.Target == "Tunnel" && !to.Equals("Tunnel", StringComparison.OrdinalIgnoreCase)) continue;
                 prev[e.Target] = cur;
                 queue.Enqueue(e.Target);
             }
@@ -1219,7 +1291,46 @@ public static partial class AgentTools
         return null;
     }
 
+    /// <summary>No-path failures per seat in one place on one farm day, for <see cref="TravelTo"/>'s rescue.</summary>
+    private static readonly Dictionary<string, (int day, string loc, int n)> Stuck = new();
+
+    /// <summary>After this many no-path travel failures in the same place on the same day the farmer is taken home.</summary>
+    internal const int StuckRescueAfter = 3;
+
+    /// <summary>
+    /// Travel along the map route; when the walking routes find no way out of a place again and again (day 45: 40 failed calls in
+    /// Backwoods and the Tunnel from 09:00 until passing out at 2:00 AM; day 25: the farmhouse door 12 times), the farmer is taken
+    /// home, the way a player would just walk around whatever the pathfinder can't, and the trip starts again from there.
+    /// </summary>
     private static IEnumerator TravelTo(string dest, CallContext c)
+    {
+        yield return TravelRoute(dest, c);
+        if (c.Ok || c.Reason != Reasons.NoPath) { if (c.Ok) Stuck.Remove(Rt.Log.Player); yield break; }
+        if (Loc is MineShaft or VolcanoDungeon || Game1.eventUp || Loc == Utility.getHomeOfFarmer(P)) yield break;
+        string key = Rt.Log.Player, here = Loc.NameOrUniqueName;
+        int fails = (Stuck.TryGetValue(key, out var v) && v.day == AgentLog.FarmDay && v.loc == here ? v.n : 0) + 1;
+        Stuck[key] = (AgentLog.FarmDay, here, fails);
+        if (fails < StuckRescueAfter) yield break;
+
+        Stuck.Remove(key);
+        if (Utility.getHomeOfFarmer(P) is not { } home) yield break;
+        var entry = home.getEntryLocation();
+        yield return WaitIdle();
+        Game1.warpFarmer(home.NameOrUniqueName, entry.X, entry.Y, false);
+        for (int i = 0; i < 300 && Loc != home; i++) yield return null;
+        yield return Ticks(20);
+        if (Loc != home) yield break;
+        string note = $"You were stuck in {here} (no way out found {StuckRescueAfter} times), so you are back home in {home.Name}.";
+        Rt.Log.Add("system", text: $"Stuck rescue: {here} -> {home.Name} after {StuckRescueAfter} no-path failures.");
+        if (dest.Equals(home.Name, StringComparison.OrdinalIgnoreCase)) { c.Ok = true; c.Reason = null; c.Result = note; yield break; }
+        var again = new CallContext();
+        yield return TravelRoute(dest, again);
+        c.Ok = again.Ok;
+        c.Reason = again.Reason;
+        c.Result = note + " " + (again.Ok ? $"Then went on to {Loc.Name}." : again.Result);
+    }
+
+    private static IEnumerator TravelRoute(string dest, CallContext c)
     {
         // The festival map is a temporary copy with no route out: leave through the festival itself (69 travel_to failures on day 13).
         if (Game1.eventUp && Game1.CurrentEvent is { isFestival: true })
@@ -1422,6 +1533,13 @@ public static partial class AgentTools
         if (sal.IsRecipe) qty = 1;
         qty = Math.Min(qty, st.Stock);
         if (qty <= 0) { c.Fail(Reasons.NoItem, $"{sal.DisplayName} is sold out."); yield break; }
+        string capNote = "";
+        if (SeedCap(sal) is { } cap && qty > cap.max)
+        {
+            if (cap.max <= 0) { c.Fail(Reasons.InvalidArgs, $"Not bought: {cap.why}"); yield break; }
+            capNote = $" Only {cap.max} of the {qty} asked for: {cap.why}";
+            qty = cap.max;
+        }
         var cur = CurrencyUnit(shop.currency);
         int have = ShopMenu.getPlayerCurrencyAmount(P, shop.currency);
         if (have < st.Price * qty) { c.Fail(Reasons.NoMoney, $"Not enough money: {qty}x {sal.DisplayName} costs {st.Price * qty}{cur}, you have {have}{cur}."); yield break; }
@@ -1485,7 +1603,28 @@ public static partial class AgentTools
             yield break;
         }
         var note = dropped ? " Inventory was full: the rest was dropped at your feet." : "";
-        c.Result = $"Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note} {left}";
+        c.Result = $"Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note}{capNote} {left}";
+    }
+
+    /// <summary>Tiles you can still till today on top of the open tilled ones, for <see cref="SeedCap"/>.</summary>
+    private const int SeedTillAllowance = 30;
+
+    /// <summary>
+    /// How many of these seeds are worth buying when they die at the season's end: one per open tilled tile on the farm plus
+    /// <see cref="SeedTillAllowance"/>, minus the same seeds already in the pack and chests; null for other items. Summer 21,
+    /// day 49: AI1 paid 4000g for 100 Radish Seeds (summer only) with about 46 tiles to plant, and the rest died with the season.
+    /// </summary>
+    private static (int max, string why)? SeedCap(ISalable sal)
+    {
+        if (sal.GetSalableInstance() is not Item seed || seed.Category != SObject.SeedsCategory || !Crop.TryGetData(seed.ItemId, out var data)) return null;
+        if (!IsSeasonCropSeed(seed)) return null;
+        var next = (Season)(((int)Game1.season + 1) % 4);
+        if (data.Seasons?.Contains(next) == true) return null;
+        int open = Game1.getFarm().terrainFeatures.Values.OfType<HoeDirt>().Count(d => d.crop == null);
+        int owned = CountItem(seed.QualifiedItemId) + ChestCount(seed.QualifiedItemId);
+        int max = Math.Max(0, open + SeedTillAllowance - owned);
+        return (max, $"{sal.DisplayName} only grows until the season ends, and you have {open} open tilled tile(s) on the farm (about {SeedTillAllowance} more " +
+                     $"can be tilled today) and {owned} of these seeds already. More would die unplanted; plant these first, then buy again.");
     }
 
     /// <summary>
@@ -1683,7 +1822,7 @@ public static partial class AgentTools
         }
 
         // Out of energy in the early afternoon: a rest in bed gives it back and the day goes on (asked once a day; a second call sleeps).
-        if (DaySafety.SuggestRest(Game1.timeOfDay, P.Stamina, P.MaxStamina, P.health, P.maxHealth, Game1.IsMultiplayer) && Rt.RestSuggestedDay != AgentLog.FarmDay)
+        if (DaySafety.SuggestRest(Game1.timeOfDay, P.Stamina, P.MaxStamina, P.health, P.maxHealth, BedRegen) && Rt.RestSuggestedDay != AgentLog.FarmDay)
         {
             Rt.RestSuggestedDay = AgentLog.FarmDay;
             c.Fail(Reasons.NotReady, $"You are tired (energy {(int)P.Stamina}/{P.MaxStamina}), but it is only {WorldText.FormatTime(Game1.timeOfDay)}. " +

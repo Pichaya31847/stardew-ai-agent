@@ -245,6 +245,20 @@ public class AgentLog
         }
     }
 
+    /// <summary>
+    /// Replace lessons.md with the condensed <paramref name="lessons"/> (LessonBook). The text it replaces is appended to
+    /// lessons_archive.md first, so nothing the farmer wrote is lost.
+    /// </summary>
+    public void ReplaceLessons(IEnumerable<string> lessons, string old, string? player = null)
+    {
+        lock (_memoryLock)
+        {
+            if (!string.IsNullOrWhiteSpace(old))
+                File.AppendAllText(MemoryFile("lessons_archive", player), $"## Before day {FarmDay} was condensed\n{old.Trim()}\n\n", Encoding.UTF8);
+            File.WriteAllText(LessonsFile(player), Brain.LessonBook.Format(lessons), Encoding.UTF8);
+        }
+    }
+
     /// <summary>Replace plan.md with <paramref name="plan"/>.</summary>
     public void WritePlan(string plan, string? player = null)
     {
