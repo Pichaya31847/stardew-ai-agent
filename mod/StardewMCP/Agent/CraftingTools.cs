@@ -44,11 +44,12 @@ public static partial class AgentTools
                           "You walk next to each tile automatically. The tile must be free and the item must be allowed there (a crab pot needs water, a sprinkler goes on open ground). " +
                           "Tree seeds (Pine Cone, Acorn, Maple Seed) go on open ground, at least 2 tiles apart. Crop seeds and fertilizer on tilled soil also work here, but plant is the usual tool for them. " +
                           "Sprinklers with no tiles go on the farm's pattern inside the scarecrows' fields (a Sprinkler waters the 4 tiles next to it, a Quality Sprinkler 8, an Iridium one 24), " +
-                          "spaced so every field tile gets water once; till_area leaves those spots bare for them. Scarecrows stand 16 tiles apart.",
+                          "spaced so every field tile gets water once; till_area leaves those spots bare for them. Scarecrows stand 16 tiles apart; " +
+                          "a Scarecrow with no tiles goes on the Farm where the open ground around it is largest, on that grid. An item not in the pack is taken from the storage when the chest tool reaches it from anywhere.",
             Schema = Obj(new
             {
                 item = Str("Item name, e.g. \"Chest\" or \"Furnace\""),
-                tiles = Tiles("List of [x,y] tiles, max 40 (leave out for sprinklers: they go on the field pattern)"),
+                tiles = Tiles("List of [x,y] tiles, max 40 (leave out for sprinklers: they go on the field pattern; for a Scarecrow: the best open spot)"),
                 reason = Str(ReasonDesc)
             }, "item", "reason"),
             Run = Place
@@ -554,9 +555,31 @@ public static partial class AgentTools
         var name = S(a, "item").Trim();
         var tiles = TileList(a, "tiles").Take(40).ToList();
         int slot = FindItem(name, it => it is SObject);
+        if (slot < 0 && RemoteChest is { } remote && name.Length > 0)
+        {
+            // The storage hands it over where you stand (another mod's chest tool).
+            var took = new CallContext();
+            yield return RemoteChestCall(remote, new { action = "take", item = name, quantity = Math.Max(1, tiles.Count), reason = $"place {name}" }, took);
+            slot = FindItem(name, it => it is SObject);
+        }
         if (slot < 0) { c.Fail($"No placeable \"{name}\" in inventory. Craft it (craft) or buy it first."); yield break; }
 
         var first = P.Items[slot];
+        // A scarecrow with no tiles goes where the next field is: on the 16-tile grid, the open circle with the most ground.
+        if (tiles.Count == 0 && first is SObject scare && scare.IsScarecrow())
+        {
+            if (Loc is not Farm)
+            {
+                var trip = new CallContext();
+                yield return TravelTo("Farm", trip);
+                if (!trip.Ok || Loc is not Farm) { c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get to the Farm: {trip.Result}"); yield break; }
+                slot = FindItem(name, it => it is SObject);
+                if (slot < 0) { c.Fail($"No \"{name}\" in inventory."); yield break; }
+                first = P.Items[slot];
+            }
+            if (NextScarecrowSpot((Farm)Loc) is not { } spot) { c.Fail(Reasons.NotHere, "No open ground on the farm fits a new scarecrow field (16 tiles from the others)."); yield break; }
+            tiles = new List<Point> { spot.tile };
+        }
         // Sprinklers with no tiles go on the pattern that waters every field tile once, inside the scarecrows' circles.
         if (tiles.Count == 0 && FieldLayout.SprinklerKind(first.QualifiedItemId) is { } kind && Loc is Farm sprinklerFarm)
         {

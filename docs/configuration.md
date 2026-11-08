@@ -37,11 +37,45 @@ An `ai` seat takes these fields:
 | `Name` | The farmer's name (wins over `FarmhandNames`) |
 
 The config menu's first option, **Play mode → Your farmer (P1)**, switches P1 between `ai` (AI plays) and `human`
-(Manual) and applies at once, even with a save loaded. A `human` P1 that also has a `Brain` gets `/do`: type `/do <command>` in the chat box (T, or `/` when playing alone), in
-English or Thai, e.g. `/do water the crops` or `/do รดน้ำผัก`. The model makes one request that turns the command into
+(Manual) and applies at once, even with a save loaded. A `human` P1 that also has a `Brain` gets `/do`: press `/` (or the chat key when playing alone) to open the `/do` line
+and type the command in English or Thai. The line keeps a caret (arrows, Home, End, a click in the text), Ctrl+V pastes
+where the caret is, Up and Down bring back earlier commands, and only Enter (run) or Esc (close) end it. Typing
+`/do <command>` in the game's chat box (multiplayer) works too, e.g. `/do water the crops` or `/do รดน้ำผัก`. The model makes one request that turns the command into
 tool calls (at most 5) and does not plan further. The clock stops while the chat box is open and while the model
 translates, so typing and waiting cost no game time. The tools run on your farmer with every guard the AIs have, and each
-result shows in the chat. An action that something interrupts is resumed up to 3 times. `/do stop` (or `หยุด`) ends the
+result shows in the chat and pops up on screen. A step that stops for lack of energy sends your farmer to rest in bed until energy is full (a rest, not the night's
+sleep; alone this needs `BedRestAlone`; the clock and the energy run 10 times faster meanwhile, so the same game time
+passes without the wait), then the same step goes on: up to 3 rests per command, none after midnight. An
+action that something interrupts is resumed up to 3 times, and an
+area larger than a tool does at once is done part by part to the end. While a command or queue runs, a panel at the bottom left shows the
+order, what your farmer is doing now and how many queued steps follow; it hides when nothing runs. In Manual mode the
+top left shows the map, your tile and the tile under the mouse (outlined), so an order can name tiles: `/do clear 40 20 to 50 28`, or a size from one tile: `/do clear 10*8 from 50 20`
+(around it = that tile is the center; a named corner = that corner; otherwise the mod picks the placement with the most
+open ground). Steps joined with `>` make a queue that runs in order and across days:
+`/do clear area 32*32 from 76 17 > chop_trees > buy seeds > till_area > plant > water_all`. A bare tool name (`chop_trees`,
+`till_area`, `clear_area`) runs without the model on the area of the newest step that had one; `water_all` waters the
+whole map unless an area is named; `plant` is
+all the crop seeds, `buy seeds` this season's best. Other steps are translated when their turn comes, and a step that
+only travelled or closed a menu is translated once more from where the farmer then stands. A step that is not done by the evening
+is tried again the next day: steps start until midnight, your farmer is free until then, and at midnight goes to bed
+(no journal needed in Manual mode); the queue goes on in the morning; a step that fails for another reason pauses it. Leaving to the title stops the running command, and loading a save starts with an empty queue. `/do schedule Abigail` (`ตารางเวลา Abigail`) shows her whole schedule from the game, `/do schedules` everyone's today; a
+long answer like these opens as a letter to page through. A step that is too early (a fish that bites from 18:00, a shop that opens at 9:00) waits for that time: you are
+asked whether something should be done first, the rest of the queue goes on, and at that time the step starts by itself
+(the bottom-left panel lists the waiting steps; `/do clear queue` drops them). If something else runs at that time,
+it is put on hold: the timed step goes first, then the held one carries on. Fishing is not cut off: the cast in hand
+(the bite, the reel-in) is finished first, then the farmer goes. `fish <name>` fishes until one is caught,
+while it still bites that day. Anything typed while a command or queue runs is added after it (`> water_all` adds one step
+on purpose). `/do queue` (`คิว`) shows it, `/do continue`
+(`ต่อ`) restarts it, `/do clear queue` (`ล้างคิว`) drops it, `/do stop` pauses it, `/do skip` (`ข้าม`) cancels the step being done and goes on with the next. `till_area`
+with no area and no scarecrow yet tills the ground already cleared near your farmer (and says where the first
+Scarecrow goes); the words "till soil", "ขุดดิน", "cut trees", "ตัดต้นไม้", "clear", "เคลียร์" alone work on the
+newest command's area like the tool names.
+
+Every command is kept per save (`Mods/StardewMCP/data/do_history_<save>.json`, the
+last 200) with the tool calls it became, what they did and their area. The model sees the last 5, so
+`/do put a Scarecrow in the middle of it` places it on the last area's center tile. `/do history` (or `ประวัติ`) lists
+the last 10 with their numbers, and `/do again` (or `ซ้ำ`) runs the last one again, `/do again 12` (or `/do #12`)
+number 12, from its kept tool calls without asking the model. `/do stop` (or `หยุด`) ends the
 running command. The SMAPI console takes `do <command>` too. `think`, `name` and `journal` are left out, so `go_to_bed`
 still asks for the day's journal; sleep by hand.
 

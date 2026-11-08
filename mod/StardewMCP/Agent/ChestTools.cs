@@ -265,6 +265,30 @@ public static partial class AgentTools
         if (c.Ok) c.Result = c.Result.Split('\n')[0];
     }
 
+    /// <summary>
+    /// A full pack with a storage that takes things from anywhere (another mod's chest tool): the stacks that matter least on
+    /// the job go into it until <paramref name="slots"/> slots are free (never tools, weapons, seeds, food or bait). The line
+    /// for the result goes to <paramref name="notes"/>. Nothing happens without such a storage. (2026-11-08: forage stopped
+    /// at once on a full pack although the storage was a keystroke away.)
+    /// </summary>
+    internal static IEnumerator MakeRoom(List<string>? notes = null, int slots = 1)
+    {
+        if (RemoteChest is not { } remote || FreeSlots() >= slots) yield break;
+        var stored = new List<string>();
+        for (int i = 0; i < 6 && FreeSlots() < slots; i++)
+        {
+            var spare = P.Items.Where(it => it != null && it is not Tool && MainToolKind(it) == null && it.Category != StardewValley.Object.SeedsCategory
+                                            && it.Category != StardewValley.Object.CookingCategory && it.Category != StardewValley.Object.baitCategory && it.Category != StardewValley.Object.tackleCategory)
+                .OrderBy(it => it.salePrice() * it.Stack).FirstOrDefault();
+            if (spare == null) break;
+            var put = new CallContext();
+            yield return RemoteChestCall(remote, new { action = "store", item = spare.Name, reason = "room in the pack" }, put);
+            if (!put.Ok) break;
+            stored.Add(spare.Name);
+        }
+        if (stored.Count > 0) notes?.Add($"Pack full: stored {string.Join(", ", stored.Distinct())} in the storage to make room.");
+    }
+
     private static Point? NearestOwnChest() => NearestOwnChest(Loc);
 
     /// <summary>The nearest player chest on this map, your own first: chests are shared (<see cref="ChestLedger"/>).</summary>

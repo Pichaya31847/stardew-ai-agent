@@ -56,16 +56,16 @@ public class ModEntry : Mod
                 _ => "/do <command>: your farmer does it (any tool the AIs have; English or Thai). /do stop ends it.",
                 null, false, false, false);
         };
-        // Without multiplayer the game does not open the chat box: the chat key opens it for /do.
+        // Manual mode: "/" (and the chat key when playing alone) opens the /do line (CommandInput), which keeps its caret,
+        // pastes where it is and closes only on Enter or Esc. In multiplayer the chat key stays the game's chat.
         helper.Events.Input.ButtonPressed += (_, e) =>
         {
-            if (Brains.Commands == null || Game1.IsMultiplayer || !Context.IsPlayerFree || Game1.chatBox == null || Game1.chatBox.isActive()) return;
-            if (e.Button.TryGetKeyboard(out var key) && (Game1.options.doesInputListContain(Game1.options.chatButton, key) || key == Microsoft.Xna.Framework.Input.Keys.OemQuestion))
-            {
-                Game1.chatBox.activate();
-                if (key == Microsoft.Xna.Framework.Input.Keys.OemQuestion) Game1.chatBox.setText("/");
-                Helper.Input.Suppress(e.Button);
-            }
+            if (Brains.Commands is not { } commands || Players.Host.Role != SeatRole.Human || !Context.IsPlayerFree || Game1.activeClickableMenu != null) return;
+            if (Game1.chatBox?.isActive() == true || !e.Button.TryGetKeyboard(out var key)) return;
+            bool slash = key == Microsoft.Xna.Framework.Input.Keys.OemQuestion;
+            if (!slash && (Game1.IsMultiplayer || !Game1.options.doesInputListContain(Game1.options.chatButton, key))) return;
+            Game1.activeClickableMenu = new CommandInput(commands.RecentCommands()) { Opener = slash ? '/' : key.ToString().ToLowerInvariant()[0] };
+            Helper.Input.Suppress(e.Button);
         };
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>

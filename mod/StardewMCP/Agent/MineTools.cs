@@ -145,14 +145,21 @@ public static partial class AgentTools
                       "fight monsters that come close (fight, eating below 40% health), and open treasure chests. Ores, gems, geodes and coal land in your pack; " +
                       "once it is full you keep going down and new drops stay on the floor. floors: how many floors to go down this call (default 5). " +
                       "When energy or health runs low it eats right there, the cheapest food first (from your pack, else from the storage when the chest tool reaches it from anywhere), and goes on. " +
-                      "Stops early at 22:00, when energy or health runs low with no food left, or on floor 120 (the bottom). Then carry on with mine, or leave_mine.",
-        Schema = Obj(new { floors = Int("How many floors to go down, 1-20 (default 5)"), reason = Str(ReasonDesc) }, "reason"),
+                      "Stops early at 22:00, when energy or health runs low with no food left, or on floor 120 (the bottom). Then carry on with mine, or leave_mine. " +
+                      "to_floor: go down until that floor instead (the elevator takes you to the nearest stop at or above it), any number of floors.",
+        Schema = Obj(new
+        {
+            floors = Int("How many floors to go down, 1-20 (default 5)"),
+            to_floor = Int("Go down until this floor (1-120) instead of a number of floors"),
+            reason = Str(ReasonDesc)
+        }, "reason"),
         Run = Mine
     };
 
     private static IEnumerator Mine(JsonElement a, CallContext c)
     {
         int want = Math.Clamp(I(a, "floors", 5), 1, 20);
+        int toFloor = Has(a, "to_floor") ? Math.Clamp(I(a, "to_floor", 0), 1, 120) : 0;
         var fetched = new List<string>();
         if (Loc is not MineShaft && !HasMainTool(PickaxeKind)) yield return EnsureMainTool(PickaxeKind, fetched);
         int pick = FindItem("Pickaxe", it => it is StardewValley.Tools.Pickaxe);
@@ -200,6 +207,8 @@ public static partial class AgentTools
                 if (!trip.Ok || Loc.Name != "Mine") { c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get to the Mine: {trip.Result}"); yield break; }
             }
             int start = P.deepestMineLevel >= 5 ? Math.Min(120, P.deepestMineLevel / 5 * 5) : 1;
+            // "Down to floor 20": the elevator stop at or above that floor, never past it.
+            if (toFloor > 0 && toFloor < start) start = Math.Max(1, toFloor / 5 * 5);
             // Walk to the elevator like a player; it is the game's own way down (the elevator menu calls Game1.enterMine).
             var lift = FindActionTiles(Loc, s => s.Contains("MineElevator", StringComparison.OrdinalIgnoreCase));
             if (lift.Count > 0) yield return WalkAdjacent(lift[0], new CallContext());
@@ -210,6 +219,15 @@ public static partial class AgentTools
             lines.Add($"took the {(start > 1 ? "elevator" : "ladder")} to floor {start}");
         }
 
+        if (toFloor > 0 && Loc is MineShaft onFloor)
+        {
+            if (onFloor.mineLevel >= toFloor)
+            {
+                c.Result = string.Join("\n", lines.Append($"You are on floor {onFloor.mineLevel}, at or below floor {toFloor} already."));
+                yield break;
+            }
+            want = toFloor - onFloor.mineLevel;
+        }
         int floors = 0, rocks = 0, chests = 0, picked = 0, refuels = 0;
         string stop = "";
         bool fullNoted = false;

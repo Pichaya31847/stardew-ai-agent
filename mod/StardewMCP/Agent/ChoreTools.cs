@@ -182,6 +182,7 @@ public static partial class AgentTools
         foreach (var (loc, _, _) in found.Take(max))
         {
             if (Game1.timeOfDay >= 2200) { lines.Add("Stopped: it is late."); break; }
+            if (!P.Items.Any(i => i == null)) yield return MakeRoom(lines, 3);
             if (!P.Items.Any(i => i == null)) { lines.Add("Stopped: your pack is full."); break; }
             if (Loc.Name != loc.Name)
             {

@@ -144,6 +144,54 @@ internal static class NpcInfo
         return (best.npc.Name, where);
     }
 
+    /// <summary>
+    /// The nearest villager who can still take a gift today (none yet today, fewer than 2 this week; a birthday first), or
+    /// with <paramref name="forGift"/> false who has not been talked to today. Same ranking as NearestUntalked.
+    /// </summary>
+    public static NPC? NearestFor(Farmer me, bool forGift)
+    {
+        var here = me.currentLocation;
+        return Social()
+            .Where(n => n.currentLocation != null && !AtHome(n) || n.currentLocation == here)
+            .Where(n =>
+            {
+                me.friendshipData.TryGetValue(n.Name, out var f);
+                return forGift ? f == null || (f.GiftsToday == 0 && f.GiftsThisWeek < 2) : f == null || !f.TalkedToToday;
+            })
+            .Select(n =>
+            {
+                bool same = n.currentLocation.NameOrUniqueName == here?.NameOrUniqueName;
+                int tiles = same ? Math.Abs(n.TilePoint.X - me.TilePoint.X) + Math.Abs(n.TilePoint.Y - me.TilePoint.Y) : int.MaxValue;
+                int rank = forGift && n.isBirthday() ? -1 : same ? 0 : n.currentLocation.IsOutdoors ? 1 : 2;
+                return (npc: n, rank, tiles);
+            })
+            .OrderBy(x => x.rank).ThenBy(x => x.tiles)
+            .Select(x => x.npc).FirstOrDefault();
+    }
+
+    private static readonly int[] GiftCategories =
+    {
+        StardewValley.Object.GreensCategory, StardewValley.Object.FruitsCategory, StardewValley.Object.VegetableCategory,
+        StardewValley.Object.flowersCategory, StardewValley.Object.FishCategory, StardewValley.Object.GemCategory,
+        StardewValley.Object.mineralsCategory, StardewValley.Object.CookingCategory, StardewValley.Object.artisanGoodsCategory
+    };
+
+    /// <summary>
+    /// The gift to give from the pack: one this farmer already saw the villager love, then like (their own book; tastes are
+    /// found out by gifting, not known); else the most valuable forage, crop, fish, gem, dish or artisan good, never one
+    /// they were seen to dislike or hate. Null when the pack holds nothing giftable.
+    /// </summary>
+    public static Item? BestGift(Farmer me, NPC npc)
+    {
+        var book = NpcKnowledge.Book(me);
+        book.Tastes.TryGetValue(npc.Name, out var known);
+        int Taste(Item i) => known != null && known.TryGetValue(i.QualifiedItemId, out var t) ? t : -1;
+        var giftable = me.Items.Where(i => i is StardewValley.Object { bigCraftable.Value: false } && Array.IndexOf(GiftCategories, i.Category) >= 0
+                                           && Taste(i) is not (4 or 6)).ToList();
+        return giftable.FirstOrDefault(i => Taste(i) == 0) ?? giftable.FirstOrDefault(i => Taste(i) == 2)
+               ?? giftable.OrderByDescending(i => i.salePrice()).FirstOrDefault();
+    }
+
     // ------------------------------------------------------------------ friendship state
 
     public static VillagerInfo Of(Farmer who, NPC npc)
@@ -229,6 +277,83 @@ internal static class NpcInfo
 
     public static string Signed(int n) => n >= 0 ? $"+{n}" : n.ToString();
 
+    // ------------------------------------------------------------------ today's schedule
+
+    /// <summary>Where the villager's schedule takes them today: (start time, map, tile), in order. Empty when they stay put.</summary>
+    internal static List<(int time, string place, Point tile)> ScheduleToday(NPC npc)
+    {
+        var list = new List<(int, string, Point)>();
+        try
+        {
+            if (npc.Schedule == null) return list;
+            foreach (var kv in npc.Schedule.OrderBy(k => k.Key))
+                if (kv.Value != null) list.Add((kv.Key, kv.Value.targetLocationName, kv.Value.targetTile));
+        }
+        catch (Exception) { /* no schedule readable: none */ }
+        return list;
+    }
+
+    /// <summary>"09:00 Town (43,57) → 12:30 Saloon (14,19) → ..." or that they stay where they are.</summary>
+    internal static string ScheduleText(NPC npc)
+    {
+        var stops = ScheduleToday(npc);
+        return stops.Count == 0 ? "no schedule today (stays where they are)"
+            : string.Join(" → ", stops.Select(s => $"{WorldText.FormatTime(s.time)} {s.place} ({s.tile.X},{s.tile.Y})"));
+    }
+
+    /// <summary>The villager is in their own home map (house or room), where a visit may hit a locked door.</summary>
+    internal static bool AtHome(NPC npc) => npc.currentLocation != null && npc.currentLocation.Name == npc.DefaultMap;
+
+    /// <summary>When the villager is next out of their home today (a schedule stop elsewhere, plus 30 minutes to get there), or null.</summary>
+    internal static int? NextOut(NPC npc, int now)
+    {
+        foreach (var (time, place, _) in ScheduleToday(npc))
+            if (time >= now && place != npc.DefaultMap)
+                return Utility.ModifyTime(time, 30);
+        return null;
+    }
+
+    /// <summary>
+    /// The villager's whole schedule file from the game (Characters/schedules/NAME): every season, weekday, rain, heart and
+    /// marriage variant the game picks from, each stop as "time map (x,y)". GOTO / NOT / MAIL lines are shown as written.
+    /// </summary>
+    public static string FullSchedule(NPC npc)
+    {
+        Dictionary<string, string> data;
+        try { data = Game1.content.Load<Dictionary<string, string>>("Characters\\schedules\\" + npc.Name); }
+        catch (Exception) { return $"{npc.Name} has no schedule file: they stay where they are."; }
+        var sb = new StringBuilder($"{npc.Name}'s schedules from the game ({data.Count} variants; the game picks one each morning by date, weather and hearts). Today: {ScheduleText(npc)}.\n");
+        foreach (var (key, raw) in data.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+            sb.AppendLine($"- {key}: {ReadSchedule(raw)}");
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>"610 Town 47 87 2/1300 Saloon 14 19 2 ..." as "06:10 Town (47,87) → 13:00 Saloon (14,19)".</summary>
+    internal static string ReadSchedule(string raw)
+    {
+        var stops = new List<string>();
+        foreach (var part in raw.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var p = part.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (p.Length == 0) continue;
+            var t = p[0].TrimStart('a');
+            if (int.TryParse(t, out int time) && p.Length >= 4)
+                stops.Add($"{(p[0].StartsWith("a") ? "arrive " : "")}{WorldText.FormatTime(time)} {p[1]} ({p[2]},{p[3]})");
+            else
+                stops.Add(part.Trim()); // GOTO spring, NOT friendship Abigail 6, MAIL ...
+        }
+        return string.Join(" → ", stops);
+    }
+
+    /// <summary>Everyone's plan for today, one line each: for planning visits (villagers(schedule=true)).</summary>
+    public static string Schedules(Farmer who)
+    {
+        var sb = new StringBuilder($"Today's schedules ({Game1.currentSeason} {Game1.dayOfMonth}, now {WorldText.FormatTime(Game1.timeOfDay)}), from the game's own data:\n");
+        foreach (var npc in Social().OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase))
+            sb.AppendLine($"{npc.Name} (now {npc.currentLocation?.Name ?? "away"}{(AtHome(npc) ? ", at home" : "")}): {ScheduleText(npc)}");
+        return sb.ToString().TrimEnd();
+    }
+
     // ------------------------------------------------------------------ text for the model
 
     public static string Line(VillagerInfo v)
@@ -265,6 +390,7 @@ internal static class NpcInfo
         var sb = new StringBuilder();
         sb.AppendLine(Line(v));
         if (!v.Met) sb.AppendLine("You have not met them yet: talk_to introduces you.");
+        sb.AppendLine("Today: " + ScheduleText(npc) + (AtHome(npc) && NextOut(npc, Game1.timeOfDay) is int o ? $". At home now; out from about {WorldText.FormatTime(o)}." : "."));
         sb.AppendLine(Romance.Requirements(who, npc, v));
 
         if (book.LastGift.TryGetValue(npc.Name, out var last))
@@ -381,8 +507,12 @@ public static partial class AgentTools
             Description = "Everyone you can befriend: where they are right now (map and tile), hearts and friendship points, whether you already talked to them today, " +
                           "gifts given today and this week (max 1 per day and 2 per week), birthday (flagged when it is today or within 3 days), whether you can date them and whether you are dating or married. " +
                           "With name: also what dating or marriage still needs, your last gift to them, what you found out about their tastes and what they would make of the items you carry. " +
-                          "Tastes are discovered by giving gifts, nobody knows them from the start. Costs no game time.",
-            Schema = Obj(new { name = Str("Optional villager name for details, e.g. Abigail") }),
+                          "Tastes are discovered by giving gifts, nobody knows them from the start. With a name it also gives their schedule for today; schedule=true lists everyone's schedule for today, and with a name their whole schedule file from the game (every season, weekday, rain and heart variant). Costs no game time.",
+            Schema = Obj(new
+            {
+                name = Str("Optional villager name for details, e.g. Abigail"),
+                schedule = new { type = "boolean", description = "Everyone's schedule for today (where they go and when), from the game's data" }
+            }),
             Instant = true, AppendStatus = false,
             Run = VillagersTool
         },
@@ -417,6 +547,11 @@ public static partial class AgentTools
     private static IEnumerator VillagersTool(JsonElement a, CallContext c)
     {
         var name = S(a, "name").Trim();
+        if (a.ValueKind == JsonValueKind.Object && a.TryGetProperty("schedule", out var sch) && sch.ValueKind == JsonValueKind.True)
+        {
+            if (name.Length == 0) { c.Result = NpcInfo.Schedules(P); yield break; }
+            if (NpcInfo.ByName(name) is { } who) { c.Result = NpcInfo.FullSchedule(who); yield break; }
+        }
         if (name.Length == 0)
         {
             c.Result = NpcInfo.Roster(P);
@@ -542,9 +677,42 @@ public static partial class AgentTools
         c.Fail(Reasons.NoPath, last.Length > 0 ? last : $"couldn't catch up with {name}");
     }
 
+    /// <summary>These talk_to arguments with the villager (and the gift, when given) filled in.</summary>
+    private static JsonElement WithGift(JsonElement a, string name, string? gift)
+    {
+        var d = new Dictionary<string, object?>();
+        if (a.ValueKind == JsonValueKind.Object)
+            foreach (var p in a.EnumerateObject()) d[p.Name] = p.Value.Clone();
+        d["name"] = name;
+        if (gift != null) d["gift_item"] = gift;
+        return JsonSerializer.SerializeToElement(d);
+    }
+
+    private static readonly string[] AnyoneWords = { "nearest", "anyone", "someone", "somebody", "any" };
+    private static readonly string[] BestGiftWords = { "best", "any", "something", "anything" };
+
     private static IEnumerator TalkToNpc(JsonElement a, CallContext c)
     {
         var name = S(a, "name").Trim();
+        var giftAsked = S(a, "gift_item").Trim();
+        // "Give someone a gift" (2026-11-08: the model guessed Weeds for Sebastian): the nearest villager who can still
+        // take a gift (or talk) today, and the best gift the farmer knows of.
+        if (name.Length == 0 || AnyoneWords.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            bool forGift = giftAsked.Length > 0;
+            if (NpcInfo.NearestFor(P, forGift) is not { } pick)
+            {
+                c.Fail(forGift ? "Everyone had their gift today (or two this week)." : "You talked to everyone you can reach today.");
+                yield break;
+            }
+            name = pick.Name;
+        }
+        if (BestGiftWords.Contains(giftAsked, StringComparer.OrdinalIgnoreCase) && NpcInfo.ByName(name) is { } forWhom)
+        {
+            if (NpcInfo.BestGift(P, forWhom) is not { } best) { c.Fail(Reasons.NoItem, "You carry nothing that makes a good gift: forage, crops, fish, gems or a cooked dish."); yield break; }
+            a = WithGift(a, name, best.Name);
+        }
+        else if (!string.Equals(S(a, "name").Trim(), name, StringComparison.Ordinal)) a = WithGift(a, name, giftAsked.Length > 0 ? giftAsked : null);
         if (name.Length == 0) { c.Fail("name is empty. villagers() lists who you can talk to."); yield break; }
         if (Game1.activeClickableMenu != null)
         {
@@ -568,7 +736,14 @@ public static partial class AgentTools
         if (gift.Length > 0)
         {
             giftSlot = FindItem(gift, it => it is SObject);
-            if (giftSlot < 0) { c.Fail($"No \"{gift}\" in inventory to gift."); yield break; }
+            if (giftSlot < 0 && RemoteChest is { } remote)
+            {
+                // The storage hands it over where you stand (another mod's chest tool).
+                var took = new CallContext();
+                yield return RemoteChestCall(remote, new { action = "take", item = gift, quantity = 1, reason = $"a gift for {S(a, "name")}" }, took);
+                giftSlot = FindItem(gift, it => it is SObject);
+            }
+            if (giftSlot < 0) { c.Fail($"No \"{gift}\" in inventory{(RemoteChest != null ? " or the storage" : "")} to gift."); yield break; }
             giftItem = P.Items[giftSlot];
         }
 

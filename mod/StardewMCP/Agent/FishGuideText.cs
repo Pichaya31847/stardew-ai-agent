@@ -35,6 +35,14 @@ public static class FishGuideText
     public static bool InWindow(int time, IReadOnlyList<(int from, int to)> windows, bool laterToday = false) =>
         windows.Count == 0 || windows.Any(w => laterToday ? time < w.to : time >= w.from && time < w.to);
 
+    /// <summary>When the fish starts biting later today (the start of the next window after <paramref name="time"/>), or null when it bites now or not again today.</summary>
+    public static int? NextStart(int time, IReadOnlyList<(int from, int to)> windows)
+    {
+        if (InWindow(time, windows)) return null;
+        var next = windows.Where(w => w.from > time).Select(w => w.from).DefaultIfEmpty(-1).Min();
+        return next < 0 ? null : next;
+    }
+
     /// <summary>Data/Fish field 7: "sunny", "rainy" or "both".</summary>
     public static string WeatherText(string? field) => field?.Trim().ToLowerInvariant() switch
     {

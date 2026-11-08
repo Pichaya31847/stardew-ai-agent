@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -42,6 +43,75 @@ public static class Hud
         helper.Events.Display.RenderedHud += OnRenderedHud;
     }
 
+    /// <summary>
+    /// Manual play (/do): the map, your tile and the tile under the mouse at the top left, so an order can name tiles
+    /// ("/do clear 40 20 to 50 28"). The tile under the mouse is outlined.
+    /// </summary>
+    /// <summary>The map tile under the mouse, worked out from the mouse itself (the game's cursor tile stands still while a menu is open).</summary>
+    internal static Vector2 MouseTile() => new(
+        (int)((Game1.viewport.X + Game1.getMouseX(false) / Game1.options.zoomLevel) / Game1.tileSize),
+        (int)((Game1.viewport.Y + Game1.getMouseY(false) / Game1.options.zoomLevel) / Game1.tileSize));
+
+    internal static void DrawCoordinates(SpriteBatch b)
+    {
+        var p = Game1.player;
+        var cursor = MouseTile();
+        string text = $"{Game1.currentLocation?.Name}   You ({p.TilePoint.X}, {p.TilePoint.Y})   Mouse ({(int)cursor.X}, {(int)cursor.Y})";
+        var font = Game1.smallFont;
+        var size = font.MeasureString(text);
+        var box = new Rectangle(16, 16, (int)size.X + 2 * Pad, (int)size.Y + 2 * Pad);
+        b.Draw(Game1.staminaRect, box, Color.Black * 0.55f);
+        b.DrawString(font, text, new Vector2(box.X + Pad, box.Y + Pad), Color.White);
+
+        // Outline the tile under the mouse (world position -> UI position).
+        var world = new Vector2(cursor.X * Game1.tileSize - Game1.viewport.X, cursor.Y * Game1.tileSize - Game1.viewport.Y);
+        var ui = Utility.ModifyCoordinatesForUIScale(world);
+        int s = (int)(Game1.tileSize * Game1.options.zoomLevel / Game1.options.uiScale);
+        var r = new Rectangle((int)ui.X, (int)ui.Y, s, s);
+        var c = Color.Yellow * 0.8f;
+        b.Draw(Game1.staminaRect, new Rectangle(r.X, r.Y, r.Width, 2), c);
+        b.Draw(Game1.staminaRect, new Rectangle(r.X, r.Bottom - 2, r.Width, 2), c);
+        b.Draw(Game1.staminaRect, new Rectangle(r.X, r.Y, 2, r.Height), c);
+        b.Draw(Game1.staminaRect, new Rectangle(r.Right - 2, r.Y, 2, r.Height), c);
+    }
+
+    /// <summary>
+    /// Manual mode: while a /do command or queue runs, a panel at the bottom left says so: the command, what the farmer is
+    /// doing now (or that the model is still translating) and how many queued steps follow. Hidden when nothing runs.
+    /// </summary>
+    private static void DrawWorking(SpriteBatch b, Brain.CommandBrain commands)
+    {
+        var font = Game1.smallFont;
+        string dots = new('.', (int)(Game1.currentGameTime.TotalGameTime.TotalSeconds * 2 % 4));
+        string now = commands.Translating ? "reading the order" : commands.CurrentTool is { } tool ? tool.Replace('_', ' ') : "between steps";
+        var lines = new List<(string text, Color color)>();
+        if (commands.Busy)
+        {
+            lines.Add(($"AI working{dots}", Color.Gold));
+            lines.Add(("Order: " + Clip(font, commands.NowDoing ?? "", 520), Color.White));
+            lines.Add(("Now: " + now, new Color(170, 220, 255)));
+            if (commands.QueueLeft > 0) lines.Add(($"Queue: {commands.QueueLeft} more step(s)", Color.White * 0.85f));
+        }
+        else lines.Add(("AI waiting", Color.Gold));
+        foreach (var (at, step) in commands.Waiting.OrderBy(w => w.at).Take(3))
+            lines.Add(($"At {WorldText.FormatTime(at)}: " + Clip(font, step, 440), new Color(255, 220, 150)));
+        lines.Add((commands.Busy ? "/do stop to stop" : "/do clear queue drops the waiting steps", Color.White * 0.6f));
+
+        int w = (int)lines.Max(l => font.MeasureString(l.text).X) + 2 * Pad;
+        int h = lines.Count * font.LineSpacing + 2 * Pad;
+        var box = new Rectangle(16, Game1.uiViewport.Height - h - 16, w, h);
+        b.Draw(Game1.staminaRect, box, Color.Black * 0.6f);
+        for (int i = 0; i < lines.Count; i++)
+            b.DrawString(font, lines[i].text, new Vector2(box.X + Pad, box.Y + Pad + i * font.LineSpacing), lines[i].color);
+    }
+
+    private static string Clip(SpriteFont font, string text, float width)
+    {
+        if (font.MeasureString(text).X <= width) return text;
+        while (text.Length > 1 && font.MeasureString(text + "…").X > width) text = text[..^1];
+        return text + "…";
+    }
+
     private static void OnEntry(LogEntry e)
     {
         if (e.Player == null || Players.ById(e.Player) is not { } slot || string.IsNullOrWhiteSpace(e.Text))
@@ -63,7 +133,15 @@ public static class Hud
 
     private static void OnRenderedHud(object? sender, RenderedHudEventArgs e)
     {
-        if (!_cfg.ShowHud || !Context.IsWorldReady || Game1.eventUp || Game1.activeClickableMenu != null)
+        if (!Context.IsWorldReady || Game1.eventUp || Game1.activeClickableMenu != null)
+            return;
+        if (Players.Current.Role == SeatRole.Human && Brain.Brains.Commands is { } commands)
+        {
+            DrawCoordinates(e.SpriteBatch);
+            if (commands.Busy || commands.Waiting.Count > 0) DrawWorking(e.SpriteBatch, commands);
+            return;
+        }
+        if (!_cfg.ShowHud)
             return;
         if (_cfg.OperatorDashboard)
             return; // the operator panel shows every seat without covering the farm views

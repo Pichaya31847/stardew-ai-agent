@@ -7,6 +7,16 @@ namespace StardewMCP.Tests;
 public class FishGuideTextTests
 {
     [Fact]
+    public void Next_start_is_the_window_after_now_or_none()
+    {
+        var w = FishGuideText.TimeWindows("600 1100 1900 2600");
+        Assert.Null(FishGuideText.NextStart(700, w));   // biting now
+        Assert.Equal(1900, FishGuideText.NextStart(1400, w));
+        Assert.Null(FishGuideText.NextStart(2600, w));  // no window left today
+        Assert.Null(FishGuideText.NextStart(1400, FishGuideText.TimeWindows(""))); // any time
+    }
+
+    [Fact]
     public void Time_windows_are_read_in_pairs()
     {
         var w = FishGuideText.TimeWindows("600 1100 1900 2600");

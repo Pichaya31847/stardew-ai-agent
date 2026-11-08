@@ -52,6 +52,7 @@ mod/StardewMCP/
     SocialTools.cs     say (heard only by screens that show the speaker) / emote / give; per-seat inbox appended to the next tool result
     Perception.cs      Players in view with what they actually do vs. what they claimed; per-seat interrupt events
     CommunityTools.cs  bundles / donate_bundle / museum; BundleReader and LateBound shared with Joja
+    QuestDoTools.cs    do_quest: a journal quest done from the game's data by its type (greet, deliver, collect, fish, slay, lost item, place, craft)
     JojaTools.cs       joja: membership (confirm guard) / projects / buy_project
     GoalTools.cs       goals: every achievement (no Joja) measured from the game; progress_pN.json each night
     AutomateTools.cs   Optional Automate mod: machine chests (inputs from Data/Machines), notes for place / machine, chest refuses other items

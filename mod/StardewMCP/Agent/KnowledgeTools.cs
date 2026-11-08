@@ -83,6 +83,28 @@ public static class KnowledgeTools
         ("Deluxe Retaining Soil", "the soil always stays watered overnight")
     };
 
+    /// <summary>
+    /// For buy(item="seeds"): gold per tile per day of these seeds planted today at <paramref name="seedPrice"/>, the same sum the
+    /// crops report ranks by; null when they would not mature before their seasons end (or are no crop).
+    /// </summary>
+    internal static double? SeedValueToday(string seedItemId, int seedPrice)
+    {
+        if (Game1.cropData == null || Game1.objectData == null || !Game1.cropData.TryGetValue(seedItemId, out var data) || data == null) return null;
+        int season = CropMath.SeasonIndex(Game1.currentSeason);
+        if (season < 0) return null;
+        var grows = new bool[4];
+        foreach (var s in data.Seasons ?? new())
+            if (CropMath.SeasonIndex(s.ToString()) is int i and >= 0) grows[i] = true;
+        int growth = data.DaysInPhase == null ? 0 : CropMath.GrowthDays(data.DaysInPhase);
+        if (!grows[season] || growth <= 0) return null;
+        string harvestId = CropMath.Unqualify(data.HarvestItemId);
+        int sell = Game1.objectData.TryGetValue(harvestId, out var h) && h != null ? h.Price : 0;
+        var plan = CropMath.Plan(season, Math.Clamp(Game1.dayOfMonth, 1, CropMath.DaysPerSeason), grows, growth, data.RegrowDays);
+        if (!plan.Matures) return null;
+        double net = CropMath.NetGold(plan, CropMath.ExpectedYield(data.HarvestMinStack, data.HarvestMaxStack, data.ExtraHarvestChance), sell, seedPrice);
+        return CropMath.GoldPerTilePerDay(plan, net);
+    }
+
     private static (bool ok, string text) CropsReport(JsonElement a)
     {
         if (Game1.cropData == null || Game1.objectData == null) return (false, "The crop data is not loaded yet.");

@@ -169,14 +169,15 @@ public static partial class AgentTools
             {
                 Name = "plant",
                 Description = "Plant seeds (or apply fertilizer) on tilled soil tiles (=). You walk to each tile automatically. " +
-                              "Give tiles, or area [x,y,w,h] to fill the empty tilled soil inside it, or neither to fill every empty tilled tile on the map until the seeds run out.",
+                              "Give tiles, or area [x,y,w,h] to fill the empty tilled soil inside it, or neither to fill every empty tilled tile on the map until the seeds run out. " +
+                              "item=\"all\" (or no item) plants every kind of this season's crop seeds you carry, one kind after another.",
                 Schema = Obj(new
                 {
-                    item = Str("Seed/fertilizer name, e.g. \"Parsnip Seeds\""),
+                    item = Str("Seed/fertilizer name, e.g. \"Parsnip Seeds\"; \"all\" = every seed you carry that grows this season"),
                     tiles = Tiles("List of [x,y] tilled tiles, max 40"),
                     area = new { type = "array", description = "Alternative to tiles: rectangle [x, y, w, h], x,y = top-left tile", items = new { type = "integer" }, minItems = 4, maxItems = 4 },
                     reason = Str(ReasonDesc)
-                }, "item", "reason"),
+                }, "reason"),
                 Run = PlantTool
             },
             new()
@@ -188,6 +189,7 @@ public static partial class AgentTools
             },
             FarmSummaryTool(), WaterAllTool(), HarvestAllTool(), ClearAreaTool(), TillAreaTool(), // FarmTools.cs
             ChopTreesTool(), // WoodTools.cs
+            DoQuestTool(), // QuestDoTools.cs
             new()
             {
                 Name = "interact",
@@ -242,8 +244,9 @@ public static partial class AgentTools
             new()
             {
                 Name = "buy",
-                Description = "Buy an item from the open shop menu.",
-                Schema = Obj(new { item = Str("Item name as listed by shop_list"), quantity = Int("How many"), reason = Str(ReasonDesc) }, "item", "quantity", "reason"),
+                Description = "Buy an item from the open shop menu. item=\"seeds\" buys this season's seeds: you go to Pierre's, the seeds that earn the most gold per tile per day " +
+                              "from today and still ripen are picked, as many as your open tilled soil takes (or quantity), as far as your money goes.",
+                Schema = Obj(new { item = Str("Item name as listed by shop_list, or \"seeds\" for this season's best seeds"), quantity = Int("How many (with item=\"seeds\": default enough for your open tilled soil)"), reason = Str(ReasonDesc) }, "item", "reason"),
                 Run = Buy
             },
             new()
@@ -1514,15 +1517,47 @@ public static partial class AgentTools
 
     /// <summary>Buys through the game's own ShopMenu.tryToPurchaseItem, so recipes are learned, trade items
     /// are consumed, purchase actions run and limited stock is synced, exactly like a click in the menu.</summary>
+    private static readonly string[] SeasonSeedWords = { "seeds", "season seeds", "seasonal seeds", "this season's seeds", "this season seeds", "best seeds" };
+
     private static IEnumerator Buy(JsonElement a, CallContext c)
     {
+        var name = S(a, "item").Trim().ToLowerInvariant();
+        // "Buy this season's seeds": Pierre's, the seeds that earn most per tile per day from today, enough for the open soil.
+        bool seasonSeeds = SeasonSeedWords.Contains(name);
+        if (seasonSeeds && Game1.activeClickableMenu is not ShopMenu && Loc.Name != "SeedShop")
+        {
+            var trip = new CallContext();
+            yield return TravelTo("SeedShop", trip);
+            if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get to Pierre's (SeedShop): {trip.Result}"); yield break; }
+        }
         var opening = new CallContext();
         if (Game1.activeClickableMenu is not ShopMenu) yield return OpenShopHere(opening);
         if (Game1.activeClickableMenu is not ShopMenu shop) { c.Fail(opening.Reason ?? Reasons.NotHere, $"No shop is open: {opening.Result} travel_to the shop first (Pierre's is SeedShop)."); yield break; }
         if (shop.readOnly) { c.Fail("This shop menu is read-only; nothing can be bought here."); yield break; }
-        var name = S(a, "item").Trim().ToLowerInvariant();
         int qty = Math.Clamp(I(a, "quantity", 1), 1, 999);
-        var sal = shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant() == name)
+        string picked = "";
+        ISalable? sal;
+        if (seasonSeeds)
+        {
+            var best = shop.forSale
+                .Where(s => s.GetSalableInstance() is Item it && IsSeasonCropSeed(it) && SeedWouldDie(s) == null && shop.itemPriceAndStock.ContainsKey(s))
+                .Select(s => (s, value: KnowledgeTools.SeedValueToday(((Item)s.GetSalableInstance()).ItemId, shop.itemPriceAndStock[s].Price)))
+                .Where(x => x.value is > 0)
+                .OrderByDescending(x => x.value).FirstOrDefault();
+            if (best.s == null) { c.Fail(Reasons.WrongSeason, "No seeds sold here can still ripen this season. Wait for the next season's seeds (crops(season=...) plans them)."); yield break; }
+            sal = best.s;
+            int price = Math.Max(1, shop.itemPriceAndStock[sal].Price);
+            if (!Has(a, "quantity"))
+            {
+                int open = Game1.getFarm().terrainFeatures.Values.OfType<HoeDirt>().Count(d => d.crop == null);
+                int owned = P.Items.Where(IsSeasonCropSeed).Sum(i => i!.Stack);
+                qty = Math.Max(1, (open > 0 ? open : SeedTillAllowance) - owned);
+            }
+            qty = Math.Max(1, Math.Min(qty, ShopMenu.getPlayerCurrencyAmount(P, shop.currency) / price));
+            picked = $"Picked {sal.DisplayName}: the most gold per tile per day from today ({best.value:0.#}g). ";
+        }
+        else
+            sal = shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant() == name)
                   ?? shop.forSale.FirstOrDefault(s => s.DisplayName.ToLowerInvariant().Contains(name));
         if (sal == null || !shop.itemPriceAndStock.TryGetValue(sal, out var st)) { c.Fail(Reasons.NotFound, $"\"{name}\" is not sold here. Use shop_list."); yield break; }
         if (shop.canPurchaseCheck != null && !shop.canPurchaseCheck(shop.forSale.IndexOf(sal))) { c.Fail($"{sal.DisplayName} can't be bought right now."); yield break; }
@@ -1565,6 +1600,21 @@ public static partial class AgentTools
         PutAwayHeld();
         var probe = sal.GetSalableInstance();
         probe.Stack = qty * sal.Stack;
+        // A full pack with the storage in reach: the stacks that matter least on the job go into it to make room (day 65: a
+        // queued "buy seeds" failed on a full pack and the queue stopped).
+        string madeRoom = "";
+        for (int i = 0; i < 3 && !sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P) && RemoteChest is { } remote; i++)
+        {
+            var spare = P.Items.Where(it => it != null && it is not Tool && it.Category != SObject.SeedsCategory && it.Category != -7
+                                            && it.QualifiedItemId != probe.QualifiedItemId && MainToolKind(it) == null)
+                .OrderBy(it => it.salePrice() * it.Stack).FirstOrDefault();
+            if (spare == null) break;
+            var put = new CallContext();
+            yield return RemoteChestCall(remote, new { action = "store", item = spare.Name, reason = "room in the pack for what is bought" }, put);
+            if (!put.Ok) break;
+            madeRoom += $"{spare.Name}, ";
+        }
+        if (madeRoom.Length > 0) capNote += $" Stored {madeRoom.TrimEnd(',', ' ')} in the storage to make room.";
         if (!sal.IsRecipe && !sal.IsInfiniteStock() && !probe.CanBuyItem(P)) { c.Fail(Reasons.InventoryFull, $"Can't buy {sal.DisplayName}: inventory is full or you can't hold it. " + StorageHint()); yield break; }
 
         var purchase = Rt.Helper.Reflection.GetMethod(shop, "tryToPurchaseItem");
@@ -1603,7 +1653,7 @@ public static partial class AgentTools
             yield break;
         }
         var note = dropped ? " Inventory was full: the rest was dropped at your feet." : "";
-        c.Result = $"Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note}{capNote} {left}";
+        c.Result = $"{picked}Bought {bought * sal.Stack}x {sal.DisplayName} for {spent}{cur}.{note}{capNote} {left}";
     }
 
     /// <summary>Tiles you can still till today on top of the open tilled ones, for <see cref="SeedCap"/>.</summary>
@@ -1803,7 +1853,8 @@ public static partial class AgentTools
 
     private static IEnumerator GoToBed(JsonElement a, CallContext c)
     {
-        if (!Rt.Log.HasJournal(AgentLog.FarmDay))
+        // The journal is the AIs' memory; a person playing (Manual mode, /do) sleeps without one.
+        if (!Rt.Log.HasJournal(AgentLog.FarmDay) && Players.Current.Role != SeatRole.Human)
         {
             c.Fail(Reasons.NotReady, $"Write today's journal first: call journal with your diary, lessons and plan (it costs no game time), then call go_to_bed again. Farm day {AgentLog.FarmDay} has no journal yet.");
             yield break;

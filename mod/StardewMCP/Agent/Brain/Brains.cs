@@ -75,7 +75,7 @@ public static class Brains
                     }
                     if (LlmProviders.Create(settings, Http) is { } llm)
                     {
-                        Commands = new CommandBrain(slot, llm, _mon, tools, llmTools);
+                        Commands = new CommandBrain(slot, llm, _mon, _helper, tools, llmTools);
                         _mon.Log($"{slot.Id}: /do ready ({llm.Name} {llm.Model}): type /do <command> in chat.", LogLevel.Info);
                     }
                     continue;

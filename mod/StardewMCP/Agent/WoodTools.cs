@@ -18,16 +18,33 @@ namespace StardewMCP.Agent;
 /// </summary>
 public static partial class AgentTools
 {
-    private const int ChopMax = 12;
+    private const int ChopMax = 12, AreaChopMax = 40;
+
+    /// <summary>The farm area given as x,y to x2,y2 (any corner order), or null.</summary>
+    private static Rectangle? ChopArea(JsonElement a)
+    {
+        if (!Has(a, "x") || !Has(a, "y") || !Has(a, "x2") || !Has(a, "y2")) return null;
+        int x = I(a, "x", 0), y = I(a, "y", 0), x2 = I(a, "x2", 0), y2 = I(a, "y2", 0);
+        return new Rectangle(Math.Min(x, x2), Math.Min(y, y2), Math.Abs(x2 - x) + 1, Math.Abs(y2 - y) + 1);
+    }
+
+    /// <summary>Every tree in <paramref name="area"/>, any size, stumps too (not tapped ones).</summary>
+    private static List<Point> TreesIn(GameLocation loc, Rectangle area) =>
+        loc.terrainFeatures.Pairs.Where(kv => kv.Value is Tree { tapped.Value: false } && area.Contains((int)kv.Key.X, (int)kv.Key.Y))
+            .Select(kv => new Point((int)kv.Key.X, (int)kv.Key.Y)).ToList();
 
     private static ToolDef ChopTreesTool() => new()
     {
         Name = "chop_trees",
         Description = "Get Wood: walks to the nearest grown trees on the Farm and fells them with the Axe (about 12 Wood each, stumps included), then plants the Pine Cones, " +
-                      "Acorns and Maple Seeds in your pack on open ground so new trees grow (not in winter). Stops on low energy, a menu or late night.",
+                      "Acorns and Maple Seeds in your pack on open ground so new trees grow (not in winter). Stops on low energy, a menu or late night. " +
+                      $"With an area (x,y to x2,y2) it fells every tree in it instead, young ones and stumps too (up to {AreaChopMax}), to free that ground, and plants no seeds there.",
         Schema = Obj(new
         {
             count = Int($"How many trees to fell, 1-{ChopMax} (default 6)"),
+            x = Int("Area corner tile x (with y, x2, y2: fell the trees in that area)"), y = Int("Area corner tile y"),
+            x2 = Int("Opposite corner tile x"), y2 = Int("Opposite corner tile y"),
+            replant = new { type = "boolean", description = "Plant the tree seeds you carry afterwards (default: yes for an AI, no for a person in Manual mode)" },
             reason = Str(ReasonDesc)
         }, "reason"),
         Run = ChopTrees
@@ -55,8 +72,11 @@ public static partial class AgentTools
         int wood0 = WoodNow(), pack0 = CountItem("(O)388");
         var sb = new StringBuilder();
 
-        var trees = RouteOrder(GrownTrees(farm), P.TilePoint).Take(count).ToList();
-        if (trees.Count == 0) sb.Append("No grown trees stand on the Farm.");
+        var area = ChopArea(a);
+        var trees = area is { } r
+            ? RouteOrder(TreesIn(farm, r), P.TilePoint).Take(AreaChopMax).ToList()
+            : RouteOrder(GrownTrees(farm), P.TilePoint).Take(count).ToList();
+        if (trees.Count == 0) sb.Append(area is { } e ? $"No trees stand in ({e.X},{e.Y}) to ({e.Right - 1},{e.Bottom - 1})." : "No grown trees stand on the Farm.");
         else
         {
             // One tree at a time, keeping FarmBatchMinEnergy plus one more tree's swings in reserve: day 1 felled trees from
@@ -81,7 +101,10 @@ public static partial class AgentTools
             if (stop != null) sb.Append('\n').Append(stop);
         }
 
-        if (Game1.activeClickableMenu == null && Loc == farm)
+        // Clearing an area for a field: no tree seeds go back into the ground there. A person (Manual mode) plants trees only
+        // when asked (replant=true): day 65 a queued chop_trees sowed the cleared field with Acorns and Maple Seeds.
+        bool replant = Has(a, "replant") ? a.TryGetProperty("replant", out var rp) && rp.ValueKind == JsonValueKind.True : Players.Current.Role != SeatRole.Human;
+        if (area == null && replant && Game1.activeClickableMenu == null && Loc == farm)
         {
             var planted = new CallContext();
             yield return PlantTreeSeeds(farm, null, planted);
@@ -89,7 +112,7 @@ public static partial class AgentTools
         }
         int left = GrownTrees(farm).Count;
         sb.Append($"\n{left} grown tree(s) left on the Farm.");
-        if (WoodNow() == wood0 && trees.Count > 0) c.Fail(sb.ToString());
+        if (area == null && WoodNow() == wood0 && trees.Count > 0) c.Fail(sb.ToString()); // saplings in an area give no Wood
         else c.Result = sb.ToString();
     }
 

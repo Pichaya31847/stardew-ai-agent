@@ -183,6 +183,45 @@ public static class FishGuide
 
     private static string PlaceOf(Row r) => r.Area.Length > 0 ? $"{r.Place}, {r.Area}" : r.Place;
 
+    /// <summary>
+    /// For fish(fish=...): the map where <paramref name="query"/> bites today (this map first when it does), and a line saying
+    /// so; map null with the reason when it bites nowhere today. "Default" (any water) answers with the current map.
+    /// </summary>
+    internal static (string? map, string text) WhereToday(string query)
+    {
+        var (map, text, _, _) = WhereAndWhen(query);
+        return (map, text);
+    }
+
+    /// <summary>
+    /// WhereToday plus the fish's id and, when it bites later today but not now, the time it starts (HHMM): a place where it
+    /// bites now is picked first.
+    /// </summary>
+    internal static (string? map, string text, string? qid, int? startsAt) WhereAndWhen(string query)
+    {
+        var rows = Rows();
+        var names = rows.Select(r => r.Name).Distinct().ToList();
+        var match = names.FirstOrDefault(n => n.Equals(query, StringComparison.OrdinalIgnoreCase))
+                    ?? names.Where(n => n.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0).OrderBy(n => n.Length).FirstOrDefault();
+        if (match == null) return (null, $"No fish called \"{query}\" bites anywhere (fish_guide lists them).", null, null);
+        var mine = rows.Where(r => r.Name == match).ToList();
+        var today = mine.Where(r => NotToday(r).Length == 0).ToList();
+        if (today.Count == 0)
+            return (null, $"{match} does not bite today: " + string.Join("; ", mine.Select(r => $"{PlaceOf(r)}: {NotToday(r)}").Distinct().Take(4)) + ".", mine[0].Qid, null);
+        var here = Game1.currentLocation?.Name;
+        int now = Game1.timeOfDay;
+        var biting = today.Where(r => FishGuideText.InWindow(now, r.Times)).ToList();
+        var pool = biting.Count > 0 ? biting : today;
+        var best = pool.FirstOrDefault(r => r.Map == here) ?? pool.FirstOrDefault(r => r.Map != "Default") ?? pool[0];
+        string map = best.Map == "Default" ? here ?? "Beach" : best.Map;
+        int? starts = biting.Count > 0 ? null : today.Select(r => FishGuideText.NextStart(now, r.Times)).Where(t => t != null).Min();
+        return (map, $"{match} bites today at {PlaceOf(best)} ({FishGuideText.FormatWindows(best.Times)}).", best.Qid, starts);
+    }
+
+    /// <summary>The fish still bites somewhere today at this hour.</summary>
+    internal static bool BitesNow(string qid) =>
+        Rows().Any(r => r.Qid == qid && NotToday(r).Length == 0 && FishGuideText.InWindow(Game1.timeOfDay, r.Times));
+
     // ------------------------------------------------------------------ reports
 
     private static (bool ok, string text) OneFish(List<Row> rows, string query)

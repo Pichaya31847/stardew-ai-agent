@@ -57,6 +57,9 @@ public static partial class AgentTools
         Schema = Obj(new
         {
             whose = Str("all (default): every unwatered crop on the map, whoever planted it; mine: only the crops you planted"),
+            place = Str("A map to water instead of this one, e.g. Greenhouse: you travel there first"),
+            x = Int("Area corner tile x (with y, x2, y2: water only that area)"), y = Int("Area corner tile y"),
+            x2 = Int("Opposite corner tile x"), y2 = Int("Opposite corner tile y"),
             reason = Str(ReasonDesc)
         }, "reason"),
         Run = WaterAll
@@ -80,9 +83,16 @@ public static partial class AgentTools
     {
         Name = "clear_area",
         Description = "Clear a rectangle (x,y is its top-left tile; a bigger area than 100 tiles is done in parts, the result says how to call for the rest), row by row from the end nearest you: Scythe for weeds, grass and dead crops, Pickaxe for stones, Axe for twigs and tree stumps. " +
-                      "Young trees (they grow into Wood), grown trees, fruit trees, objects and big boulders/stumps/logs that need an upgraded tool are left alone and reported. Stops on low energy, a menu or late night.",
-        Schema = Obj(new { x = Int("Top-left tile x"), y = Int("Top-left tile y"), w = Int("Width in tiles"), h = Int("Height in tiles"), reason = Str(ReasonDesc) },
-            "x", "y", "w", "h", "reason"),
+                      "Young trees (they grow into Wood), grown trees, fruit trees, objects and big boulders/stumps/logs that need an upgraded tool are left alone and reported. Stops on low energy, a menu or late night. " +
+                      "With no area it picks the ground itself: on the Farm the planting field (inside your scarecrows' circles, or where the first Scarecrow goes), elsewhere the ground around you.",
+        Schema = Obj(new
+            {
+                x = Int("Top-left tile x (leave out: the mod picks the planting field)"), y = Int("Top-left tile y"), w = Int("Width in tiles"), h = Int("Height in tiles"),
+                x2 = Int("Opposite corner tile x, instead of w and h (\"from x,y to x2,y2\")"), y2 = Int("Opposite corner tile y"),
+                anchor = Str("With w,h: where x,y sits in the area: top_left (default), top_right, bottom_left, bottom_right, center, or auto (the placement with the most open ground)"),
+                reason = Str(ReasonDesc)
+            },
+            "reason"),
         Run = ClearArea
     };
 
@@ -94,7 +104,13 @@ public static partial class AgentTools
                       "On the Farm, till_area() with no area tills inside your scarecrows' circles (8 tiles each way around each one), growing a tidy circle from the scarecrow outwards; " +
                       "when that ground is used up it says where the next Scarecrow goes (16 tiles from the others). With x,y,w,h (top-left tile and size) it tills only the part a scarecrow protects. " +
                       "Reports tiles that could not be tilled and why (not diggable ground, a boulder, a tree...). Stops on low energy, a menu or late night.",
-        Schema = Obj(new { x = Int("Top-left tile x (leave out on the Farm: tills around your scarecrows)"), y = Int("Top-left tile y"), w = Int("Width in tiles"), h = Int("Height in tiles"), reason = Str(ReasonDesc) },
+        Schema = Obj(new
+            {
+                x = Int("Top-left tile x (leave out on the Farm: tills around your scarecrows)"), y = Int("Top-left tile y"), w = Int("Width in tiles"), h = Int("Height in tiles"),
+                x2 = Int("Opposite corner tile x, instead of w and h (\"from x,y to x2,y2\")"), y2 = Int("Opposite corner tile y"),
+                anchor = Str("With w,h: where x,y sits in the area: top_left (default), top_right, bottom_left, bottom_right, center, or auto (the placement with the most open ground)"),
+                reason = Str(ReasonDesc)
+            },
             "reason"),
         Run = TillArea
     };
@@ -459,6 +475,23 @@ public static partial class AgentTools
 
     private static IEnumerator WaterAll(JsonElement a, CallContext c)
     {
+        // "Water the Greenhouse": travel there first. "Water 40 20 to 50 28": only that area.
+        var place = S(a, "place").Trim();
+        if (place.Length > 0 && !Loc.Name.Equals(place, StringComparison.OrdinalIgnoreCase))
+        {
+            var trip = new CallContext();
+            yield return TravelTo(place, trip);
+            if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"Couldn't get to {place}: {trip.Result}"); yield break; }
+        }
+        else if (place.Length == 0)
+        {
+            yield return ToFarmForField(a, c, "water_all");
+            if (!c.Ok) yield break;
+        }
+        Rectangle? area = Has(a, "x") && Has(a, "y") && Has(a, "x2") && Has(a, "y2")
+            ? new Rectangle(Math.Min(I(a, "x", 0), I(a, "x2", 0)), Math.Min(I(a, "y", 0), I(a, "y2", 0)),
+                Math.Abs(I(a, "x2", 0) - I(a, "x", 0)) + 1, Math.Abs(I(a, "y2", 0) - I(a, "y", 0)) + 1)
+            : null;
         var loc = Loc;
         var fetched = new List<string>();
         yield return FetchMainTools(loc, fetched, CanKind);
@@ -470,7 +503,7 @@ public static partial class AgentTools
         // water_all could only water everyone's)
         bool mineOnly = S(a, "whose").Trim().Equals("mine", StringComparison.OrdinalIgnoreCase);
         string me = Players.Current.Id;
-        var dry0 = FarmTilesWhere(loc, (l, x, y) => FarmCropNeedsWater(l, x, y) && (!mineOnly || FarmCropOwner(l, x, y) == me));
+        var dry0 = FarmTilesWhere(loc, (l, x, y) => FarmCropNeedsWater(l, x, y) && (!mineOnly || FarmCropOwner(l, x, y) == me) && (area == null || area.Value.Contains(x, y)));
         var todo = dry0.Where(t => !FarmCropDiesTonight(loc, FarmDirt(loc, t.X, t.Y)!.crop)).ToList();
         string dying = dry0.Count > todo.Count
             ? $" Skipped {dry0.Count - todo.Count} dry crop(s) that die tonight when {Game1.currentSeason} ends (they don't grow next season): harvest what is ripe, the rest is lost."
@@ -597,6 +630,7 @@ public static partial class AgentTools
             if (stop != null) break;
             var chunk = route.GetRange(i, Math.Min(FarmChunk, route.Count - i));
             tried += chunk.Count;
+            if (!P.Items.Any(it => it == null)) yield return MakeRoom(null, 3); // the storage takes what the pack can't
             yield return Harvest(FarmArgs(new { tiles = chunk.Select(t => new[] { t.X, t.Y }).ToList() }), new CallContext());
             if (Game1.activeClickableMenu != null) { stop = "a menu/dialogue opened"; break; }
             if (chunk.Any(t => FarmPickable(loc, t.X, t.Y)) && !P.Items.Any(it => it == null)) { stop = "the inventory is full"; break; }
@@ -748,8 +782,44 @@ public static partial class AgentTools
     {
         x = I(a, "x", 0); y = I(a, "y", 0); w = I(a, "w", 0); h = I(a, "h", 0);
         rest = "";
-        if (!Has(a, "x") || !Has(a, "y") || !Has(a, "w") || !Has(a, "h")) return "x, y, w and h are required (x,y is the top-left tile).";
+        // Corner to corner ("clear 40 20 to 50 28"): x2,y2 is the opposite corner, in any order.
+        if (Has(a, "x") && Has(a, "y") && Has(a, "x2") && Has(a, "y2"))
+        {
+            int x2 = I(a, "x2", x), y2 = I(a, "y2", y);
+            (x, w) = (Math.Min(x, x2), Math.Abs(x2 - x) + 1);
+            (y, h) = (Math.Min(y, y2), Math.Abs(y2 - y) + 1);
+        }
+        else if (!Has(a, "x") || !Has(a, "y") || !Has(a, "w") || !Has(a, "h")) return "x, y, w and h are required (x,y is the top-left tile), or x, y, x2, y2 (two opposite corners).";
         if (w < 1 || h < 1) return "w and h must be at least 1.";
+        // "10x10 from 50 20": x,y may be the centre or any corner; "auto" takes the placement with the most open ground.
+        string anchor = S(a, "anchor").Trim().ToLowerInvariant().Replace('-', '_').Replace(' ', '_');
+        string placed = "";
+        if (anchor.Length > 0 && anchor != "top_left" && !Has(a, "x2"))
+        {
+            var (ax, ay, how) = AnchorArea(Loc, x, y, w, h, anchor);
+            if (how == null) return $"anchor must be top_left, top_right, bottom_left, bottom_right, center or auto (not \"{anchor}\").";
+            placed = $"\nThe {w}x{h} area with ({x},{y}) as its {how}: ({ax},{ay}) to ({ax + w - 1},{ay + h - 1}).";
+            (x, y) = (ax, ay);
+        }
+        // Day 65 (Manual): "clear 32*32 from 76 17" came without an anchor; as the top-left corner most of it lay off the
+        // 80-wide farm, and 11 calls cleared a 4-wide strip down the edge. Mostly off the map: the mod picks the placement.
+        var map = Loc.Map?.Layers.Count > 0 ? Loc.Map.Layers[0] : null;
+        int mapW = map?.LayerWidth ?? int.MaxValue, mapH = map?.LayerHeight ?? int.MaxValue;
+        int onMap = Math.Max(0, Math.Min(mapW, x + w) - Math.Max(0, x)) * Math.Max(0, Math.Min(mapH, y + h) - Math.Max(0, y));
+        // top_left is the default, and a small model names it without being told (day 65): treated like no anchor here.
+        if (anchor is "" or "top_left" && !Has(a, "x2") && onMap < w * h * 6 / 10)
+        {
+            var (ax, ay, how) = AnchorArea(Loc, x, y, w, h, "auto");
+            placed = $"\nThe {w}x{h} area with ({x},{y}) as its {how}, since as its top-left corner it lay mostly off the map: ({ax},{ay}) to ({ax + w - 1},{ay + h - 1}).";
+            (x, y) = (ax, ay);
+        }
+        // Only the part on the map counts, so the 100-tile parts are not spent on tiles that don't exist.
+        int cx = Math.Max(0, x), cy = Math.Max(0, y);
+        int cw = Math.Min(mapW, x + w) - cx, ch = Math.Min(mapH, y + h) - cy;
+        if (cw < 1 || ch < 1) return $"The area ({x},{y}) {w}x{h} is outside {Loc.Name}.";
+        if (cw != w || ch != h) placed += $"\nOnly the part on the map: ({cx},{cy}) to ({cx + cw - 1},{cy + ch - 1}).";
+        (x, y, w, h) = (cx, cy, cw, ch);
+        rest = placed;
         if (w * h > FarmAreaMax)
         {
             int askedW = w, askedH = h;
@@ -758,9 +828,35 @@ public static partial class AgentTools
             var parts = new List<string>();
             if (h < askedH) parts.Add($"{tool}(x={x}, y={y + h}, w={askedW}, h={askedH - h})");
             if (w < askedW) parts.Add($"{tool}(x={x + w}, y={y}, w={askedW - w}, h={h})");
-            rest = $"\nThe area you asked for ({askedW}x{askedH} = {askedW * askedH} tiles) is over the {FarmAreaMax}-tile limit, so only its first {w}x{h} was done. The rest: {string.Join(" and ", parts)}.";
+            rest = placed + $"\nThe area you asked for ({askedW}x{askedH} = {askedW * askedH} tiles) is over the {FarmAreaMax}-tile limit, so only its first {w}x{h} was done. The rest: {string.Join(" and ", parts)}.";
         }
         return null;
+    }
+
+    /// <summary>
+    /// The top-left tile of a <paramref name="w"/>x<paramref name="h"/> area placed on (<paramref name="x"/>,<paramref name="y"/>)
+    /// by <paramref name="anchor"/>; "auto" tries the centre and the four corners and keeps the one with the most ground a field
+    /// can use (on the map, diggable, or weeds/stones/twigs on it), the centre on a tie. how null = unknown anchor.
+    /// </summary>
+    private static (int x, int y, string? how) AnchorArea(GameLocation loc, int x, int y, int w, int h, string anchor)
+    {
+        var options = new (string name, string how, int x, int y)[]
+        {
+            ("center", "center", x - w / 2, y - h / 2),
+            ("top_left", "top-left corner", x, y),
+            ("top_right", "top-right corner", x - w + 1, y),
+            ("bottom_left", "bottom-left corner", x, y - h + 1),
+            ("bottom_right", "bottom-right corner", x - w + 1, y - h + 1)
+        };
+        if (anchor is "centre" or "middle" or "around") anchor = "center";
+        if (anchor != "auto")
+        {
+            var o = options.FirstOrDefault(o => o.name == anchor);
+            return o.name == null ? (x, y, null) : (o.x, o.y, o.how);
+        }
+        int Score((string name, string how, int x, int y) o) => FarmAreaTiles(loc, o.x, o.y, w, h).Count(t => FieldCandidate(loc, t));
+        var best = options.OrderByDescending(Score).First();
+        return (best.x, best.y, best.how + " (the placement with the most open ground)");
     }
 
     private static List<Point> FarmAreaTiles(GameLocation loc, int x, int y, int w, int h)
@@ -970,13 +1066,41 @@ public static partial class AgentTools
         if (rep.Stop != null) sb.Append($"\nStopped: {rep.Stop}.");
     }
 
+    /// <summary>
+    /// Field tools with tiles, or called from indoors, work on the Farm: day 65 a queued till_area ran in Pierre's shop and
+    /// failed. Travels there first; false (with <paramref name="c"/> failed) when the way failed.
+    /// </summary>
+    private static IEnumerator ToFarmForField(JsonElement a, CallContext c, string tool)
+    {
+        bool area = Has(a, "x") || Has(a, "y") || Has(a, "x2") || Has(a, "w");
+        // Outdoors, or a map with soil of its own (the Greenhouse), the work stays here.
+        if (Loc is Farm || !area && (Loc.IsOutdoors || Loc.terrainFeatures.Values.Any(t => t is HoeDirt))) yield break;
+        var trip = new CallContext();
+        yield return TravelTo("Farm", trip);
+        if (!trip.Ok || Loc is not Farm) c.Fail(trip.Reason ?? Reasons.NoPath, $"{tool} works on the Farm, and the way there failed: {trip.Result}");
+    }
+
     private static IEnumerator ClearArea(JsonElement a, CallContext c)
     {
-        var err = FarmRect(a, "clear_area", out int x, out int y, out int w, out int h, out var rest);
-        if (err != null) { c.Fail(Reasons.InvalidArgs, err); yield break; }
+        yield return ToFarmForField(a, c, "clear_area");
+        if (!c.Ok) yield break;
         var loc = Loc;
-        var tiles = FarmAreaTiles(loc, x, y, w, h);
-        if (tiles.Count == 0) { c.Fail(Reasons.InvalidArgs, $"The area ({x},{y}) {w}x{h} is outside {loc.Name}."); yield break; }
+        List<Point> tiles;
+        string where, rest = "";
+        if (!(Has(a, "x") || Has(a, "y") || Has(a, "w") || Has(a, "h")))
+        {
+            // No area given (a person's "/do clear ground for planting"): the mod picks it.
+            (tiles, where) = PickClearing(loc);
+            if (tiles.Count == 0) { c.Result = $"Nothing to clear {where} on {loc.Name}."; yield break; }
+        }
+        else
+        {
+            var err = FarmRect(a, "clear_area", out int x, out int y, out int w, out int h, out rest);
+            if (err != null) { c.Fail(Reasons.InvalidArgs, err); yield break; }
+            tiles = FarmAreaTiles(loc, x, y, w, h);
+            if (tiles.Count == 0) { c.Fail(Reasons.InvalidArgs, $"The area ({x},{y}) {w}x{h} is outside {loc.Name}."); yield break; }
+            where = $"in ({x},{y}) {w}x{h}";
+        }
 
         var fetched = new List<string>();
         yield return FetchMainTools(loc, fetched, ScytheKind, AxeKind, PickaxeKind);
@@ -988,12 +1112,33 @@ public static partial class AgentTools
 
         var sb = new StringBuilder(string.Concat(fetched.Select(f => f + "\n")));
         sb.Append(rep.ClearedCount == 0
-            ? $"Nothing was cleared in ({x},{y}) {w}x{h} on {loc.Name}."
-            : $"Cleared {rep.ClearedCount} tile{(rep.ClearedCount == 1 ? "" : "s")} in ({x},{y}) {w}x{h}: {FarmCounts(rep.Cleared)}.");
+            ? $"Nothing was cleared {where} on {loc.Name}."
+            : $"Cleared {rep.ClearedCount} tile{(rep.ClearedCount == 1 ? "" : "s")} {where}: {FarmCounts(rep.Cleared)}.");
         var diff = Diff(before);
         if (diff.Length > 0) sb.Append(' ').Append(diff);
         FarmReportClearing(sb, rep);
         c.Result = sb.Append(rest).ToString();
+    }
+
+    /// <summary>
+    /// clear_area with no area: on the Farm the covered ground of the planting field (inside the scarecrows' circles, else the
+    /// circle where the first Scarecrow goes), elsewhere the covered ground within 5 tiles of the farmer. At most FarmAreaMax tiles.
+    /// </summary>
+    private static (List<Point> tiles, string where) PickClearing(GameLocation loc)
+    {
+        bool Covered(Point t) => FarmCoverAt(loc, t.X, t.Y).Item1 != FarmCover.None;
+        if (loc is Farm farm)
+        {
+            if (ScarecrowsOn(farm).Count > 0)
+                return (ScarecrowFieldTiles(farm, int.MaxValue).Where(Covered).Take(FarmAreaMax).ToList(), "around your scarecrow(s)");
+            if (NextScarecrowSpot(farm) is { } spot)
+                return (FieldLayout.Disk(spot.tile).Where(t => FieldCandidate(farm, t) && Covered(t)).Take(FarmAreaMax).ToList(),
+                        $"around ({spot.tile.X},{spot.tile.Y}), where the first Scarecrow goes");
+        }
+        var me = P.TilePoint;
+        var near = FarmAreaTiles(loc, me.X - 5, me.Y - 5, 11, 11).Where(Covered)
+            .OrderBy(t => Math.Abs(t.X - me.X) + Math.Abs(t.Y - me.Y)).Take(FarmAreaMax).ToList();
+        return (near, "around you");
     }
 
     // ------------------------------------------------------------------ fields around the scarecrows (FieldLayout)
@@ -1122,6 +1267,8 @@ public static partial class AgentTools
 
     private static IEnumerator TillArea(JsonElement a, CallContext c)
     {
+        yield return ToFarmForField(a, c, "till_area");
+        if (!c.Ok) yield break;
         var loc = Loc;
         // Till only for seeds in hand: soil tilled ahead of seeds dries back to dirt and costs energy for nothing.
         int seeds = PlantableSeeds(), empty = EmptyTilled(loc), budget = seeds - empty;
@@ -1142,9 +1289,24 @@ public static partial class AgentTools
         if (!hasRect)
         {
             if (loc is not Farm farmHere) { c.Fail(Reasons.InvalidArgs, "x, y, w and h are required off the Farm (x,y is the top-left tile)."); yield break; }
-            if (around.Count == 0) { c.Fail(Reasons.NotHere, ScarecrowFieldAdvice(farmHere)); yield break; }
-            tiles = around;
-            where = "around your scarecrow(s)";
+            if (around.Count == 0 && ScarecrowsOn(farmHere).Count > 0) { c.Fail(Reasons.NotHere, ScarecrowFieldAdvice(farmHere)); yield break; }
+            if (around.Count == 0)
+            {
+                // No scarecrow yet (asked 2026-11-08): till the ground already cleared, nearest first, and say where the
+                // first Scarecrow goes. Bare diggable ground is what clear_area left.
+                var me = P.TilePoint;
+                tiles = FarmAreaTiles(loc, me.X - 30, me.Y - 30, 61, 61)
+                    .Where(t => FarmCoverAt(loc, t.X, t.Y).Item1 == FarmCover.None && FieldCandidate(loc, t) && FarmDirt(loc, t.X, t.Y) == null)
+                    .OrderBy(t => Math.Abs(t.X - me.X) + Math.Abs(t.Y - me.Y)).Take(Math.Min(budget, FarmAreaMax)).ToList();
+                if (tiles.Count == 0) { c.Fail(Reasons.NotHere, ScarecrowFieldAdvice(farmHere)); yield break; }
+                where = "on the cleared ground near you (no scarecrow yet)";
+                redirect = ScarecrowFieldAdvice(farmHere) + "\n";
+            }
+            else
+            {
+                tiles = around;
+                where = "around your scarecrow(s)";
+            }
         }
         else
         {
@@ -1199,8 +1361,44 @@ public static partial class AgentTools
     /// The plant tool. With tiles it is the original <see cref="Plant"/>. Without tiles it plants on the empty tilled soil of an
     /// area [x,y,w,h], or of the whole map, nearest tile first, until the seeds run out, through the same <see cref="Plant"/> ten tiles at a time.
     /// </summary>
+    /// <summary>These arguments with "item" set to <paramref name="item"/>.</summary>
+    private static JsonElement WithItem(JsonElement a, string item)
+    {
+        var d = new Dictionary<string, object?>();
+        if (a.ValueKind == JsonValueKind.Object)
+            foreach (var p in a.EnumerateObject()) d[p.Name] = p.Value.Clone();
+        d["item"] = item;
+        return JsonSerializer.SerializeToElement(d);
+    }
+
     private static IEnumerator PlantTool(JsonElement a, CallContext c)
     {
+        // No tiles and no empty soil here (just back from Pierre's): the fields are on the Farm.
+        if (TileList(a, "tiles").Count == 0 && !Has(a, "area") && EmptyTilled(Loc) == 0 && Loc is not Farm)
+        {
+            var trip = new CallContext();
+            yield return TravelTo("Farm", trip);
+            if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"No empty tilled soil here, and the way to the Farm failed: {trip.Result}"); yield break; }
+        }
+        // "Plant all the seeds": every kind of this season's crop seeds in the pack, one kind after another, into the empty soil.
+        var asked = S(a, "item").Trim().ToLowerInvariant();
+        if (asked is "" or "all" or "seeds" or "all seeds" or "all the seeds")
+        {
+            var kinds = P.Items.Where(IsSeasonCropSeed).Select(i => i!.Name).Distinct().ToList();
+            if (kinds.Count == 0) { c.Fail(Reasons.NoItem, "You carry no seeds that grow this season. buy(item=\"seeds\") at Pierre's picks the best ones."); yield break; }
+            var lines = new List<string>();
+            bool any = false;
+            foreach (var kind in kinds)
+            {
+                var one = new CallContext();
+                yield return PlantTool(WithItem(a, kind), one);
+                lines.Add($"{kind}: {one.Result.Split('\n')[0]}");
+                any |= one.Ok;
+                if (EmptyTilled(Loc) == 0) break; // no soil left for the next kind
+            }
+            if (any) c.Result = string.Join("\n", lines); else c.Fail(string.Join("\n", lines));
+            yield break;
+        }
         // Days 44-47: go_to_bed said plant(item) and the model added guessed tiles that weren't tilled, failing over and over.
         // When none of the given tiles is tilled soil, the seeds go into the farmer's empty tilled soil instead.
         var given = TileList(a, "tiles");

@@ -32,7 +32,11 @@ public static partial class AgentTools
     private const int FishRadius = 40;
 
     /// <summary>Ticks to wait for a bite before reeling in (60 ticks = 1 second = 1.4 game minutes).</summary>
-    private const int FishBiteWaitTicks = 900;
+    /// <summary>
+    /// How long a cast waits for a bite before the line comes in: three minutes of real time, as good as "until it bites"
+    /// (the game's bite comes within about 30 s; asked 2026-11-08 not to reel in early). It was 15 s.
+    /// </summary>
+    private const int FishBiteWaitTicks = 60 * 60 * 3;
     private const int FishCastTicks = FishBiteWaitTicks + 300;
     private const int FishMinigameTicks = 60 * 120;
     private const int FishCollectTicks = 600;
@@ -72,9 +76,17 @@ public static partial class AgentTools
         Description = "Fish with the fishing rod in your inventory. You walk to the best shore spot within about 25 tiles (a long stretch of water; fish bubbles * first), " +
                       "cast, wait for a bite, win the reel-in minigame and collect the fish and any treasure chest. " +
                       "When a legendary fish you can catch today has its spot in reach, every cast aims into that spot (fish_guide says where each fish bites). " +
-                      "Each cast costs energy and game time. Stops early when energy is low, the inventory is full, or it is after 00:30.",
-        Schema = Obj(new { tries = Int("How many casts to attempt, 1-5 (default 3)"), reason = Str(ReasonDesc) }, "reason"),
-        Run = Fish
+                      "Each cast costs energy and game time. Stops early when energy is low, the inventory is full, or it is after 00:30. " +
+                      "place: travel to that map first (Beach, Forest, Mountain, Town...). fish: travel first to a map where that fish bites today (from fish_guide).",
+        Schema = Obj(new
+        {
+            tries = Int("How many casts to attempt, 1-5 (default 3)"),
+            fish = Str("A fish to go after, e.g. Salmon: you travel to where it bites today first"),
+            place = Str("A map to fish at, e.g. Beach, Forest, Mountain, Town: you travel there first"),
+            until = Int("Keep fishing until this game time, as HHMM (1000 = 10:00 AM, 1430 = 2:30 PM), in rounds of tries casts"),
+            reason = Str(ReasonDesc)
+        }, "reason"),
+        Run = FishAt
     };
 
     // ------------------------------------------------------------------ small helpers
@@ -97,9 +109,28 @@ public static partial class AgentTools
     /// <summary>Called every tick of every seat's screen; drives the BobberBar only while that seat runs the fish tool.</summary>
     public static void FishingTick(AgentRuntime rt)
     {
-        if (Game1.activeClickableMenu is BobberBar bar && rt.CurrentTool == "fish")
+        // Whichever tool casts (fish, or do_quest fetching a fish for a delivery): 2026-11-08 the bar stood still under
+        // do_quest and every fish got away.
+        if (Game1.activeClickableMenu is BobberBar bar && (rt.CurrentTool == "fish" || FishingNow.Contains(rt)))
             BobberDriver.Drive(bar, rt);
     }
+
+    /// <summary>The seats whose Fish coroutine is running, whatever tool called it.</summary>
+    private static readonly HashSet<AgentRuntime> FishingNow = new();
+
+    /// <summary>Seats asked to stop fishing once the cast in hand is done (no new cast starts).</summary>
+    private static readonly HashSet<AgentRuntime> FishStopRequested = new();
+
+    /// <summary>The seat is fishing right now (any tool).</summary>
+    internal static bool IsFishing(AgentRuntime rt) => FishingNow.Contains(rt) || rt.CurrentTool == "fish";
+
+    /// <summary>
+    /// Let the fish being hooked or reeled in be landed, then stop: no new cast (2026-11-08: a step with a set time cut a
+    /// catch off). <see cref="ClearFishStop"/> once the fishing call has returned.
+    /// </summary>
+    internal static void RequestFishStop(AgentRuntime rt) => FishStopRequested.Add(rt);
+
+    internal static void ClearFishStop(AgentRuntime rt) => FishStopRequested.Remove(rt);
 
     /// <summary>Extra tiles of cast distance: the game's own number when it can be called, else by Fishing level.</summary>
     private static int AddedDistance(FishingRod rod)
@@ -256,7 +287,77 @@ public static partial class AgentTools
 
     // ------------------------------------------------------------------ the tool
 
+    /// <summary>fish with place or fish: travel there first (the fish's map from fish_guide), then fish where you arrive.</summary>
+    private static IEnumerator FishAt(JsonElement a, CallContext c)
+    {
+        string place = S(a, "place").Trim(), target = S(a, "fish").Trim(), note = "";
+        string? targetId = null;
+        if (target.Length > 0)
+        {
+            var (map, text, qid, startsAt) = FishGuide.WhereAndWhen(target);
+            if (map == null) { c.Fail(Reasons.NotHere, text); yield break; }
+            // Not biting yet: say when, in a form a caller can schedule ("[wait_until 1800]"), instead of fishing for nothing.
+            if (startsAt is int t) { c.Fail(Reasons.NotReady, $"{text} It does not bite yet: it starts at {WorldText.FormatTime(t)}. [wait_until {t}]"); yield break; }
+            if (place.Length == 0) place = map;
+            targetId = qid;
+            note = text + "\n";
+        }
+        if (place.Length > 0 && !Loc.Name.Equals(place, StringComparison.OrdinalIgnoreCase) && !Loc.NameOrUniqueName.Equals(place, StringComparison.OrdinalIgnoreCase))
+        {
+            var trip = new CallContext();
+            yield return TravelTo(place, trip);
+            if (!trip.Ok) { c.Fail(trip.Reason ?? Reasons.NoPath, $"{note}Couldn't get to {place}: {trip.Result}"); yield break; }
+        }
+        int until = Has(a, "until") ? I(a, "until", 0) : 0;
+        if (until <= 0 && targetId != null)
+        {
+            // "Fish an Anchovy": rounds of casts until one is caught, while it still bites today (asked 2026-11-08).
+            int Caught() => P.fishCaught.TryGetValue(targetId, out var v) && v != null && v.Length > 0 ? v[0] : 0;
+            int before = Caught(), tries = 0;
+            var log = new List<string>();
+            while (Caught() == before && tries < 30 && !FishStopRequested.Contains(Rt))
+            {
+                if (!FishGuide.BitesNow(targetId)) { c.Fail(Reasons.TooLate, $"{note}{target} stopped biting for today ({WorldText.FormatTime(Game1.timeOfDay)}) before one was caught.\n" + string.Join("\n", log.TakeLast(3))); yield break; }
+                tries++;
+                var round = new CallContext();
+                yield return Fish(a, round);
+                log.Add(round.Result.Split('\n')[0]);
+                if (!round.Ok) { c.Fail(round.Reason ?? Reasons.Other, note + string.Join("\n", log.TakeLast(3)) + "\n" + round.Result); yield break; }
+            }
+            if (Caught() > before) c.Result = $"{note}Caught {target} after {tries} round(s) of casts.\n" + string.Join("\n", log.TakeLast(2));
+            else c.Fail(Reasons.Partial, $"{note}No {target} after {tries} rounds of casts: fish again carries on.\n" + string.Join("\n", log.TakeLast(3)));
+            yield break;
+        }
+        if (until <= 0)
+        {
+            yield return Fish(a, c);
+            if (note.Length > 0) c.Result = note + c.Result;
+            yield break;
+        }
+        // "Fish until 10 am": casts in rounds until that game time; a round that fails ends it (no rod, low energy, full pack...).
+        int start = Game1.timeOfDay, rounds = 0, caught0 = (int)P.stats.FishCaught;
+        var lines = new List<string>();
+        while (Game1.timeOfDay < until && rounds < 40 && !FishStopRequested.Contains(Rt))
+        {
+            rounds++;
+            var round = new CallContext();
+            yield return Fish(a, round);
+            lines.Add(round.Result.Split('\n')[0]);
+            if (!round.Ok) { c.Fail(round.Reason ?? Reasons.Other, note + string.Join("\n", lines.TakeLast(3)) + "\n" + round.Result); yield break; }
+        }
+        int caught = (int)P.stats.FishCaught - caught0;
+        c.Result = note + $"Fished from {WorldText.FormatTime(start)} to {WorldText.FormatTime(Game1.timeOfDay)}: {caught} fish in {rounds} round(s).\n" + string.Join("\n", lines.TakeLast(3));
+    }
+
     private static IEnumerator Fish(JsonElement a, CallContext c)
+    {
+        var rt = Rt;
+        FishingNow.Add(rt); // FishingTick plays the minigame for this seat, whichever tool called us
+        try { yield return FishCasts(a, c); }
+        finally { FishingNow.Remove(rt); }
+    }
+
+    private static IEnumerator FishCasts(JsonElement a, CallContext c)
     {
         int tries = Math.Clamp(I(a, "tries", 3), 1, 5);
         int slot = RodSlot();
@@ -287,6 +388,7 @@ public static partial class AgentTools
             c.Fail($"[low_energy] Energy is {(int)P.Stamina}. Eat something or go to bed before fishing.");
             yield break;
         }
+        if (FreeSlots() == 0) yield return MakeRoom(null, 2); // the storage takes the spare stacks from here
         if (FreeSlots() == 0)
         {
             c.Fail("[inventory_full] No free inventory slot for a catch. Ship or drop something first.");
@@ -338,6 +440,8 @@ public static partial class AgentTools
         int casts = 0, caught = 0, landOnLand = 0;
         for (int n = 1; n <= tries; n++)
         {
+            // Something else is due (a /do step with a set time): the cast in progress was finished, no new one starts.
+            if (FishStopRequested.Contains(Rt)) { stop = "something else is due now; the cast in hand was finished first"; break; }
             // Level-up and other menus after a catch close on their own (AutoHandleOverlays); wait for them.
             for (int t = 0; t < 600 && Game1.activeClickableMenu != null; t++)
                 yield return null;
@@ -345,6 +449,7 @@ public static partial class AgentTools
             if (Game1.currentLocation != loc) { stop = "you left the map"; break; }
             if (Game1.timeOfDay >= FishCutoffTime) { stop = $"it is {WorldText.FormatTime(Game1.timeOfDay)}, too late for another cast"; break; }
             if (P.Stamina <= FishMinEnergy) { stop = $"energy is low ({(int)P.Stamina})"; break; }
+            if (FreeSlots() == 0) yield return MakeRoom(null, 2);
             if (FreeSlots() == 0) { stop = "the inventory is full"; break; }
 
             yield return WaitIdle(300);

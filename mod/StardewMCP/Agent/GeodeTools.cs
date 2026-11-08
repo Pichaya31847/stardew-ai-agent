@@ -133,7 +133,8 @@ public static partial class AgentTools
             // The treasure comes from the game's table; the roll depends on the geodes-cracked counter.
             Item? treasure = Utility.getTreasureFromGeode(stack.getOne());
             if (treasure == null) { why = "the geode gave nothing"; break; }
-            // Check the room before the geode and the money are spent.
+            // Check the room before the geode and the money are spent; the storage takes spare stacks when it can.
+            if (!P.couldInventoryAcceptThisItem(treasure)) yield return MakeRoom(null, 1);
             if (!P.couldInventoryAcceptThisItem(treasure)) { why = "your inventory is full"; break; }
 
             P.Money -= GeodeFee;

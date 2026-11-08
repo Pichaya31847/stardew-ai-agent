@@ -137,6 +137,8 @@ their own (SMAPI refuses an interface when one of its methods is missing).
 - A `chest` tool added in place of the built-in one is taken to reach its storage from anywhere: the mod's own steps
   (craft fetching ingredients, the mine's stash and meals, community_center's bundle items, a missing main tool, the full-pack
   hint) call it where the farmer stands instead of walking to a chest, and the chests of every map count as the farmer's.
+  A full pack no longer stops forage, harvest_all, fish, machine collect, crack_geode or buy: the stacks that matter least
+  (never tools, weapons, seeds, food, bait or tackle) are stored through it to make room first.
 - `AddItemHolder` tells the advice about items the farmer keeps outside the pack and the chests (machines in a slot of your
   mod): `count` gets a qualified item id and returns how many `Game1.player` has there, `howToUse` the line that says where and
   how to use them. The farm plan then stops asking for another Furnace and says your line instead.

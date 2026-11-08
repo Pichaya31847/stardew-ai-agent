@@ -162,6 +162,7 @@ public static partial class AgentTools
         string stop = "";
         foreach (var tile in RouteOrder(ready, P.TilePoint))
         {
+            if (FreeSlots() == 0) yield return MakeRoom(null, 2);
             if (FreeSlots() == 0) { stop = "your pack is full"; break; }
             if (!loc.Objects.TryGetValue(tile.ToVector2(), out var o) || !MachineReady(o)) continue;
             var walk = new CallContext();
